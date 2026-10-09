@@ -1,0 +1,33 @@
+// ═══════════════════════════════════════════════════════════════
+// util.js — Funções auxiliares — COMERCIAL LAMIC
+// ═══════════════════════════════════════════════════════════════
+
+const fmt = v => v == null || isNaN(v) ? '—'
+  : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const pct = (v, casas = 1) => v == null || isNaN(v) ? '—'
+  : (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas }) + '%';
+
+const num = (v, casas = 2) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas });
+
+// Escapa texto vindo do banco antes de inserir em HTML
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Remove acentos e padroniza para buscas
+const normalizar = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const contem = (texto, busca) => !busca || normalizar(texto).includes(normalizar(busca));
+
+const iniciais = nome => String(nome || '?').trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase();
+
+const CORES_AVATAR = ['#2a9d8f', '#e8913a', '#6366f1', '#00a8cc', '#ec4899', '#0e7490', '#8b5cf6', '#16a34a'];
+const corAvatar = id => {
+  let h = 0;
+  for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return CORES_AVATAR[h % CORES_AVATAR.length];
+};
+
+const dataHora = ts => ts ? new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+// Objeto {id: item} → lista ordenada
+const lista = (obj, ordem = (a, b) => 0) => Object.entries(obj || {}).map(([id, v]) => ({ id, ...v })).sort(ordem);
+const porNome = (a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR');

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "comercial",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8765"],
+      "port": 8765
+    },
+    {
+      "name": "teste-mock",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8770", "-d", "C:\\Users\\PEDROF~1\\AppData\\Local\\Temp\\lamicpz\\teste"],
+      "port": 8770
+    }
+  ]
+}

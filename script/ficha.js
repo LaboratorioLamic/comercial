@@ -1,0 +1,543 @@
+// ═══════════════════════════════════════════════════════════════
+// ficha.js — Ficha do exame (gaveta): composição do preço, custos,
+// etapas, custos adicionais, preço praticado e histórico
+// ═══════════════════════════════════════════════════════════════
+//
+// A ficha trabalha sobre uma cópia (_fx). Nada é gravado até "Salvar".
+// Seções marcadas como dinâmicas são redesenhadas a cada alteração;
+// os campos digitáveis ficam em seções estáticas para não perder o foco.
+
+let _fx = null, _fxOrig = null, _fxId = null;
+let _fxAba = 'valores', _fxTab = {};         // _fxTab: idTabela → preço editado (null = retirar)
+
+const ABAS_FICHA = [
+  ['valores', 'Valores', 'fa-tag'],
+  ['custos', 'Custos', 'fa-calculator'],
+  ['controles', 'Controles', 'fa-sliders'],
+  ['instrucoes', 'Instruções', 'fa-book-medical'],
+  ['historico', 'Histórico', 'fa-clock-rotate-left']
+];
+
+function abrirFicha(id, aba = 'valores') {
+  const e = ESTADO.exames[id];
+  if (!e) return;
+  _fxId = id; _fxFonte = null; _fxAba = aba; _fxTab = {};
+  _fxOrig = JSON.parse(JSON.stringify(e));
+  _fx = JSON.parse(JSON.stringify(e));
+  _fx.extras = extrasExame(_fx).map(x => ({ ...x }));
+  _fx.justificativa = '';
+  const editar = pode('exames', 'editar');
+  const pane = (a, html) => `<div class="fx-pane ${_fxAba === a ? 'on' : ''}" data-a="${a}">${html}</div>`;
+  abrirGaveta({
+    sobre: e.mn, titulo: e.descricao || '(sem descrição)', meta: metaFicha(),
+    corpo: `
+      <div class="seg set-abas fx-abas" id="fx-abas"></div>
+      ${pane('valores', `
+        <div id="fx-alertas"></div>
+        <div id="fx-pend"></div>
+        <div class="sec-t"><i class="fa-solid fa-user"></i>Particular · preço praticado</div>
+        <div class="prices"><div id="fx-sug"></div>
+          <div class="pbox ${editar ? 'edit' : ''}"><div class="l"><i class="fa-solid fa-pen"></i>Praticado</div>
+            <input id="fx-preco" type="number" step="0.01" min="0" value="${e.precoPraticado != null ? Number(e.precoPraticado).toFixed(2) : ''}" ${editar ? '' : 'disabled'} oninput="_fx.precoPraticado=parseFloat(this.value)||null;atualizarFicha()">
+            <div class="m" id="fx-st"></div><div class="delta" id="fx-preco-d"></div></div></div>
+        <div id="fx-sist"></div>
+        <div id="fx-comp" style="margin-top:12px"></div>
+        ${pode('tabelas') ? `<div class="sec-t"><i class="fa-solid fa-table-list"></i>Outras tabelas de preço</div><div id="fx-tabs"></div>` : ''}
+        <div id="fx-hier"></div>
+        <div class="just" id="fx-just-w"><label for="fx-just">Justificativa da alteração de preço <span class="muted">(opcional)</span></label>
+          <textarea id="fx-just" ${editar || pode('tabelas', 'editar') ? '' : 'disabled'} placeholder="Motivo: reajuste, negociação, concorrência…" oninput="_fx.justificativa=this.value"></textarea></div>`)}
+      ${pane('custos', `
+        <div class="sec-t"><i class="fa-solid fa-vials"></i>Custo do teste</div><div id="fx-custo"></div>
+        <div class="sec-t"><i class="fa-solid fa-calculator"></i>Cascata de custos</div><div id="fx-casc"></div>
+        <div class="sec-t"><i class="fa-solid fa-hand-holding-dollar"></i>Custos adicionais</div><div id="fx-extras"></div>
+        <div class="sec-t"><i class="fa-solid fa-route"></i>Etapas do atendimento</div><div id="fx-etapas"></div>`)}
+      ${pane('controles', `<div class="sec-t"><i class="fa-solid fa-sliders"></i>Controles</div><div id="fx-ctrl"></div>`)}
+      ${pane('instrucoes', pode('instrucoes') ? `<div class="sec-t"><i class="fa-solid fa-book-medical"></i>Catálogo e instruções</div><div id="fx-cat"><div class="muted" style="font-size:12px"><i class="fa-solid fa-circle-notch fa-spin"></i> carregando…</div></div>`
+        : vazio('fa-lock', 'Seu grupo não tem acesso às instruções'))}
+      ${pane('historico', `<div class="sec-t"><i class="fa-solid fa-clock-rotate-left"></i>Histórico</div><div id="fx-hist"><div class="muted" style="font-size:12px"><i class="fa-solid fa-circle-notch fa-spin"></i> carregando…</div></div>`)}`,
+    rodape: '<div id="fx-rodape" style="display:contents"></div>'
+  });
+  desenharCustoTeste(); desenharExtras(); desenharEtapas(); desenharControles();
+  if (pode('tabelas')) desenharTabelasFicha(id);
+  desenharPendentesFicha(id);
+  atualizarFicha();
+  carregarHistoricoExame(id);
+  if (pode('instrucoes')) desenharCatalogoFicha(id);
+}
+
+function desenharAbasFicha() {
+  const el = document.getElementById('fx-abas');
+  if (!el) return;
+  const mud = mudancasPrecoFicha().length, sc = calcular(_fx).semCusto;
+  el.innerHTML = ABAS_FICHA.map(([k, t, ic]) => `<button class="${_fxAba === k ? 'on' : ''}" onclick="trocarAbaFicha('${k}')"><i class="fa-solid ${ic}"></i>${t}${
+    k === 'valores' && mud ? `<span class="fx-n">${mud}</span>` : k === 'custos' && sc ? ' <i class="fa-solid fa-circle-exclamation fx-av" title="Sem custo do teste"></i>' : ''}</button>`).join('');
+}
+function trocarAbaFicha(a) {
+  _fxAba = a;
+  document.querySelectorAll('.fx-pane').forEach(p => p.classList.toggle('on', p.dataset.a === a));
+  desenharAbasFicha();
+}
+
+// ── Valores: outras tabelas (editáveis) ───────────────────────
+const precoTabFicha = id => id in _fxTab ? _fxTab[id] : ESTADO.tabelas[id]?.precos?.[_fxId] ?? null;
+
+function desenharTabelasFicha(id) {
+  const el = document.getElementById('fx-tabs'), e = ESTADO.exames[id];
+  if (!el || !e) return;
+  const labs = lista(ESTADO.laboratorios, porNome).filter(l => l.precos?.[id] != null);
+  const ts = tabelasLista(false), edit = pode('tabelas', 'editar');
+  el.innerHTML = `<div class="casc fx-tabs">${ts.map(t => {
+      const p = precoTabFicha(t.id);
+      return `<div class="casc-r ${t.ativa === false ? 'skip' : ''}" data-t="${t.id}"><div class="lft"><i class="fa-solid ${t.icone}" style="color:${t.cor}"></i><div>${esc(t.nome)}
+          <div class="s" id="fxt-s-${t.id}"></div></div></div>
+        <div class="fx-tv"><div class="fx-tv-l"><div class="price-in" id="fxt-pi-${t.id}"><span>R$</span><input type="number" step="0.01" min="0" data-t="${t.id}" value="${p != null ? Number(p).toFixed(2) : ''}" placeholder="—" ${edit ? '' : 'disabled'} oninput="editarTabFicha(this)" onfocus="this.select()"></div>
+          ${edit ? `<div class="acts"><button title="Margem alvo: ${pct(margemAlvoTab(t), 0)}${t.margemSugerida != null ? ' (sugestão de margem da tabela)' : ' (alvo do setor/geral: tabela sem sugestão de margem)'}" ${calcular(e, null, t).semCusto ? 'disabled' : ''} onclick="margemTabFicha('${t.id}')"><i class="fa-solid fa-bullseye"></i></button><button title="Particular − ${pct(t.descontoRef || 0, 0)} (desconto de referência)" onclick="refTabFicha('${t.id}')"><i class="fa-solid fa-percent"></i></button><button title="Retirar da tabela" onclick="definirTabFicha('${t.id}', null, true)"><i class="fa-solid fa-xmark"></i></button></div>` : ''}</div>
+          <div class="delta" id="fxt-d-${t.id}"></div></div></div>`;
+    }).join('')}
+    ${labs.length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-building-user"></i><div>Valores diferenciados<div class="s">${labs.map(l => `${esc(l.nome)} ${fmt(l.precos[id])}`).join(' · ')}</div></div></div></div>` : ''}
+    ${!ts.length && !labs.length ? '<div class="casc-r muted">Nenhuma tabela cadastrada</div>' : ''}</div>
+    ${ts.length && edit ? '<div class="hint" style="margin-top:6px"><i class="fa-solid fa-circle-info"></i> Digite para alterar ou incluir o exame na tabela; vazio retira.</div>' : ''}`;
+}
+
+// v: número · null (retirar) · forcarCampo: reescreve o campo
+function definirTabFicha(id, v, forcarCampo) {
+  const s = ESTADO.tabelas[id]?.precos?.[_fxId] ?? null;
+  if ((v == null && s == null) || (v != null && s != null && Math.abs(v - s) < 0.005)) delete _fxTab[id];
+  else _fxTab[id] = v == null ? null : Math.round(v * 100) / 100;
+  const inp = document.querySelector(`#fx-tabs input[data-t="${id}"]`), p = precoTabFicha(id);
+  if (inp && forcarCampo) inp.value = p != null ? Number(p).toFixed(2) : '';
+  atualizarFicha();
+}
+function editarTabFicha(inp) {
+  const txt = inp.value.trim(), v = txt === '' ? null : parseFloat(txt);
+  if (v != null && (isNaN(v) || v <= 0)) return;
+  definirTabFicha(inp.dataset.t, v);
+}
+// Margem alvo da tabela: sugestão de margem configurada ou alvo do setor/geral
+const margemAlvoTab = t => t.margemSugerida ?? alvoExame(_fx);
+function margemTabFicha(id) {
+  const t = ESTADO.tabelas[id], v = precoParaMargem(calcular(_fx, null, t), margemAlvoTab(t));
+  if (v == null) return toast('Exame sem custo: margem desconhecida', 'erro');
+  definirTabFicha(id, v, true);
+}
+function refTabFicha(id) {
+  const part = _fx.precoPraticado, t = ESTADO.tabelas[id];
+  if (!part) return toast('Exame sem preço praticado', 'erro');
+  definirTabFicha(id, Math.round(part * (1 - (t.descontoRef || 0))), true);
+}
+
+// Margem, piso, desconto e delta de cada tabela (sem recriar os campos)
+function atualizarTabsFicha() {
+  const part = _fx.precoPraticado;
+  tabelasLista(false).forEach(t => {
+    const sEl = document.getElementById('fxt-s-' + t.id);
+    if (!sEl) return;
+    const p = precoTabFicha(t.id), c = p != null ? calcular(_fx, p, t) : null, salvo = t.precos?.[_fxId] ?? null, ed = t.id in _fxTab;
+    sEl.innerHTML = p == null ? `fora da tabela${part && t.descontoRef ? ` · ref. ${fmt(Math.round(part * (1 - t.descontoRef)))}` : ''}`
+      : `${c.semCusto ? 'sem custo' : `<span style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">margem ${pct(c.margem)}</span>`} · piso ${pct(t.piso ?? parametro('margemMinima'), 0)}${part ? ` · desc. ${pct(1 - p / part)}` : ''}`;
+    document.getElementById('fxt-pi-' + t.id).className = `price-in ${ed ? 'on' : ''}`;
+    const d = ed && p != null && salvo != null ? p - salvo : 0;
+    document.getElementById('fxt-d-' + t.id).innerHTML = !ed ? '' : salvo == null ? '<span class="delta-dn">entra na tabela</span>' : p == null ? '<span class="delta-up">sai da tabela</span>'
+      : `<span class="${d > 0 ? 'delta-dn' : 'delta-up'}">${d > 0 ? '+' : ''}${fmt(d)} (${d > 0 ? '+' : ''}${pct(d / salvo)})</span>`;
+  });
+}
+
+// Alterações de preço pendentes na ficha: [{ alvo, nome, de, para }]
+function mudancasPrecoFicha() {
+  if (!_fx) return [];
+  const m = [], o = _fxOrig.precoPraticado ?? null, n = _fx.precoPraticado ?? null;
+  if (n != null && (o == null || Math.abs(n - o) > 0.004)) m.push({ alvo: 'particular', nome: 'Particular', de: o, para: n });
+  Object.entries(_fxTab).forEach(([id, v]) => { if (ESTADO.tabelas[id]) m.push({ alvo: id, nome: ESTADO.tabelas[id].nome, de: ESTADO.tabelas[id].precos?.[_fxId] ?? null, para: v }); });
+  return m;
+}
+
+// Propostas pendentes que incluem o exame
+function desenharPendentesFicha(id) {
+  const el = document.getElementById('fx-pend');
+  if (!el) return;
+  const ps = lista(ESTADO.propostas, (a, b) => (b.em || 0) - (a.em || 0)).filter(p => p.status === 'pendente' && p.itens?.[id]);
+  el.innerHTML = ps.length ? `<div class="alert a"><i class="fa-solid fa-hourglass-half"></i><div><b>${ps.length} proposta(s) aguardando aprovação</b>${ps.map(p => {
+      const it = p.itens[id];
+      return `<div>${esc(p.alvoNome)}: ${it.de != null ? fmt(it.de) : 'fora'} → <b>${it.para != null ? fmt(it.para) : 'retirar'}</b> · ${esc(p.autor)}${pode('tabelas') ? ` · <a href="#" onclick="abrirProposta('${p.id}');return false">abrir</a>` : ''}</div>`;
+    }).join('')}</div></div>` : '';
+}
+
+// Rodapé: com alteração de preço vira "enviar para aprovação" / "aprovar e publicar"
+function desenharRodapeFicha() {
+  const el = document.getElementById('fx-rodape');
+  if (!el) return;
+  const editar = pode('exames', 'editar') || pode('tabelas', 'editar'), mud = mudancasPrecoFicha().length, aprova = pode('tabelas', 'aprovar');
+  el.innerHTML = `${pode('exames', 'excluir') ? `<button class="btn perigo-txt" onclick="excluirExame()" title="Excluir exame"><i class="fa-solid fa-trash"></i></button>` : ''}
+    ${pode('exames', 'editar') ? `<button class="btn" style="margin-right:auto" onclick="abrirDadosExame('${_fxId}')" title="Dados do exame: nome, setor, material, prazo"><i class="fa-solid fa-pen-to-square"></i>${mud ? '' : 'Dados'}</button>` : '<span style="margin-right:auto"></span>'}
+    <button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
+    ${!editar ? '' : mud ? `<button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('enviar')" title="Cria proposta(s) para aprovação"><i class="fa-solid fa-paper-plane"></i>${aprova ? 'Enviar' : 'Enviar p/ aprovação'}</button>
+        ${aprova ? `<button class="btn pri" onclick="salvarFicha('publicar')" title="Publica os preços agora"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : ''}`
+      : `<button class="btn pri" onclick="salvarFicha()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>`}`;
+}
+
+function metaFicha() {
+  const e = _fx;
+  return `${tagSetor(e.setorId)}<span class="tag"><i class="fa-solid ${e.origem === 'apoio' ? 'fa-truck-medical' : 'fa-microscope'}"></i>${e.origem === 'apoio' ? 'Apoio' : 'Interno'}</span>`
+    + (e.ativo === false ? '<span class="tag" style="color:var(--red)"><i class="fa-solid fa-eye-slash"></i>Inativo</span>' : '')
+    + (e.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(e.material)}</span>` : '')
+    + (e.prazo ? `<span class="tag"><i class="fa-solid fa-clock"></i>${esc(e.prazo)}</span>` : '');
+}
+
+// ── Seções dinâmicas ──────────────────────────────────────────
+function atualizarFicha() {
+  const e = _fx, c = calcular(e), preco = e.precoPraticado;
+  const alertas = [];
+  if (c.semCusto) alertas.push(['x', 'fa-circle-question', '<b>Custo do teste não informado.</b> Sem ele a margem é desconhecida.']);
+  if (c.status === 'r') alertas.push(['r', 'fa-circle-xmark', `Margem ${pct(c.margem)} abaixo do mínimo de ${pct(parametro('margemMinima'))}. Preço mínimo viável: <b>${fmt(c.minimo)}</b>.`]);
+  if (e.foraDoSistema) alertas.push(['a', 'fa-plug-circle-xmark', 'Mnemônico não encontrado no catálogo do sistema do laboratório.']);
+  document.getElementById('fx-alertas').innerHTML = alertas.map(([t, ic, txt]) => `<div class="alert ${t}"><i class="fa-solid ${ic}"></i><div>${txt}</div></div>`).join('');
+
+  const w = v => Math.max(0, Math.min(100, v / preco * 100));
+  document.getElementById('fx-comp').innerHTML = c.semCusto || !preco ? `<div class="muted" style="font-size:12.5px">${c.semCusto ? 'Informe o custo do teste para ver a composição.' : 'Informe o preço praticado.'}</div>`
+    : `<div class="comp"><div style="width:${w(c.custo)}%;background:#64748b"></div><div style="width:${w(c.imposto)}%;background:var(--amber)"></div><div style="width:${w(c.lucro)}%;background:var(--green)"></div></div>
+       <div class="comp-leg"><span><b style="background:#64748b"></b>Custo ${pct(c.custo / preco)}</span><span><b style="background:var(--amber)"></b>Imposto ${pct(c.imposto / preco)}</span><span><b style="background:${c.lucro < 0 ? 'var(--red)' : 'var(--green)'}"></b>Lucro ${pct(c.margem)}</span></div>`;
+
+  const n = parametro('examesPorAtendimento');
+  document.getElementById('fx-casc').innerHTML = `<div class="casc">
+    <div class="casc-r"><div class="lft"><i class="fa-solid ${e.origem === 'apoio' ? 'fa-truck-medical' : 'fa-vials'}"></i><div>Custo do teste<div class="s">${rotuloOrigemCusto(e)}</div></div></div><span class="v">${c.semCusto ? '—' : fmt(c.teste.valor)}</span></div>
+    ${c.fx.map(f => `<div class="casc-r ${f.aplica ? '' : 'skip'}"><div class="lft"><i class="fa-solid ${f.icone || 'fa-coins'}"></i><div>${esc(f.nome)}<div class="s">${!f.aplica ? 'não passa por esta etapa' : f.cobranca === 'rateado' ? `${fmt(f.valor)} rateado ÷ ${n} exames` : 'linear, valor cheio'}</div></div></div><span class="v">${f.aplica ? fmt(f.v) : '—'}</span></div>`).join('')}
+    ${c.extras.map(x => `<div class="casc-r"><div class="lft"><i class="fa-solid fa-hand-holding-dollar"></i><div>${esc(x.nome)}<div class="s">custo adicional</div></div></div><span class="v">${fmt(x.valor)}</span></div>`).join('')}
+    <div class="casc-r tot"><div class="lft"><i class="fa-solid fa-equals"></i><div>Custo total</div></div><span class="v">${c.semCusto ? '—' : fmt(c.custo)}</span></div>
+    ${preco && !c.semCusto ? `
+    <div class="casc-r neg"><div class="lft"><i class="fa-solid fa-landmark"></i><div>Imposto<div class="s">${pct(parametro('imposto'))} sobre o preço</div></div></div><span class="v">− ${fmt(c.imposto)}</span></div>
+    <div class="casc-r res"><div class="lft"><i class="fa-solid fa-sack-dollar"></i><div>Lucro</div></div><span class="v" style="color:${c.lucro < 0 ? 'var(--red)' : 'var(--green)'}">${fmt(c.lucro)}</span></div>` : ''}
+  </div>
+  ${preco && !c.semCusto ? `<div class="alert x" style="margin:10px 0 0"><i class="fa-solid fa-credit-card"></i><div><b>Projeção na maquininha</b> (${pct(parametro('taxaMaquininha'), 2)}, fora do custo): − ${fmt(c.taxaCartao)} → lucro <b style="color:${c.lucroCartao < 0 ? 'var(--red)' : 'inherit'}">${fmt(c.lucroCartao)}</b> · margem <b>${pct(c.margemCartao)}</b></div></div>` : ''}`;
+
+  document.getElementById('fx-sug').innerHTML = `<div class="pbox"><div class="l"><i class="fa-solid fa-wand-magic-sparkles"></i>Sugerido ${c.semCusto ? '' : `(alvo ${pct(c.alvo)}${ESTADO.setores[e.setorId]?.margemAlvo != null ? ' do setor' : ''})`}</div>
+    <div class="v">${c.sugerido ? fmt(c.sugerido) : '—'}</div>
+    <div class="m muted">${c.minimo ? `mínimo viável ${fmt(c.minimo)}` : 'precisa de custo'}</div>
+    ${c.sugerido && pode('exames', 'editar') ? `<button class="btn sm" style="margin-top:8px" onclick="usarSugerido(${c.sugerido})"><i class="fa-solid fa-arrow-right"></i>Usar sugerido</button>` : ''}</div>`;
+  document.getElementById('fx-st').innerHTML = tagStatus(c.status);
+  document.getElementById('fx-sist').innerHTML = e.precoSistema != null && preco && Math.abs(e.precoSistema - preco) > 0.004
+    ? `<div class="alert a" style="margin-top:10px"><i class="fa-solid fa-code-compare"></i><div>Preço no sistema do laboratório: <b>${fmt(e.precoSistema)}</b>. Diferente do praticado: atualizar o sistema após publicar.</div></div>` : '';
+
+  // Valores: variação do praticado, tabelas, hierarquia, abas e rodapé
+  const o = _fxOrig.precoPraticado, d = preco && o ? preco - o : 0;
+  document.getElementById('fx-preco-d').innerHTML = Math.abs(d) > 0.004 ? `<span class="${d > 0 ? 'delta-dn' : 'delta-up'}">${d > 0 ? '+' : ''}${fmt(d)} (${d > 0 ? '+' : ''}${pct(d / o)}) · era ${fmt(o)}</span>` : '';
+  document.querySelector('#fx-preco')?.closest('.pbox').classList.toggle('mud', Math.abs(d) > 0.004);
+  atualizarTabsFicha();
+  const qs = quebrasHierarquia(_fxId, (a, k) => a === 'particular' ? _fx.precoPraticado || null : precoTabFicha(a));
+  document.getElementById('fx-hier').innerHTML = qs.length ? `<div class="alert a" style="margin-top:10px"><i class="fa-solid fa-stairs"></i><div><b>Quebra a hierarquia de valor</b>${qs.map(q => `<div>${esc(textoQuebra(q))}</div>`).join('')}</div></div>` : '';
+  desenharAbasFicha();
+  desenharRodapeFicha();
+}
+
+function usarSugerido(v) {
+  _fx.precoPraticado = v;
+  document.getElementById('fx-preco').value = v;
+  atualizarFicha();
+}
+
+function rotuloOrigemCusto(e) {
+  const ct = custoTesteExame(e);
+  if (!ct) return 'não informado';
+  if (ct.origem === 'apoio') return `tabela do apoio · vigência ${dataBR(ct.ref.vigencia)}`;
+  if (ct.origem === 'reagente') return `reagente ${ct.ref.nome}${(e.qtdReagente || 1) !== 1 ? ` × ${num(e.qtdReagente, 3)}` : ''}`;
+  return { planilha: 'migrado da planilha', manual: 'informado manualmente' }[ct.origem] || 'informado manualmente';
+}
+
+// ── Seções estáticas ──────────────────────────────────────────
+// Fonte do custo do teste: manual | reagente | tabela do apoio
+const fonteCusto = e => e.vinculoApoio ? 'apoio' : e.reagenteId ? 'reagente' : 'manual';
+const apoioDoExame = e => ESTADO.setores[e.setorId]?.categoria === 'apoio' ? e.setorId : (e.vinculoApoio?.apoioId || null);
+
+function desenharCustoTeste() {
+  const e = _fx, editar = pode('exames', 'editar') || pode('custos', 'editar'), fonte = _fxFonte || fonteCusto(e);
+  const apoioId = apoioDoExame(e), temTabela = apoioId && Object.keys(ESTADO.apoios[apoioId]?.precos || {}).length;
+  const fontes = [['manual', 'Manual', 'fa-pen'], ['reagente', 'Reagente', 'fa-vials']];
+  if (e.origem === 'apoio' || e.vinculoApoio) fontes.push(['apoio', 'Tabela do apoio', 'fa-truck-medical']);
+  let corpo = '';
+  if (fonte === 'manual') {
+    corpo = `<div class="casc-r"><div class="lft"><i class="fa-solid fa-pen"></i><div>${e.origem === 'apoio' ? 'Valor pago ao apoio' : 'Custo por teste'}<div class="s">${e.origem === 'apoio' ? 'preço não negociado: informado pela equipe' : 'informado manualmente'}</div></div></div>
+      <div class="price-in"><span>R$</span><input id="fx-custo-in" type="number" step="0.01" min="0" value="${e.custoTeste != null ? Number(e.custoTeste).toFixed(2) : ''}" placeholder="0,00" ${editar ? '' : 'disabled'}
+        oninput="_fx.custoTeste=this.value===''?null:Math.max(0,parseFloat(this.value)||0);_fx.custoOrigem='manual';atualizarFicha()"></div></div>`;
+  } else if (fonte === 'reagente') {
+    const r = ESTADO.reagentes[e.reagenteId], cpt = r ? custoPorTeste(r) : null;
+    corpo = `<div class="casc-r"><div class="lft"><i class="fa-solid fa-vials"></i><div>Reagente<div class="s">${r ? `${esc(r.fornecedor || '')} · ${fmt(cpt)} por teste` : 'escolha o reagente'}</div></div></div><div id="pop-fxreag" style="min-width:220px"></div></div>
+      <div class="casc-r"><div class="lft"><i class="fa-solid fa-xmark"></i><div>Testes por exame<div class="s">ex.: 2 se o exame consome dois testes</div></div></div>
+        <div class="price-in"><input type="number" step="0.01" min="0.01" value="${e.qtdReagente || 1}" ${editar ? '' : 'disabled'} oninput="_fx.qtdReagente=Math.max(0.01,parseFloat(this.value)||1);atualizarFicha()"></div></div>`;
+  } else {
+    const p = e.vinculoApoio ? precoApoio(e.vinculoApoio.apoioId, e.vinculoApoio.chave) : null;
+    corpo = !temTabela ? `<div class="casc-r muted"><div class="lft"><i class="fa-solid fa-circle-info"></i><div>Este apoio ainda não tem tabela importada<div class="s">use custo manual por enquanto</div></div></div></div>`
+      : `<div class="casc-r"><div class="lft"><i class="fa-solid fa-link"></i><div>${p ? `<span class="mn">${esc(p.codigo)}</span> <span class="tag">${esc(p.material || '')}</span>` : 'Sem vínculo'}<div class="s">${p ? esc(p.descricao) : 'escolha o item da tabela do apoio'}</div></div></div><div id="pop-fxapoio" style="min-width:200px"></div></div>
+        ${p ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Preço negociado · vigência ${dataBR(p.vigencia)}<div class="s">${p.agendado ? `novo preço ${fmt(p.agendado.preco)} a partir de ${dataBR(p.agendado.vigencia)}` : 'atualiza a cada importação da tabela'}</div></div></div><span class="v">${fmt(p.valor)}</span></div>` : ''}`;
+  }
+  document.getElementById('fx-custo').innerHTML = `
+    <div class="seg" style="margin-bottom:8px">${fontes.map(([v, t, ic]) => `<button class="${fonte === v ? 'on' : ''}" ${editar ? '' : 'disabled'} onclick="trocarFonteCusto('${v}')"><i class="fa-solid ${ic}"></i>${t}</button>`).join('')}</div>
+    <div class="casc">${corpo}</div>`;
+  if (fonte === 'reagente') criarPop('pop-fxreag', {
+    rotulo: 'Reagente', titulo: 'Reagente do exame', icone: 'fa-vials', busca: 'Buscar reagente…', padrao: '',
+    opcoes: () => [{ valor: '', rotulo: 'Nenhum', icone: 'fa-ban', cor: 'var(--gray)' },
+      ...lista(ESTADO.reagentes, porNome).map(r => ({ valor: r.id, rotulo: r.nome, icone: 'fa-vials', desc: `${r.fornecedor || ''} · ${fmt(custoPorTeste(r))}/teste` }))],
+    aoMudar: v => { _fx.reagenteId = v || null; desenharCustoTeste(); atualizarFicha(); }
+  });
+  if (fonte === 'apoio' && temTabela) criarPop('pop-fxapoio', {
+    rotulo: 'Item do apoio', titulo: 'Tabela do apoio', icone: 'fa-magnifying-glass', busca: 'Código ou nome…', padrao: '',
+    opcoes: () => lista(ESTADO.apoios[apoioId].precos, (a, b) => String(a.codigo).localeCompare(b.codigo))
+      .map(p => ({ valor: p.id, rotulo: `${p.codigo} · ${p.descricao}`, icone: 'fa-flask', desc: `${p.material || ''} · ${fmt(p.preco)}` })),
+    aoMudar: v => { _fx.vinculoApoio = v ? { apoioId, chave: v } : null; desenharCustoTeste(); desenharControles(); atualizarFicha(); }
+  });
+  if (POPS['pop-fxreag'] && fonte === 'reagente') { POPS['pop-fxreag'].valor = e.reagenteId || ''; desenharBotaoPop('pop-fxreag'); }
+  if (POPS['pop-fxapoio'] && fonte === 'apoio' && temTabela) { POPS['pop-fxapoio'].valor = e.vinculoApoio?.chave || ''; desenharBotaoPop('pop-fxapoio'); }
+}
+
+function trocarFonteCusto(f) {
+  if (f !== 'apoio') _fx.vinculoApoio = null;
+  if (f !== 'reagente') _fx.reagenteId = null;
+  if (f === 'reagente' && !_fx.reagenteId) _fx.qtdReagente = _fx.qtdReagente || 1;
+  if (f === 'apoio' && !_fx.vinculoApoio) _fx.vinculoApoio = null;
+  _fxFonte = f;
+  desenharCustoTeste(); desenharControles(); atualizarFicha();
+  // modo escolhido sem item ainda: mostra o seletor correspondente
+  if (f === 'reagente' && !_fx.reagenteId) setTimeout(() => POPS['pop-fxreag'] && abrirPop('pop-fxreag'), 50);
+  if (f === 'apoio' && !_fx.vinculoApoio) setTimeout(() => POPS['pop-fxapoio'] && abrirPop('pop-fxapoio'), 50);
+}
+let _fxFonte = null;
+
+function desenharExtras() {
+  const editar = pode('exames', 'editar');
+  document.getElementById('fx-extras').innerHTML = `<div class="casc">
+    ${_fx.extras.map((x, i) => `<div class="casc-r"><div class="lft"><i class="fa-solid fa-hand-holding-dollar"></i><div>${esc(x.nome)}</div></div>
+      <span class="v">${fmt(x.valor)} ${editar ? `<button class="pop-x" title="Remover" onclick="_fx.extras.splice(${i},1);desenharExtras();atualizarFicha()"><i class="fa-solid fa-xmark"></i></button>` : ''}</span></div>`).join('')}
+    ${editar ? `<div class="casc-r add-extra"><input id="fx-ex-nome" class="mini" placeholder="Ex.: aplicação, conservação…"><input id="fx-ex-val" class="mini v-in" type="number" step="0.01" min="0" placeholder="0,00">
+      <button class="btn sm" onclick="adicionarExtra()"><i class="fa-solid fa-plus"></i>Adicionar</button></div>` : ''}
+    ${!_fx.extras.length && !editar ? '<div class="casc-r muted">Nenhum</div>' : ''}</div>`;
+}
+function adicionarExtra() {
+  const nome = valorCampo('fx-ex-nome').trim(), valor = numCampo('fx-ex-val');
+  if (!nome || !(valor > 0)) return toast('Informe nome e valor do custo', 'erro');
+  _fx.extras.push({ nome, valor: Math.round(valor * 100) / 100 });
+  desenharExtras(); atualizarFicha();
+}
+
+function desenharEtapas() {
+  const et = etapasExame(_fx), s = ESTADO.setores[_fx.setorId], editar = pode('exames', 'editar');
+  const ajustado = _fx.etapas && Object.keys(_fx.etapas).length;
+  document.getElementById('fx-etapas').innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    ${Object.entries(ETAPAS).map(([k, x]) => `<button class="chip ${et[k] ? 'on' : ''}" ${editar ? '' : 'disabled'} onclick="alternarEtapaExame('${k}')"><i class="fa-solid ${et[k] ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>${x.nome}</button>`).join('')}
+    <span class="muted" style="font-size:11.5px">${ajustado ? `<i class="fa-solid fa-thumbtack"></i> ajustado neste exame ${editar ? '· <a href="#" onclick="delete _fx.etapas;desenharEtapas();atualizarFicha();return false">usar padrão do setor</a>' : ''}` : `padrão do ${s ? 'setor' : 'sistema'}`}</span></div>`;
+}
+function alternarEtapaExame(k) {
+  const et = etapasExame(_fx);
+  _fx.etapas = { ...et, [k]: !et[k] };
+  desenharEtapas(); atualizarFicha();
+}
+
+function desenharControles() {
+  const e = _fx, editar = pode('exames', 'editar');
+  document.getElementById('fx-ctrl').innerHTML = `<div class="casc">
+    ${e.origem === 'apoio' ? (e.vinculoApoio
+      ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">automático: vinculado à tabela importada</div></div></div><span class="badge-s ok"><i class="fa-solid fa-lock"></i>sim</span></div>`
+      : `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:${e.negociado ? 'var(--green)' : 'inherit'}"></i><div>Valor negociado com o apoio<div class="s">marcação manual (sem vínculo com tabela importada)</div></div></div>${chave(e.negociado, '_fx.negociado=!_fx.negociado;this.classList.toggle(\'on\')', !editar)}</div>`) : ''}
+    <div class="casc-r"><div class="lft"><i class="fa-solid fa-magnifying-glass-dollar" style="color:var(--amber)"></i><div>Valor precisa ser auditado<div class="s">controle interno</div></div></div>${chave(e.auditar, '_fx.auditar=!_fx.auditar;this.classList.toggle(\'on\')', !editar)}</div>
+    <div class="casc-r"><div class="lft"><i class="fa-solid fa-plug-circle-xmark"></i><div>Fora do sistema do laboratório<div class="s">mnemônico não existe no catálogo</div></div></div>${chave(e.foraDoSistema, '_fx.foraDoSistema=!_fx.foraDoSistema;this.classList.toggle(\'on\');atualizarFicha()', !editar)}</div>
+  </div>`;
+}
+
+// ── Histórico ─────────────────────────────────────────────────
+async function carregarHistoricoExame(id) {
+  const h = lista(await DB.ler(`historicoExames/${id}`), (a, b) => (b.em || 0) - (a.em || 0)).slice(0, 30);
+  const el = document.getElementById('fx-hist');
+  if (!el || _fxId !== id) return;
+  el.innerHTML = h.length ? h.map(x => `<div class="hist-i"><div class="avatar" style="width:26px;height:26px;font-size:10px;background:${corAvatar(x.usuarioId || x.usuario)}">${esc(iniciais(x.usuario))}</div>
+      <div><div>${esc(x.descricao)}</div>${x.justificativa ? `<div class="s"><i class="fa-solid fa-quote-left"></i> ${esc(x.justificativa)}</div>` : ''}<div class="t">${esc(x.usuario)} · ${dataHora(x.em)}</div></div></div>`).join('')
+    : '<div class="muted" style="font-size:12.5px">Sem alterações registradas.</div>';
+}
+
+// ── Gravação ──────────────────────────────────────────────────
+// Preços (praticado e outras tabelas) viram proposta: uma por tabela alterada.
+// Os demais campos são gravados direto no exame.
+const CAMPOS_FICHA = {
+  custoTeste: v => `Custo do teste ${fmt(v[0])} → ${fmt(v[1])}`,
+  reagenteId: v => v[1] ? `Reagente: ${ESTADO.reagentes[v[1]]?.nome || '—'}` : 'Reagente desvinculado',
+  qtdReagente: v => `Testes por exame ${num(v[0] || 1, 3)} → ${num(v[1] || 1, 3)}`,
+  vinculoApoio: v => v[1] ? `Vinculado ao item ${ESTADO.apoios[v[1].apoioId]?.precos?.[v[1].chave]?.codigo || ''} do apoio` : 'Vínculo com o apoio removido',
+  extras: () => 'Custos adicionais alterados',
+  etapas: () => 'Etapas do atendimento ajustadas',
+  negociado: v => v[1] ? 'Marcado como negociado' : 'Desmarcado como negociado',
+  auditar: v => v[1] ? 'Marcado para auditoria' : 'Auditoria concluída',
+  foraDoSistema: v => v[1] ? 'Marcado como fora do sistema' : 'Encontrado no sistema'
+};
+
+// modo: undefined (só dados) | 'enviar' (proposta para aprovação) | 'publicar' (aprova e publica)
+async function salvarFicha(modo) {
+  const e = _fx, o = _fxOrig, k = _fxId;
+  const igual = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const mud = Object.keys(CAMPOS_FICHA).filter(c => !igual(c === 'extras' ? extrasExame(o) : o[c], e[c]));
+  const precos = mudancasPrecoFicha();
+  if (!mud.length && !precos.length) { fecharGaveta(); return; }
+  if (precos.some(m => m.para != null && !(m.para > 0))) return toast('Preço inválido', 'erro');
+  if (precos.length && !modo) modo = 'enviar';
+  if (modo === 'publicar' && !pode('tabelas', 'aprovar')) return toast('Seu grupo não pode publicar preços', 'erro');
+  if (precos.some(m => m.alvo === 'particular') && !pode('exames', 'editar')) return toast('Seu grupo não pode alterar o preço praticado', 'erro');
+  if (precos.some(m => m.alvo !== 'particular') && !pode('tabelas', 'editar')) return toast('Seu grupo não pode alterar tabelas de preço', 'erro');
+  const u = usuarioAtual();
+
+  // dados do exame (custos, controles…)
+  if (mud.length) {
+    const dados = { atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+    mud.forEach(c => { dados[c] = e[c] ?? null; });
+    if (mud.includes('custoTeste')) dados.custoOrigem = e.custoTeste == null ? null : 'manual';
+    if (mud.includes('vinculoApoio') && e.vinculoApoio) dados.negociado = true;
+    if (mud.includes('extras')) dados.extras = e.extras.length ? e.extras : null;
+    if (mud.includes('etapas')) dados.etapas = e.etapas && Object.keys(e.etapas).length ? e.etapas : null;
+    await DB.mesclar(`${CAMINHOS.exames}/${k}`, dados);
+    await DB.gravar(`historicoExames/${k}/${DB.novaChave('historicoExames')}`, {
+      descricao: mud.map(c => CAMPOS_FICHA[c]([c === 'extras' ? extrasExame(o) : o[c], e[c]])).filter(Boolean).join(' · '),
+      usuario: u.nome, usuarioId: u.id, em: DB.agora()
+    });
+  }
+
+  // preços: uma proposta por tabela
+  const just = (e.justificativa || '').trim() || null;
+  for (const m of precos) {
+    const id = DB.novaChave('propostas');
+    const p = { alvo: m.alvo, alvoNome: m.nome, itens: { [k]: { mn: e.mn, de: m.de ?? null, para: m.para ?? null } }, n: 1,
+      justificativa: just, autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente', origem: 'ficha' };
+    await DB.gravar(`propostas/${id}`, { ...p, em: DB.agora() });
+    if (modo === 'publicar') await aplicarProposta(id, p);
+    else registrar('tabelas', `${m.nome}: proposta de preço de ${e.mn} enviada (ficha do exame)`, { proposta: id });
+  }
+  fecharGaveta();
+  toast(!precos.length ? `${e.mn} salvo` : modo === 'publicar' ? `${e.mn}: ${precos.length} preço(s) publicados` : `${e.mn}: ${precos.length} proposta(s) enviadas para aprovação`);
+}
+
+async function excluirExame() {
+  const e = ESTADO.exames[_fxId];
+  const ok = await confirmar({ titulo: `Excluir ${e.mn}?`, texto: 'O exame sai de todas as tabelas. Para apenas esconder, marque como inativo em "Dados do exame".', botao: 'Excluir', perigo: true });
+  if (!ok) return;
+  await DB.remover(`${CAMINHOS.exames}/${_fxId}`);
+  registrar('exames', `Exame ${e.mn} excluído`, { antes: e });
+  fecharGaveta();
+  toast(`${e.mn} excluído`);
+}
+
+// ── Dados do exame (novo / editar cadastro) ───────────────────
+let _dx = null;
+function abrirDadosExame(id) {
+  const e = id ? ESTADO.exames[id] : null;
+  _dx = { id: id || null, setorId: e?.setorId || '', origem: e?.origem || 'interno', ativo: e ? e.ativo !== false : true, negociado: false, auditar: false, fora: false };
+  const novo = !id;
+  // Exame novo: instrução cadastrada junto (catálogo de instruções)
+  const comIns = !id && pode('instrucoes', 'editar');
+  if (comIns) garantirCatalogo();
+  abrirGaveta({
+    sobre: id ? e.mn : 'Novo exame', titulo: id ? 'Dados do exame' : 'Cadastrar exame',
+    corpo: `<div class="form-col">
+      <div class="fgrid sem-pad" ${novo ? 'style="grid-template-columns:1.2fr 1fr 1fr"' : ''}>
+        ${campo('dx-mn', 'Mnemônico', e?.mn || '', { tipo: 'text', desab: !!id, dica: id ? 'não pode ser alterado' : 'igual ao do sistema', ph: 'Ex.: GLI', aoMudar: comIns ? 'preencherDoCatalogo()' : '' })}
+        ${campo('dx-preco', 'Preço praticado', e?.precoPraticado ?? '', { pre: 'R$', passo: '0.01', desab: !!id, dica: id ? 'altere na ficha' : '', aoMudar: novo ? 'previaDadosExame()' : '' })}
+        ${novo ? campo('dx-custo', 'Custo do teste', '', { pre: 'R$', passo: '0.01', ph: '0,00', dica: 'manual', aoMudar: 'previaDadosExame()' }) : ''}
+      </div>
+      ${novo ? '<div class="hint" id="dx-calc" style="margin-top:-6px"></div>' : ''}
+      ${campo('dx-desc', 'Descrição', e?.descricao || '', { tipo: 'text', ph: 'Nome do exame' })}
+      <div class="field"><label>Setor</label><div id="pop-dxsetor" class="block"></div></div>
+      <div class="field"><label>Origem</label><div class="opt-cards" id="dx-origem">
+        ${[['interno', 'Interno', 'Executado no LAMIC', 'fa-microscope'], ['apoio', 'Apoio', 'Enviado a laboratório de apoio', 'fa-truck-medical']].map(([v, t, d, ic]) =>
+          `<button type="button" class="oc ${_dx.origem === v ? 'on' : ''}" data-v="${v}" onclick="_dx.origem='${v}';marcarOc('dx-origem', this);atualizarControlesDx()"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${t}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`).join('')}</div></div>
+      <div class="fgrid sem-pad" ${comIns ? 'style="grid-template-columns:2fr 1fr 1fr"' : ''}>
+        ${campo('dx-mat', 'Material', e?.material || '', { tipo: 'text', ph: 'Ex.: Soro' })}
+        ${campo('dx-prazo', 'Prazo', e?.prazo || '', { tipo: 'text', ph: 'Ex.: 24 H' })}
+        ${comIns ? campo('dx-dias', 'Prazo (dias)', '', { passo: '1', ph: 'Ex.: 1' }) : ''}
+      </div>
+      ${comIns ? `<div class="field"><label><i class="fa-solid fa-book-medical"></i>Instrução do exame</label>
+        <textarea id="dx-ins" class="txt-grande" style="min-height:170px" placeholder="Jejum, preparo, coleta, conservação, critérios de rejeição…"></textarea>
+        <span class="hint" id="dx-cat-hint">Vai para o catálogo de instruções como "não revisada". Opcional.</span></div>` : ''}
+      ${novo ? '<div class="sec-t"><i class="fa-solid fa-sliders"></i>Controles</div>' : ''}
+      <div class="casc">
+        ${novo ? `<div class="casc-r" id="dx-neg-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">marcação manual (o vínculo com a tabela do apoio é feito na ficha)</div></div></div>${chave(false, '_dx.negociado=!_dx.negociado;this.classList.toggle(\'on\')')}</div>
+        <div class="casc-r"><div class="lft"><i class="fa-solid fa-magnifying-glass-dollar" style="color:var(--amber)"></i><div>Valor precisa ser auditado<div class="s">controle interno</div></div></div>${chave(false, '_dx.auditar=!_dx.auditar;this.classList.toggle(\'on\')')}</div>
+        <div class="casc-r"><div class="lft"><i class="fa-solid fa-plug-circle-xmark"></i><div>Fora do sistema do laboratório<div class="s">mnemônico não existe no catálogo</div></div></div>${chave(false, '_dx.fora=!_dx.fora;this.classList.toggle(\'on\')')}</div>` : ''}
+        <div class="casc-r"><div class="lft"><i class="fa-solid fa-eye"></i><div>Exame ativo<div class="s">inativo sai das listas e das tabelas</div></div></div>${chave(_dx.ativo, '_dx.ativo=!_dx.ativo;this.classList.toggle(\'on\')')}</div></div>
+    </div>`,
+    rodape: `<button class="btn" onclick="${id ? `abrirFicha('${id}')` : 'fecharGaveta()'}">${id ? '<i class="fa-solid fa-arrow-left"></i>Voltar' : 'Cancelar'}</button>
+      <button class="btn pri" onclick="gravarDadosExame()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>`
+  });
+  criarPop('pop-dxsetor', {
+    rotulo: 'Setor', titulo: 'Setor do exame', icone: 'fa-sitemap', busca: 'Buscar setor…', padrao: '',
+    opcoes: () => opcoesSetorPop('Sem setor'),
+    aoMudar: v => {
+      _dx.setorId = v;
+      const cat = ESTADO.setores[v]?.categoria;   // apoio → origem apoio
+      if (cat) { _dx.origem = cat === 'apoio' ? 'apoio' : 'interno'; marcarOc('dx-origem', document.querySelector(`#dx-origem .oc[data-v="${_dx.origem}"]`)); }
+      atualizarControlesDx();
+    }
+  });
+  POPS['pop-dxsetor'].valor = _dx.setorId; desenharBotaoPop('pop-dxsetor');
+  atualizarControlesDx();
+}
+
+// Cadastro novo: "negociado" só vale para apoio; prévia de custo e margem
+function atualizarControlesDx() {
+  const r = document.getElementById('dx-neg-r');
+  if (r) r.style.display = _dx.origem === 'apoio' ? '' : 'none';
+  previaDadosExame();
+}
+function previaDadosExame() {
+  const el = document.getElementById('dx-calc');
+  if (!el) return;
+  const custo = numCampo('dx-custo'), preco = numCampo('dx-preco');
+  if (!(custo >= 0)) { el.innerHTML = ''; return; }
+  const c = calcular({ setorId: _dx.setorId || null, origem: _dx.origem, custoTeste: custo, precoPraticado: preco > 0 ? preco : null });
+  el.innerHTML = `<i class="fa-solid fa-calculator"></i> Custo total ${fmt(c.custo)} (com custos fixos do setor) · sugerido ${fmt(c.sugerido)}`
+    + (c.margem != null ? ` · margem <b style="color:${STATUS[c.status].cor}">${pct(c.margem)}</b>` : '');
+}
+
+// Mnemônico já existe no catálogo de instruções → preenche os campos vazios
+function preencherDoCatalogo() {
+  const r = ESTADO.catalogo?.[chaveExame(valorCampo('dx-mn'))], hint = document.getElementById('dx-cat-hint');
+  if (!hint) return;
+  if (!r) { hint.textContent = 'Vai para o catálogo de instruções como "não revisada". Opcional.'; return; }
+  const encher = (id, v) => { const el = document.getElementById(id); if (el && !el.value.trim() && v != null && v !== '') el.value = v; };
+  encher('dx-desc', r.nome); encher('dx-mat', r.material); encher('dx-prazo', r.prazo); encher('dx-dias', r.prazoDias); encher('dx-ins', r.instrucao);
+  hint.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ${esc(r.mn)} já está no catálogo${r.revisado ? ' (instrução revisada)' : ''}: campos vazios preenchidos.`;
+}
+
+// Grava nome, material, prazo e instrução no catálogo (mantém o checklist de publicação)
+async function gravarCatalogoNovoExame(id, mn, nome) {
+  if (!pode('instrucoes', 'editar') || !document.getElementById('dx-ins')) return;
+  const r = ESTADO.catalogo?.[id] || await DB.ler(`catalogo/${id}`) || {};
+  const instrucao = valorCampo('dx-ins').trim() || null, dias = parseInt(valorCampo('dx-dias'), 10);
+  const material = valorCampo('dx-mat').trim() || null, prazo = valorCampo('dx-prazo').trim() || null;
+  if (!instrucao && !material && !prazo && isNaN(dias) && !r.mn) return;
+  const u = usuarioAtual(), dados = { mn, cadastro: true, nome: r.nome || nome, material: material ?? r.material ?? null, prazo: prazo ?? r.prazo ?? null,
+    prazoDias: isNaN(dias) ? (r.prazoDias ?? null) : dias, instrucao: instrucao ?? r.instrucao ?? null, atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+  // texto diferente do revisado → volta a precisar de revisão
+  if (r.revisado && (dados.instrucao || '') !== (r.instrucao || '')) Object.assign(dados, { revisado: false, revisadoPor: null, revisadoEm: null });
+  await DB.mesclar(`catalogo/${id}`, dados);
+  if (ESTADO.catalogo) ESTADO.catalogo[id] = { ...r, ...dados, atualizadoEm: Date.now() };   // a ficha abre em seguida
+}
+
+async function gravarDadosExame() {
+  const desc = valorCampo('dx-desc').trim();
+  if (!desc) return toast('Informe a descrição', 'erro');
+  const dados = { descricao: desc, setorId: _dx.setorId || null, origem: _dx.origem, ativo: _dx.ativo,
+    material: valorCampo('dx-mat').trim() || null, prazo: valorCampo('dx-prazo').trim() || null, atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome };
+  let id = _dx.id;
+  if (!id) {
+    const mn = valorCampo('dx-mn').trim();
+    if (!mn) return toast('Informe o mnemônico', 'erro');
+    id = chaveExame(mn);
+    if (ESTADO.exames[id]) return toast(`Já existe o exame ${mn}`, 'erro');
+    const preco = numCampo('dx-preco');
+    const custo = numCampo('dx-custo');
+    if (!isNaN(custo) && custo < 0) return toast('Custo do teste inválido', 'erro');
+    Object.assign(dados, { mn, precoPraticado: preco > 0 ? preco : null, criadoEm: DB.agora(),
+      custoTeste: custo >= 0 ? Math.round(custo * 100) / 100 : null, custoOrigem: custo >= 0 ? 'manual' : null,
+      negociado: _dx.origem === 'apoio' && _dx.negociado ? true : null, auditar: _dx.auditar || null, foraDoSistema: _dx.fora || null });
+    await DB.gravar(`${CAMINHOS.exames}/${id}`, dados);
+    await gravarCatalogoNovoExame(id, mn, desc);
+  } else await DB.mesclar(`${CAMINHOS.exames}/${id}`, dados);
+  await DB.gravar(`historicoExames/${id}/${DB.novaChave('historicoExames')}`, {
+    descricao: _dx.id ? 'Dados do exame alterados' : 'Exame cadastrado', usuario: usuarioAtual().nome, usuarioId: usuarioAtual().id, em: DB.agora()
+  });
+  ESTADO.exames[id] = { ...(ESTADO.exames[id] || {}), ...dados, ...(dados.atualizadoEm ? { atualizadoEm: Date.now() } : {}) };
+  toast(_dx.id ? 'Dados salvos' : 'Exame cadastrado');
+  abrirFicha(id);
+}
