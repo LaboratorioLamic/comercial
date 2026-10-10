@@ -211,6 +211,10 @@ td .sub-num { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
 .f-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 0 0 7px; }
 .range-row { display: flex; gap: 10px; align-items: center; }
 .range-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--cyan); }
+/* campo do percentual: largura fixa para caber "-20,5" mais as setas do navegador */
+.range-row .inp { flex: none; width: 116px; }
+.range-row .inp input { padding: 9px 4px 9px 10px; }
+.range-row .inp .suf { padding: 0 10px; }
 .form .seg { display: flex; }
 .form .seg button { flex: 1; justify-content: center; padding: 8px 6px; }
 .sim-acoes { display: flex; flex-direction: column; gap: 8px; }
@@ -352,3 +356,16 @@ a.icon-btn { text-decoration: none; }
   .anx-r { flex-wrap: wrap; }
   .anx-r .inp, .anx-r .inp:first-child { flex: 1 1 100%; }
 }
+
+/* Caixa de seleção do exame na proposta para laboratório (ao lado do mnemônico) */
+.sel-cx { display: inline-flex; vertical-align: -4px; margin-right: 8px; }
+
+/* Simulador de reajuste: valor novo editável */
+.rj-novo { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.rj-novo .price-in input { font-weight: 600; }
+.rj-desf { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 6px; }
+.rj-desf:hover { color: var(--cyan); background: var(--cyan-light); }
+
+/* Instruções: checklist só leitura na tabela (marca-se na gaveta do exame) */
+.ck-ic { font-size: 14px; color: var(--text-muted); opacity: .45; }
+.ck-ic.on { color: var(--cyan); opacity: 1; }

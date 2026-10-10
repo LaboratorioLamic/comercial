@@ -29,7 +29,11 @@ function renderExames() {
   const el = document.getElementById('s-exames');
   el.innerHTML = `
     <div class="h-row"><div><h2>Exames</h2><p>Clique em um exame para ver a composição do preço</p></div>
-      <div style="display:flex;gap:8px">${pode('exames', 'criar') ? `<button class="btn pri" onclick="abrirDadosExame()"><i class="fa-solid fa-plus"></i>Novo exame</button>` : ''}</div></div>
+      <div style="display:flex;gap:8px">${pode('exames', 'editar') ? `<button class="btn" onclick="abrirImportExames()"><i class="fa-solid fa-file-csv"></i>Importar CSV</button>` : ''}${pode('exames', 'criar') ? `<button class="btn pri" onclick="abrirDadosExame()"><i class="fa-solid fa-plus"></i>Novo exame</button>` : ''}</div></div>
+    <div class="subnav" data-grupo="exst">
+      <button data-p="ativos" class="${exF.inativos ? '' : 'on'}"><i class="fa-solid fa-play"></i>Ativos<span class="n-sub neutro" id="ex-n-ativos"></span></button>
+      <button data-p="inativos" class="${exF.inativos ? 'on' : ''}"><i class="fa-solid fa-pause"></i>Inativos<span class="n-sub neutro" id="ex-n-inativos"></span></button>
+    </div>
     <div class="card">
       <div class="toolbar">
         <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="q-ex" value="${esc(exF.q)}" placeholder="Buscar mnemônico ou descrição…" oninput="exF.q=this.value;exF.pag=1;desenharExames()"></div>
@@ -40,7 +44,9 @@ function renderExames() {
       <div class="tbl-wrap" style="margin-top:10px"><table><thead id="ex-head"></thead><tbody id="ex-body"></tbody></table></div>
       <div class="foot" id="ex-foot"></div>
     </div>`;
-  const vis = examesVisiveis().filter(e => exF.inativos || e.ativo !== false);
+  iniciarSubnav();
+  SUBNAV_GANCHO.exst = p => { exF.inativos = p === 'inativos'; exF.pag = 1; exF.status = ''; renderExames(); };
+  const vis = examesVisiveis().filter(e => exF.inativos ? e.ativo === false : e.ativo !== false);
   criarPop('pop-exsetor', {
     rotulo: 'Setor', titulo: 'Filtrar por setor', icone: 'fa-filter', busca: 'Buscar setor…', limpavel: true,
     opcoes: () => opcoesSetorPop('Todos os setores',
@@ -76,10 +82,11 @@ function desenharExames() {
   const cont = { '': todas.length };
   todas.forEach(({ c }) => { cont[c.status] = (cont[c.status] || 0) + 1; });
   const nInat = examesVisiveis().filter(e => e.ativo === false).length;
+  document.getElementById('ex-n-ativos').textContent = num(examesVisiveis().length - nInat, 0);
+  document.getElementById('ex-n-inativos').textContent = num(nInat, 0);
   document.getElementById('ex-chips').innerHTML =
     `<button class="chip ${!exF.status ? 'on' : ''}" onclick="exF.status='';exF.pag=1;desenharExames()"><i class="fa-solid fa-list"></i>Todos <b>${cont['']}</b></button>` +
-    ['r', 'a', 'g', 'x', 'p'].filter(k => cont[k] || exF.status === k).map(k => `<button class="chip ${exF.status === k ? 'on' : ''}" onclick="exF.status='${k}';exF.pag=1;desenharExames()"><span class="d" style="background:${STATUS[k].cor}"></span>${STATUS[k].nome} <b>${cont[k] || 0}</b></button>`).join('') +
-    (nInat ? `<button class="chip ${exF.inativos ? 'on' : ''}" style="margin-left:auto" onclick="exF.inativos=!exF.inativos;exF.pag=1;exF.status='';desenharExames()"><i class="fa-solid fa-eye-slash"></i>Inativos <b>${nInat}</b></button>` : '');
+    ['r', 'a', 'g', 'x', 'p'].filter(k => cont[k] || exF.status === k).map(k => `<button class="chip ${exF.status === k ? 'on' : ''}" onclick="exF.status='${k}';exF.pag=1;desenharExames()"><span class="d" style="background:${STATUS[k].cor}"></span>${STATUS[k].nome} <b>${cont[k] || 0}</b></button>`).join('');
 
   const linhas = todas.filter(({ c }) => !exF.status || c.status === exF.status);
   const val = {
@@ -91,8 +98,8 @@ function desenharExames() {
   if (exF.pag > n) exF.pag = n;
   const pagina = linhas.slice((exF.pag - 1) * EX_POR_PAG, exF.pag * EX_POR_PAG);
 
-  const th = (r, k, cls) => thOrdem(r, k, exF.ordem, exF.dir, 'ordenarExames', cls);
-  document.getElementById('ex-head').innerHTML = `<tr>${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Setor', 'setor')}${th('Custo total', 'custo', 'num')}${th('Sugerido', 'sug', 'num')}${th('Praticado', 'preco', 'num')}${th('Margem', 'margem', 'num')}<th>Status</th></tr>`;
+  const th = (r, k, cls) => thOrdem(r, k, exF.ordem, exF.dir, 'ordenarExames', cls), edita = pode('exames', 'editar');
+  document.getElementById('ex-head').innerHTML = `<tr>${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Setor', 'setor')}${th('Custo total', 'custo', 'num')}${th('Sugerido', 'sug', 'num')}${th('Praticado', 'preco', 'num')}${th('Margem', 'margem', 'num')}<th>Status</th>${edita ? '<th></th>' : ''}</tr>`;
   document.getElementById('ex-body').innerHTML = pagina.map(({ e, c }) => `
     <tr class="row" onclick="abrirFicha('${e.id}')">
       <td class="mn">${esc(e.mn)}${iconesExame(e)}</td>
@@ -102,11 +109,41 @@ function desenharExames() {
       <td class="num">${c.sugerido ? fmt(c.sugerido) : '—'}</td>
       <td class="num">${e.precoPraticado ? fmt(e.precoPraticado) : '—'}${pendenciasExame(e, c).includes('div') ? ` <i class="fa-solid fa-code-compare flag" style="color:var(--amber)" title="Sistema: ${fmt(e.precoSistema)}"></i>` : ''}</td>
       <td class="num" style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">${c.margem != null ? pct(c.margem) : '—'}</td>
-      <td>${tagStatus(c.status)}</td></tr>`).join('')
-    || `<tr><td colspan="8">${Object.keys(ESTADO.exames).length ? vazio('fa-magnifying-glass', 'Nenhum exame encontrado com esses filtros')
+      <td>${tagStatus(c.status)}</td>
+      ${edita ? `<td class="acts">${botaoAtivoExame(e)}</td>` : ''}</tr>`).join('')
+    || `<tr><td colspan="9">${Object.keys(ESTADO.exames).length ? vazio(exF.inativos ? 'fa-pause' : 'fa-magnifying-glass', exF.inativos && !nInat ? 'Nenhum exame inativo' : 'Nenhum exame encontrado com esses filtros')
       : vazio('fa-file-import', `<b>Nenhum exame cadastrado</b><br>Faça a migração da planilha em <a href="#" onclick="irPara('importar');return false">Importar / Exportar</a>.`)}</td></tr>`;
   document.getElementById('ex-foot').innerHTML = paginacao(linhas.length, exF.pag, EX_POR_PAG, 'paginaExames');
 }
 
 function paginaExames(p) { exF.pag = p; desenharExames(); document.getElementById('s-exames').scrollIntoView({ block: 'start' }); }
 function ordenarExames(k) { exF.dir = exF.ordem === k ? -exF.dir : 1; exF.ordem = k; desenharExames(); }
+
+// ── Ativar / inativar ─────────────────────────────────────────
+// Botão pause (exame ativo) ou play (exame inativo)
+const botaoAtivoExame = e => e.ativo === false
+  ? `<button class="bt-play" title="Ativar exame" onclick="event.stopPropagation();alternarAtivoExame('${e.id}')"><i class="fa-solid fa-play"></i></button>`
+  : `<button class="bt-pause" title="Inativar exame" onclick="event.stopPropagation();alternarAtivoExame('${e.id}')"><i class="fa-solid fa-pause"></i></button>`;
+
+async function alternarAtivoExame(id) {
+  const e = ESTADO.exames[id];
+  if (!e || !pode('exames', 'editar')) return;
+  const ativar = e.ativo === false;
+  const efeitos = ativar
+    ? ['Volta para a lista de exames ativos', 'Volta a aparecer nas tabelas de preço, simulador e PDFs', 'Preços e custos continuam como estavam']
+    : ['Sai da lista de exames ativos', 'Deixa de aparecer nas tabelas de preço, simulador e PDFs', 'Preços, custos e histórico ficam guardados'];
+  const ok = await confirmar({
+    titulo: ativar ? 'Ativar exame?' : 'Inativar exame?', icone: ativar ? 'fa-play' : 'fa-pause', tom: ativar ? 'play' : 'pausa', botao: ativar ? 'Ativar' : 'Inativar',
+    texto: `<span class="modal-ex"><b>${esc(e.mn)}</b><span>${esc(e.descricao || '')}</span></span>
+      <span class="modal-li">${efeitos.map(t => `<span><i class="fa-solid ${ativar ? 'fa-circle-check' : 'fa-circle-minus'}"></i>${t}</span>`).join('')}</span>
+      <small>${ativar ? 'Pode ser inativado de novo a qualquer momento.' : 'Pode ser reativado a qualquer momento na aba Inativos.'}</small>`
+  });
+  if (!ok) return;
+  const dados = { ativo: ativar, atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome };
+  await DB.mesclar(`${CAMINHOS.exames}/${id}`, dados);
+  Object.assign(e, { ...dados, atualizadoEm: Date.now() });
+  registrar('exames', `Exame ${e.mn} ${ativar ? 'ativado' : 'inativado'}`);
+  toast(`${e.mn} ${ativar ? 'ativado' : 'inativado'}`);
+  if (typeof _fxId !== 'undefined' && _fxId === id && document.getElementById('fx-rodape')) abrirFicha(id);
+  renderTela();
+}

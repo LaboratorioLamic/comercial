@@ -15,7 +15,7 @@ SUBNAV_GANCHO.simulador = p => { simAba = p; renderSimulador(); };
 
 // Arredonda para cima no múltiplo m (0 = centavos)
 const arredSim = (v, m) => v == null ? null : m ? Math.ceil(v / m - 1e-9) * m : Math.round(v * 100) / 100;
-const alvosSimulaveis = () => ['particular', ...tabelasLista().map(t => t.id), ...lista(ESTADO.laboratorios, porNome).map(l => 'lab:' + l.id)];
+const alvosSimulaveis = () => ['particular', ...tabelasLista().map(t => t.id), ...lista(ESTADO.laboratorios, porNome).map(l => 'lab:' + l.id), ...lista(ESTADO.conveniados, porNome).map(c => 'conv:' + c.id)];
 const OPCOES_ARRED = [
   { valor: '0', rotulo: 'Centavos', icone: 'fa-coins', desc: 'Sem arredondar' },
   { valor: '1', rotulo: 'R$ 1,00', icone: 'fa-coins', desc: 'Para cima, sem centavos' },
@@ -30,7 +30,7 @@ function renderSimulador() {
     <div class="h-row"><div><h2>Simulador</h2><p>Veja o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada.</p></div></div>
     <div class="subnav" data-grupo="simulador">
       <button data-p="reajuste" class="${simAba === 'reajuste' ? 'on' : ''}"><i class="fa-solid fa-arrow-trend-up"></i>Reajuste de tabela</button>
-      <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta para laboratório${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
+      <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
     </div>
     <div class="pane ${simAba === 'reajuste' ? 'on' : ''}" id="simulador-reajuste"></div>
     <div class="pane ${simAba === 'lab' ? 'on' : ''}" id="simulador-lab"></div>`;
@@ -40,7 +40,8 @@ function renderSimulador() {
 }
 
 // ═══ Reajuste de tabela ══════════════════════════════════════
-const rj = { alvo: 'particular', tipo: 'pct', p: 5, m: null, d: null, escopo: 'todos', naoReduzir: true, filtro: 'alt', q: '', pag: 1, ordem: 'var', dir: -1 };
+// man: valores digitados à mão na coluna Novo (chave do exame → preço); valem sobre a regra
+const rj = { man: {}, alvo: 'particular', tipo: 'pct', p: 5, m: null, d: null, escopo: 'todos', naoReduzir: true, filtro: 'alt', q: '', pag: 1, ordem: 'var', dir: -1 };
 
 const TIPOS_REAJUSTE = {
   pct:  { nome: 'Percentual',          icone: 'fa-percent',               desc: 'Aplica % sobre o preço atual' },
@@ -78,7 +79,7 @@ function desenharFormReajuste() {
   const cria = pode('simulador', 'criar');
   const param = rj.tipo === 'pct' ? `<span class="f-label">Percentual</span>
       <div class="range-row"><input type="range" min="-20" max="50" step="0.5" value="${rj.p}" oninput="rj.p=+this.value;document.getElementById('rj-p').value=this.value;recalcReajuste()">
-        <div class="inp" style="width:90px"><input id="rj-p" type="number" step="0.5" value="${rj.p}" oninput="rj.p=parseFloat(this.value)||0;this.closest('.range-row').querySelector('input[type=range]').value=rj.p;recalcReajuste()"><span class="suf">%</span></div></div>
+        <div class="inp"><input id="rj-p" type="number" step="0.5" value="${rj.p}" oninput="rj.p=parseFloat(this.value)||0;this.closest('.range-row').querySelector('input[type=range]').value=rj.p;recalcReajuste()"><span class="suf">%</span></div></div>
       <span class="hint">Negativo reduz o preço</span>`
     : rj.tipo === 'marg' ? `<span class="f-label">Margem desejada</span>
       <div class="inp" style="width:130px"><input type="number" step="0.5" value="${rj.m}" oninput="rj.m=parseFloat(this.value)||0;recalcReajuste()"><span class="suf">%</span></div>
@@ -108,9 +109,9 @@ function desenharFormReajuste() {
     rotulo: 'Tabela', titulo: 'Tabela a simular', icone: 'fa-table-list', padrao: 'particular', busca: 'Buscar tabela…',
     opcoes: () => alvosSimulaveis().map(a => {
       const c = ctxAlvo(a);
-      return { valor: a, rotulo: c.nome, icone: c.icone, cor: c.cor, grupo: c.lab ? 'Laboratórios apoiados' : 'Tabelas', desc: c.base ? 'Preço praticado' : `piso ${pct(c.piso, 0)}` };
+      return { valor: a, rotulo: c.nome, icone: c.icone, cor: c.cor, grupo: c.conv ? 'Conveniados' : c.lab ? 'Laboratórios apoiados' : 'Tabelas', desc: c.base ? 'Preço praticado' : `piso ${pct(c.piso, 0)}` };
     }),
-    aoMudar: a => { rj.alvo = a; rj.m = null; rj.d = null; rj.pag = 1; desenharFormReajuste(); }
+    aoMudar: a => { rj.alvo = a; rj.man = {}; rj.m = null; rj.d = null; rj.pag = 1; desenharFormReajuste(); }
   });
   criarPop('pop-rjsetor', {
     rotulo: 'Setor', titulo: 'Escopo do reajuste', icone: 'fa-bullseye', busca: 'Buscar setor…', limpavel: true,
@@ -152,7 +153,8 @@ function calcularReajuste() {
       const c = calcular(e, atual, cx.tab);
       if (rj.escopo === 'abaixo' && c.status !== 'r') return null;
       const x = { e, k: e.id, atual, c, ref: cx.ref?.valor(e.id) ?? null };
-      const v = novoPrecoReajuste(cx, x);
+      x.man = e.id in rj.man;
+      const v = x.man ? (Math.abs(rj.man[e.id] - atual) < 0.005 ? undefined : rj.man[e.id]) : novoPrecoReajuste(cx, x);
       x.alt = v !== undefined;
       x.novo = x.alt ? v : atual;
       x.c1 = x.alt ? calcular(e, x.novo, cx.tab) : c;
@@ -184,6 +186,7 @@ function recalcReajuste() {
 
 const FILTROS_RJ = {
   alt:   { nome: 'Alterados',       f: x => x.alt, icone: 'fa-pen' },
+  man:   { nome: 'Manuais',         f: x => x.man, icone: 'fa-keyboard' },
   todos: { nome: 'Todos no escopo', f: () => true, icone: 'fa-list' },
   r:     { nome: 'Abaixo depois',   f: x => x.c1.status === 'r', cor: 'var(--red)' },
   saem:  { nome: 'Saem do vermelho', f: x => x.c.status === 'r' && x.c1.status !== 'r', cor: 'var(--green)' }
@@ -204,14 +207,15 @@ function desenharResultadoReajuste() {
   ls.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * rj.dir; });
   const n = Math.max(1, Math.ceil(ls.length / SIM_POR_PAG));
   if (rj.pag > n) rj.pag = n;
-  const th = (r, k, cls) => thOrdem(r, k, rj.ordem, rj.dir, 'ordenarReajuste', cls);
+  const th = (r, k, cls) => thOrdem(r, k, rj.ordem, rj.dir, 'ordenarReajuste', cls), edita = pode('simulador', 'criar');
   document.getElementById('rj-head').innerHTML = `<tr>${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Custo total', 'custo', 'num')}${th('Atual', 'atual', 'num')}${th('Novo', 'novo', 'num')}${th('Variação', 'var', 'num')}${th('Margem atual', 'm0', 'num')}${th('Nova margem', 'm1', 'num')}<th>Situação</th></tr>`;
   body.innerHTML = ls.slice((rj.pag - 1) * SIM_POR_PAG, rj.pag * SIM_POR_PAG).map(x => `<tr class="${x.alt ? '' : 'fora'}">
       <td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha('${esc(x.k)}');return false">${esc(x.e.mn)}</a></td>
       <td class="desc" title="${esc(x.e.descricao)}">${esc(x.e.descricao)}</td>
       <td class="num">${celulaCusto(x.c)}</td>
       <td class="num muted">${fmt(x.atual)}</td>
-      <td class="num"><b>${fmt(x.novo)}</b></td>
+      <td class="num">${edita ? `<div class="rj-novo"><div class="price-in ${x.man ? 'on' : ''}" title="${x.man ? 'Valor digitado à mão: a regra não mexe nele' : 'Digite para definir o valor à mão'}"><span>R$</span><input type="number" step="0.01" min="0" data-k="${esc(x.k)}" value="${x.novo.toFixed(2)}" onchange="editarNovoReajuste(this)" onkeydown="teclaReajuste(event)" onfocus="this.select()"></div>${
+        x.man ? `<button class="rj-desf" title="Voltar ao valor da regra" onclick="desfazerNovoReajuste('${esc(x.k)}')"><i class="fa-solid fa-rotate-left"></i></button>` : ''}</div>` : `<b>${fmt(x.novo)}</b>`}</td>
       <td class="num ${x.var > 0.0001 ? 'delta-dn' : x.var < -0.0001 ? 'delta-up' : 'muted'}">${x.alt ? `${x.var > 0 ? '+' : ''}${pct(x.var)}` : '—'}</td>
       <td class="num" style="color:${x.c.status === 'r' ? 'var(--red)' : 'inherit'}">${x.c.margem != null ? pct(x.c.margem) : '—'}</td>
       <td class="num" style="color:${x.c1.status === 'r' ? 'var(--red)' : 'inherit'}"><b>${x.c1.margem != null ? pct(x.c1.margem) : '—'}</b></td>
@@ -220,13 +224,29 @@ function desenharResultadoReajuste() {
   document.getElementById('rj-foot').innerHTML = paginacao(ls.length, rj.pag, SIM_POR_PAG, 'paginaReajuste');
 }
 const situacaoSim = (cx, c) => cx.base || c.status === 'x' ? tagStatus(c.status) : c.status === 'r' ? tagSt('r', 'fa-circle-xmark', 'Abaixo do piso') : tagSt('g', 'fa-circle-check', 'OK');
+
+// Valor novo digitado à mão: vale sobre a regra (sem arredondar nem "não reduzir"); vazio volta à regra
+function editarNovoReajuste(inp) {
+  const k = inp.dataset.k, txt = inp.value.trim(), v = txt === '' ? null : Math.round(parseFloat(txt) * 100) / 100;
+  if (v == null || isNaN(v) || v <= 0) delete rj.man[k];
+  else rj.man[k] = v;
+  recalcReajuste();
+}
+function desfazerNovoReajuste(k) { delete rj.man[k]; recalcReajuste(); }
+// Enter / ↑ ↓ confirmam o valor e passam para o preço vizinho
+function teclaReajuste(ev) {
+  if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(ev.key)) return;
+  ev.preventDefault();
+  const ins = [...document.querySelectorAll('#rj-body input')], i = ins.indexOf(ev.target), k = ins[ev.key === 'ArrowUp' ? i - 1 : i + 1]?.dataset.k;
+  editarNovoReajuste(ev.target);      // redesenha a tabela
+  if (k != null) [...document.querySelectorAll('#rj-body input')].find(x => x.dataset.k === k)?.focus();
+}
 function paginaReajuste(p) { rj.pag = p; desenharResultadoReajuste(); }
 function ordenarReajuste(k) { rj.dir = rj.ordem === k ? -rj.dir : (k === 'var' ? -1 : 1); rj.ordem = k; desenharResultadoReajuste(); }
 
 // Vai para a grade da tabela (filtro "No rascunho")
 function irParaGrade(alvo) {
-  if (ehLab(alvo)) { tabAba = 'labs'; labSel = alvo.slice(4); }
-  else { tabAba = 'tabelas'; tabSel = alvo; }
+  focarAlvo(alvo);
   grade.alvo = null; grade.proxFiltro = 'ed';
   irPara('tabelas');
 }
@@ -250,7 +270,8 @@ async function levarAoRascunho(alvo, valores, origem) {
 async function levarReajuste(enviar) {
   const alt = _rjLinhas.filter(x => x.alt);
   if (!alt.length) return toast('Nenhum preço muda com essa regra', 'erro');
-  const T = TIPOS_REAJUSTE[rj.tipo], origem = rj.tipo === 'pct' ? `${rj.p > 0 ? '+' : ''}${num(rj.p, 1)}%` : rj.tipo === 'marg' ? `margem ${num(rj.m, 1)}%` : rj.tipo === 'desc' ? `desconto ${num(rj.d, 1)}%` : T.nome.toLowerCase();
+  const nMan = alt.filter(x => x.man).length;
+  const T = TIPOS_REAJUSTE[rj.tipo], origem = (nMan ? `${nMan} valor(es) manual(is) + ` : '') + (rj.tipo === 'pct' ? `${rj.p > 0 ? '+' : ''}${num(rj.p, 1)}%` : rj.tipo === 'marg' ? `margem ${num(rj.m, 1)}%` : rj.tipo === 'desc' ? `desconto ${num(rj.d, 1)}%` : T.nome.toLowerCase());
   const ok = await levarAoRascunho(rj.alvo, Object.fromEntries(alt.map(x => [x.k, x.novo])), origem);
   if (!ok) return;
   irParaGrade(rj.alvo);
@@ -259,8 +280,9 @@ async function levarReajuste(enviar) {
 }
 
 // ═══ Proposta para laboratório (01.LAB) ═══════════════════════
-const pl = { id: null, nome: '', labId: '', tabelaId: null, base: 'tab', d: 10, itens: {}, pdf: null, filtro: 'tab', prazo: 0, q: '', pag: 1, ordem: 'mn', dir: 1, sujo: false };
-const PRAZOS_LAB = [[0, 'Todos'], [1, '24h'], [2, '48h'], [4, '96h'], [5, '5 dias'], [30, '30 dias']];
+const pl = { id: null, nome: '', labId: '', tabelaId: null, base: 'tab', d: 10, itens: {}, pdf: null, filtro: 'tab', q: '', pag: 1, ordem: 'mn', dir: 1, sujo: false };
+// Exame está na proposta quando foi marcado (s) ou tem volume (propostas antigas só tinham volume)
+const selLab = it => !!it && (it.s === true || it.v > 0);
 
 // dias do cadastro (0 = 24 horas); texto antigo: "24 H" → 0 · "48h" → 2 · "4 Dias" → 4 · "N/A" → null
 function diasPrazo(k) {
@@ -273,6 +295,8 @@ function diasPrazo(k) {
   m = t.match(/(\d+)\s*d/i);
   return m ? +m[1] : null;
 }
+// Nos PDFs o prazo sai em dias úteis ("2 dias" → "2 dias úteis", "1 dia" → "1 dia útil")
+const textoPrazoPdf = k => textoPrazo(k).replace(/\bdias\b(?!\s+[uú]teis)/i, 'dias úteis').replace(/\bdia\b(?!\s+[uú]til)/i, 'dia útil');
 const textoPrazo = k => { const c = ESTADO.catalogo?.[k], e = ESTADO.exames[k]; return prazoTexto(c?.prazoDias ?? e?.prazoDias) || c?.prazo || e?.prazo || ''; };
 
 // Contexto: tabela de referência (perfil de custo, piso) e laboratório vinculado
@@ -298,14 +322,14 @@ function linhaLab(cl, e) {
   const k = e.id, it = pl.itens[k] || {}, ref = cl.ref(k), padrao = precoPadraoLab(cl, e, ref);
   const preco = it.p ?? padrao, vol = it.v || 0, c = calcular(e, preco, cl.tab);
   const lucro = c.lucro != null ? c.lucro * vol : null;
-  return { e, k, ref, padrao, preco, man: it.p != null, vol, c, receita: preco != null ? preco * vol : 0, lucro, prazo: diasPrazo(k), desc: ref && preco != null ? 1 - preco / ref : null };
+  return { e, k, ref, padrao, preco, man: it.p != null, sel: selLab(it), vol, c, receita: preco != null ? preco * vol : 0, lucro, prazo: diasPrazo(k), desc: ref && preco != null ? 1 - preco / ref : null };
 }
 
 function resumoLab(cl) {
   const s = { n: 0, vol: 0, receita: 0, lucro: 0, semCusto: 0, ab: 0, refT: 0, recC: 0 };
   Object.entries(pl.itens).forEach(([k, it]) => {
     const e = ESTADO.exames[k];
-    if (!e || !(it.v > 0)) return;
+    if (!e || !selLab(it)) return;
     const x = linhaLab(cl, { ...e, id: k });
     if (x.preco == null) return;
     s.n++; s.vol += x.vol; s.receita += x.receita;
@@ -333,6 +357,7 @@ function desenharSimLab() {
           <button class="btn sm" onclick="exportarSimLab()"><i class="fa-solid fa-file-csv"></i>Exportar</button>
           <button class="btn sm" onclick="abrirPdfLab()" title="Proposta em PDF com texto de apresentação"><i class="fa-solid fa-file-pdf"></i>PDF</button>
           <button class="btn sm" onclick="abrirModeloPdf()" title="Texto padrão do PDF, vale para todas as propostas"><i class="fa-solid fa-file-signature"></i>Texto padrão</button>
+          ${sv && pode('tabelas', 'criar') ? `<button class="btn sm" onclick="abrirConverterLab()" title="Proposta salva vira tabela de preço ou laboratório apoiado"><i class="fa-solid fa-right-left"></i>Converter</button>` : ''}
           ${sv && (usuarioAtual().admin || sv.autorId === usuarioAtual().id || pode('simulador', 'aprovar')) ? `<button class="btn sm perigo-txt" onclick="excluirSimLab()" title="Excluir simulação"><i class="fa-solid fa-trash"></i></button>` : ''}
           ${cria ? `<button class="btn sm pri" onclick="salvarSimLab()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>` : ''}</div></div>
       <div class="fgrid pl-dados">
@@ -346,7 +371,6 @@ function desenharSimLab() {
       <div class="toolbar">
         <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="pl-q" value="${esc(pl.q)}" placeholder="Buscar exame…" oninput="pl.q=this.value;pl.pag=1;desenharTabelaLab()"></div>
         <div id="pop-plsetor"></div>
-        <div class="seg" title="Prazo de liberação máximo">${PRAZOS_LAB.map(([d, r]) => `<button class="${pl.prazo === d ? 'on' : ''}" onclick="pl.prazo=${d};pl.pag=1;desenharSimLab()">${d ? '<i class="fa-solid fa-clock"></i>' : ''}${d ? 'até ' : ''}${r}</button>`).join('')}</div>
         <span class="hint"><i class="fa-solid fa-keyboard"></i> Enter / ↑ ↓ navegam</span>
       </div>
       <div class="chips" id="pl-chips"></div>
@@ -393,7 +417,7 @@ function desenharSimLab() {
 
 const FILTROS_PL = {
   tab:   { nome: 'Na tabela',     f: (x, cl) => x.ref != null, icone: 'fa-table-list' },
-  vol:   { nome: 'Na proposta',   f: x => x.vol > 0, icone: 'fa-cart-shopping' },
+  vol:   { nome: 'Na proposta',   f: x => x.sel, icone: 'fa-cart-shopping' },
   todos: { nome: 'Todos',         f: () => true, icone: 'fa-list' },
   man:   { nome: 'Preço digitado', f: x => x.man, cor: 'var(--cyan)' },
   r:     { nome: 'Abaixo do piso', f: x => x.c.status === 'r', cor: 'var(--red)' },
@@ -408,8 +432,7 @@ function desenharTabelaLab() {
   const base = examesVisiveis().filter(e => e.ativo !== false)
     .filter(e => !fs || e.setorId === fs)
     .filter(e => contem(e.mn + ' ' + e.descricao, pl.q))
-    .map(e => linhaLab(cl, e))
-    .filter(x => !pl.prazo || (x.prazo != null && x.prazo <= pl.prazo));
+    .map(e => linhaLab(cl, e));
   document.getElementById('pl-chips').innerHTML = Object.entries(FILTROS_PL).map(([k, F]) => {
     const n = base.filter(x => F.f(x, cl)).length;
     if (!n && k !== pl.filtro && !['tab', 'vol', 'todos'].includes(k)) return '';
@@ -423,19 +446,20 @@ function desenharTabelaLab() {
   const n = Math.max(1, Math.ceil(ls.length / SIM_POR_PAG));
   if (pl.pag > n) pl.pag = n;
   const th = (r, k, cls) => thOrdem(r, k, pl.ordem, pl.dir, 'ordenarLab', cls);
-  document.getElementById('pl-head').innerHTML = `<tr>${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Prazo', 'prazo', 'col-opt')}${th('Custo total', 'custo', 'num')}${th(esc(cl.refNome), 'ref', 'num')}
+  const marcaveis = ls.filter(x => x.preco != null), todosSel = marcaveis.length > 0 && marcaveis.every(x => x.sel);
+  document.getElementById('pl-head').innerHTML = `<tr>${th(`<button class="cb sel-cx ${todosSel ? 'on' : ''}" onclick="event.stopPropagation();selecaoLoteLab('${todosSel ? 'nenhum' : 'todos'}')" title="${todosSel ? 'Desmarcar' : 'Selecionar'} todos os filtrados"><i class="fa-solid fa-check"></i></button>MN`, 'mn')}${th('Descrição', 'desc')}${th('Prazo', 'prazo', 'col-opt')}${th('Custo total', 'custo', 'num')}${th(esc(cl.refNome), 'ref', 'num')}
     ${th('Proposta', 'preco', 'num')}<th class="num col-opt">Desc.</th>${th('Margem', 'margem', 'num')}${th('Volume/mês', 'vol', 'num')}${th('Receita/mês', 'receita', 'num')}<th>Situação</th></tr>`;
   body.innerHTML = ls.slice((pl.pag - 1) * SIM_POR_PAG, pl.pag * SIM_POR_PAG).map(x => htmlLinhaLab(cl, x)).join('')
-    || `<tr><td colspan="11">${vazio('fa-magnifying-glass', pl.filtro === 'vol' ? 'Nenhum exame na proposta ainda: informe o volume mensal dos exames.' : 'Nenhum exame com esses filtros')}</td></tr>`;
+    || `<tr><td colspan="11">${vazio('fa-magnifying-glass', pl.filtro === 'vol' ? 'Nenhum exame na proposta ainda: marque o mnemônico ou informe o volume mensal.' : 'Nenhum exame com esses filtros')}</td></tr>`;
   document.getElementById('pl-foot').innerHTML = paginacao(ls.length, pl.pag, SIM_POR_PAG, 'paginaLab');
   desenharBulkLab(ls.length);
   desenharImpactoLab();
 }
 
 function htmlLinhaLab(cl, x) {
-  const { e, k, ref, preco, man, vol, c, desc } = x;
-  return `<tr data-k="${esc(k)}" class="${vol > 0 ? 'ed' : ''}">
-    <td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha(this.closest('tr').dataset.k);return false">${esc(e.mn)}</a></td>
+  const { e, k, ref, preco, man, sel, vol, c, desc } = x;
+  return `<tr data-k="${esc(k)}" class="${sel ? 'ed' : ''}">
+    <td class="mn"><button class="cb sel-cx ${sel ? 'on' : ''}" ${preco == null ? 'disabled' : ''} onclick="alternarSelLab(this)" title="${sel ? 'Tirar da' : 'Incluir na'} proposta"><i class="fa-solid fa-check"></i></button><a href="#" class="lk-mn" onclick="abrirFicha(this.closest('tr').dataset.k);return false">${esc(e.mn)}</a></td>
     <td class="desc" title="${esc(e.descricao)}">${esc(e.descricao)}</td>
     <td class="nw muted col-opt">${esc(textoPrazo(k)) || '—'}</td>
     <td class="num">${celulaCusto(c)}</td>
@@ -456,7 +480,7 @@ function editarLab(inp) {
   const txt = inp.value.trim(), v = txt === '' ? null : parseFloat(txt);
   if (v != null && (isNaN(v) || v < 0)) return;
   const it = pl.itens[k] ??= {};
-  if (inp.dataset.c === 'v') { if (v > 0) it.v = Math.round(v); else delete it.v; }
+  if (inp.dataset.c === 'v') { if (v > 0) { it.v = Math.round(v); it.s = true; } else delete it.v; }
   else {
     const padrao = precoPadraoLab(cl, { ...e, id: k }, cl.ref(k));
     if (v == null || (padrao != null && Math.abs(v - padrao) < 0.005)) delete it.p; else it.p = Math.round(v * 100) / 100;
@@ -474,6 +498,30 @@ function editarLab(inp) {
     else td.innerHTML = nova.children[i].innerHTML;
   });
   desenharImpactoLab();
+}
+
+// Marca/desmarca o exame na proposta; desmarcar também zera o volume
+function alternarSelLab(bt) {
+  const k = bt.closest('tr').dataset.k, it = pl.itens[k] ??= {};
+  if (selLab(it)) { delete it.s; delete it.v; } else it.s = true;
+  if (!Object.keys(it).length) delete pl.itens[k];
+  pl.sujo = true;
+  desenharTabelaLab();
+}
+
+// Seleção em lote nos exames filtrados com preço: 'todos', 'nenhum' ou 'inverter'
+function selecaoLoteLab(modo) {
+  let n = 0;
+  _plLinhas.forEach(x => {
+    if (x.preco == null) return;
+    const it = pl.itens[x.k] ??= {}, marcar = modo === 'todos' || (modo === 'inverter' && !selLab(it));
+    if (marcar) it.s = true; else { delete it.s; delete it.v; }
+    if (!Object.keys(it).length) delete pl.itens[x.k];
+    if (marcar) n++;
+  });
+  pl.sujo = true;
+  desenharTabelaLab();
+  toast(modo === 'nenhum' ? 'Filtrados desmarcados' : `${n} exame(s) selecionado(s)`);
 }
 
 let _plChipsTimer = null;
@@ -503,14 +551,19 @@ function desenharImpactoLab() {
 function desenharBulkLab(nFilt) {
   const el = document.getElementById('pl-bulk');
   if (!el) return;
-  const nVol = Object.values(pl.itens).filter(i => i.v > 0).length, nMan = Object.values(pl.itens).filter(i => i.p != null).length;
+  const nSel = Object.values(pl.itens).filter(selLab).length, nVol = Object.values(pl.itens).filter(i => i.v > 0).length, nMan = Object.values(pl.itens).filter(i => i.p != null).length;
   const l = ESTADO.laboratorios[pl.labId];
   el.innerHTML = `<b>${num(nFilt, 0)} filtrado(s)</b>
+    ${_plLinhas.some(x => x.preco != null) && _plLinhas.every(x => x.preco == null || x.sel)
+      ? `<button class="btn sm" onclick="selecaoLoteLab('nenhum')" title="Desmarca todos os exames filtrados"><i class="fa-solid fa-xmark"></i>Deselecionar todos</button>`
+      : `<button class="btn sm" onclick="selecaoLoteLab('todos')" title="Marca todos os exames filtrados com preço"><i class="fa-solid fa-check-double"></i>Selecionar todos</button>`}
+    <button class="btn sm" onclick="selecaoLoteLab('inverter')" title="Marcados saem, desmarcados entram (só nos filtrados)"><i class="fa-solid fa-arrows-rotate"></i>Inverter seleção</button>
+    ${nSel ? `<span class="tag"><i class="fa-solid fa-cart-shopping"></i>${num(nSel, 0)} na proposta</span>` : ''}
     <div class="inp" style="width:110px"><input id="pl-vlote" type="number" step="1" min="0" placeholder="Volume"><span class="suf">/mês</span></div>
     <button class="btn sm" onclick="volumeLoteLab()" title="Aplica o volume a todos os exames filtrados com preço"><i class="fa-solid fa-cart-plus"></i>Volume nos filtrados</button>
     ${nVol ? `<button class="btn sm" onclick="limparLab('v')"><i class="fa-solid fa-eraser"></i>Zerar volumes</button>` : ''}
     ${nMan ? `<button class="btn sm" onclick="limparLab('p')"><i class="fa-solid fa-rotate-left"></i>Desfazer ${nMan} preço(s) digitado(s)</button>` : ''}
-    ${pode('simulador', 'criar') ? `<button class="btn sm" style="margin-left:auto" ${l && nVol ? '' : 'disabled'} onclick="levarSimLab()" title="${l ? `Preços dos exames da proposta viram rascunho de ${esc(l.nome)}` : 'Escolha um laboratório cadastrado'}"><i class="fa-solid fa-pen"></i>Levar ao rascunho${l ? ` de ${esc(l.nome)}` : ' do laboratório'}</button>` : ''}`;
+    ${pode('simulador', 'criar') ? `<button class="btn sm" style="margin-left:auto" ${l && nSel ? '' : 'disabled'} onclick="levarSimLab()" title="${l ? `Preços dos exames da proposta viram rascunho de ${esc(l.nome)}` : 'Escolha um laboratório cadastrado'}"><i class="fa-solid fa-pen"></i>Levar ao rascunho${l ? ` de ${esc(l.nome)}` : ' do laboratório'}</button>` : ''}`;
 }
 
 function volumeLoteLab() {
@@ -520,7 +573,7 @@ function volumeLoteLab() {
   _plLinhas.forEach(x => {
     if (x.preco == null) return;
     const it = pl.itens[x.k] ??= {};
-    if (v > 0) it.v = v; else delete it.v;
+    if (v > 0) { it.v = v; it.s = true; } else delete it.v;
     if (!Object.keys(it).length) delete pl.itens[x.k];
     n++;
   });
@@ -530,7 +583,7 @@ function volumeLoteLab() {
 }
 
 async function limparLab(c) {
-  const ok = await confirmar({ titulo: c === 'v' ? 'Zerar volumes?' : 'Desfazer preços digitados?', texto: c === 'v' ? 'Todos os exames saem da proposta.' : 'Os exames voltam ao preço inicial escolhido.', botao: c === 'v' ? 'Zerar' : 'Desfazer', perigo: true });
+  const ok = await confirmar({ titulo: c === 'v' ? 'Zerar volumes?' : 'Desfazer preços digitados?', texto: c === 'v' ? 'Os exames continuam selecionados, sem volume.' : 'Os exames voltam ao preço inicial escolhido.', botao: c === 'v' ? 'Zerar' : 'Desfazer', perigo: true });
   if (!ok) return;
   Object.keys(pl.itens).forEach(k => { delete pl.itens[k][c]; if (!Object.keys(pl.itens[k]).length) delete pl.itens[k]; });
   pl.sujo = true;
@@ -560,7 +613,7 @@ async function salvarSimLab() {
   const cl = ctxLabSim(), r = resumoLab(cl), u = usuarioAtual();
   pl.nome = (valorCampo('pl-nome') || pl.nome).trim();
   if (!pl.nome) { document.getElementById('pl-nome')?.focus(); return toast('Dê um nome à proposta', 'erro'); }
-  if (!Object.keys(pl.itens).length) return toast('Nada para salvar: informe volumes ou preços', 'erro');
+  if (!Object.keys(pl.itens).length) return toast('Nada para salvar: selecione exames, informe volumes ou preços', 'erro');
   const id = pl.id || DB.novaChave('simulacoes'), antes = ESTADO.simulacoes[id];
   const dados = { tipo: 'lab', nome: pl.nome, labId: pl.labId || null, tabelaId: pl.tabelaId || '', base: pl.base, d: pl.d, itens: pl.itens, pdf: pdfParaSalvar(pl.pdf),
     resumo: { n: r.n, vol: r.vol, receita: Math.round(r.receita * 100) / 100, margem: r.margem, viavel: r.viavel },
@@ -568,7 +621,7 @@ async function salvarSimLab() {
   await DB.gravar(`${CAMINHOS.simulacoes}/${id}`, dados);
   ESTADO.simulacoes[id] = { ...dados, em: antes?.em || Date.now(), atualizadoEm: Date.now() };
   pl.id = id; pl.sujo = false;
-  registrar('simulador', `Proposta para laboratório "${pl.nome}" salva (${r.n} exames, ${fmt(r.receita)}/mês)`);
+  registrar('simulador', `Proposta "${pl.nome}" salva (${r.n} exames, ${fmt(r.receita)}/mês)`);
   desenharSimLab();
   toast('Simulação salva');
 }
@@ -585,7 +638,7 @@ async function excluirSimLab() {
 // ── Exportar e levar ao laboratório ───────────────────────────
 function exportarSimLab() {
   const cl = ctxLabSim();
-  let ls = Object.keys(pl.itens).filter(k => ESTADO.exames[k] && pl.itens[k].v > 0).map(k => linhaLab(cl, { ...ESTADO.exames[k], id: k }));
+  let ls = Object.keys(pl.itens).filter(k => ESTADO.exames[k] && selLab(pl.itens[k])).map(k => linhaLab(cl, { ...ESTADO.exames[k], id: k }));
   if (!ls.length) ls = _plLinhas.filter(x => x.preco != null);
   if (!ls.length) return toast('Nenhum exame para exportar', 'erro');
   ls.sort((a, b) => a.e.mn.localeCompare(b.e.mn, 'pt-BR', { sensitivity: 'base' }));
@@ -602,13 +655,125 @@ async function levarSimLab() {
   const valores = {};
   Object.entries(pl.itens).forEach(([k, it]) => {
     const e = ESTADO.exames[k];
-    if (!e || !(it.v > 0)) return;
+    if (!e || !selLab(it)) return;
     const x = linhaLab(cl, { ...e, id: k });
     if (x.preco != null) valores[k] = x.preco;
   });
-  if (!Object.keys(valores).length) return toast('Nenhum exame com volume e preço', 'erro');
+  if (!Object.keys(valores).length) return toast('Nenhum exame selecionado com preço', 'erro');
   const ok = await levarAoRascunho('lab:' + pl.labId, valores, `proposta "${pl.nome || 'sem nome'}"`);
   if (!ok) return;
   irParaGrade('lab:' + pl.labId);
   toast(`${Object.keys(valores).length} valor(es) no rascunho de ${l.nome}`);
+}
+
+// ── Converter a proposta salva em tabela ou laboratório apoiado ──
+let _plConv = null;
+// Preços dos exames selecionados na proposta
+function precosSelLab() {
+  const cl = ctxLabSim(), v = {};
+  Object.entries(pl.itens).forEach(([k, it]) => {
+    const e = ESTADO.exames[k];
+    if (!e || !selLab(it)) return;
+    const x = linhaLab(cl, { ...e, id: k });
+    if (x.preco != null) v[k] = x.preco;
+  });
+  return v;
+}
+
+function abrirConverterLab() {
+  if (!pl.id || pl.sujo) return toast('Salve a proposta antes de converter', 'erro');
+  if (!Object.keys(precosSelLab()).length) return toast('Selecione os exames da proposta', 'erro');
+  const tLab = ESTADO.tabelas[pl.tabelaId]?.tipo === 'lab' ? pl.tabelaId : tabelaLabPadrao()?.id || '';
+  _plConv = { modo: 'lab', nome: pl.nome, tipo: 'lab', completa: false, tabelaId: tLab };
+  abrirGaveta({
+    sobre: 'Converter proposta', titulo: pl.nome,
+    corpo: '<div id="pl-conv"></div>',
+    rodape: `<span style="margin-right:auto"></span><button class="btn" onclick="fecharGaveta()">Cancelar</button>
+      <button class="btn pri" id="pl-conv-ok" onclick="converterLab()"><i class="fa-solid fa-right-left"></i>Converter</button>`
+  });
+  desenharConverterLab();
+}
+
+// Valores que entram: tabela nova leva os selecionados (e, se pedido, o resto da referência);
+// laboratório leva só o que difere da tabela base
+function valoresConverterLab() {
+  const c = _plConv, sel = precosSelLab();
+  if (c.modo === 'tabela') {
+    if (!c.completa) return sel;
+    const cl = ctxLabSim(), todos = {};
+    examesVisiveis().filter(e => e.ativo !== false).forEach(e => { const v = cl.ref(e.id); if (v != null) todos[e.id] = v; });
+    return { ...todos, ...sel };
+  }
+  const base = ESTADO.tabelas[c.tabelaId]?.precos || {};
+  return Object.fromEntries(Object.entries(sel).filter(([k, v]) => base[k] == null || Math.abs(base[k] - v) >= 0.005));
+}
+
+function desenharConverterLab() {
+  const el = document.getElementById('pl-conv'), c = _plConv;
+  if (!el) return;
+  const cl = ctxLabSim(), nSel = Object.keys(precosSelLab()).length, n = Object.keys(valoresConverterLab()).length, direto = pode('tabelas', 'aprovar');
+  const oc = (v, t, d, ic) => `<button type="button" class="oc ${c.modo === v ? 'on' : ''}" onclick="_plConv.modo='${v}';desenharConverterLab()"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${t}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`;
+  el.innerHTML = `<div class="form-col">
+    <div class="sec-t"><i class="fa-solid fa-right-left"></i>A proposta vira</div>
+    ${oc('lab', 'Laboratório apoiado', 'cadastro novo, com tabela base e valores diferenciados', 'fa-building-user')}
+    ${oc('tabela', 'Nova tabela de preço', 'os preços da proposta viram uma tabela', 'fa-table-list')}
+    ${campo('pl-conv-nome', c.modo === 'lab' ? 'Nome do laboratório' : 'Nome da tabela', c.nome, { tipo: 'text', aoMudar: '_plConv.nome=this.value' })}
+    ${c.modo === 'lab' ? `<div class="field"><label>Tabela base</label><div id="pop-plconvtab" class="block"></div><span class="hint">Exame sem valor diferenciado usa o preço dela</span></div>`
+      : `<div class="field"><label>Tipo</label><div id="pop-plconvtipo" class="block"></div><span class="hint">Piso de margem e perfil de custo copiados de ${esc(cl.refNome)}</span></div>
+        <div class="casc"><div class="casc-r"><div class="lft"><i class="fa-solid fa-table-list"></i><div>Incluir tabela base<div class="s">demais exames entram com o valor de ${esc(cl.refNome)}</div></div></div>${chave(c.completa, '_plConv.completa=!_plConv.completa;desenharConverterLab()')}</div></div>`}
+    <div class="alert x" style="margin:0"><i class="fa-solid fa-circle-info"></i><div>${c.modo === 'lab'
+      ? `<b>${num(n, 0)}</b> valor(es) diferenciado(s) de ${num(nSel, 0)} exame(s) selecionado(s); os iguais à tabela base não são gravados.`
+      : `<b>${num(n, 0)}</b> preço(s) na nova tabela.`} ${direto ? 'Os preços já ficam publicados.' : 'Os preços vão para o seu rascunho e dependem de aprovação.'}</div></div>
+  </div>`;
+  if (c.modo === 'lab') {
+    const tabs = tabelasLista().filter(t => t.tipo === 'lab');
+    criarPop('pop-plconvtab', {
+      rotulo: 'Tabela', titulo: 'Tabela base', icone: 'fa-table-list', padrao: '',
+      opcoes: () => tabs.length ? tabs.map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, desc: `piso ${pct(t.piso ?? parametro('margemMinima'), 0)} · ${resumoPerfil(t)}` })) : [{ valor: '', rotulo: 'Nenhuma tabela de laboratórios', icone: 'fa-ban', cor: 'var(--gray)' }],
+      aoMudar: v => { _plConv.tabelaId = v; desenharConverterLab(); }
+    });
+    POPS['pop-plconvtab'].valor = c.tabelaId; desenharBotaoPop('pop-plconvtab');
+  } else {
+    criarPop('pop-plconvtipo', {
+      rotulo: 'Tipo', titulo: 'Tipo da tabela', icone: 'fa-tags', padrao: 'lab',
+      opcoes: () => Object.entries(TIPOS_TABELA).map(([k, t]) => ({ valor: k, rotulo: t.nome, icone: t.icone, desc: t.desc })),
+      aoMudar: v => { _plConv.tipo = v; }
+    });
+    POPS['pop-plconvtipo'].valor = c.tipo; desenharBotaoPop('pop-plconvtipo');
+  }
+}
+
+async function converterLab() {
+  const c = _plConv, nome = (c.nome || '').trim(), valores = valoresConverterLab(), n = Object.keys(valores).length;
+  const direto = pode('tabelas', 'aprovar'), cl = ctxLabSim(), agora = DB.agora();
+  if (!nome) return toast('Informe o nome', 'erro');
+  let id, alvo;
+  if (c.modo === 'lab') {
+    if (!c.tabelaId) return toast('Escolha a tabela base', 'erro');
+    const rep = lista(ESTADO.laboratorios).find(l => normalizar(l.nome) === normalizar(nome));
+    if (rep) return toast(`Já existe o laboratório ${rep.nome}`, 'erro');
+    id = DB.novaChave(CAMINHOS.laboratorios); alvo = 'lab:' + id;
+    const dados = { nome, tabelaId: c.tabelaId, ativo: true, obs: `Criado da proposta "${pl.nome}"`, precos: direto && n ? valores : null, criadoEm: agora, atualizadoEm: agora };
+    await DB.gravar(`${CAMINHOS.laboratorios}/${id}`, dados);
+    ESTADO.laboratorios[id] = ESTADO.laboratorios[id] || { ...dados };
+    // a proposta passa a apontar para o laboratório criado
+    await DB.mesclar(`${CAMINHOS.simulacoes}/${pl.id}`, { labId: id, tabelaId: c.tabelaId });
+    Object.assign(ESTADO.simulacoes[pl.id], { labId: id, tabelaId: c.tabelaId });
+    pl.labId = id; pl.tabelaId = c.tabelaId;
+    registrar('laboratorios', `Laboratório ${nome} criado da proposta "${pl.nome}"${direto ? ` com ${n} valor(es) diferenciado(s)` : ''}`, { depois: { ...dados, precos: null } });
+  } else {
+    if (lista(ESTADO.tabelas).some(t => normalizar(t.nome) === normalizar(nome)) || normalizar(nome) === 'particular') return toast('Já existe uma tabela com esse nome', 'erro');
+    if (!n) return toast('Nenhum preço para a tabela', 'erro');
+    id = DB.novaChave(CAMINHOS.tabelas); alvo = id;
+    const dados = { nome, tipo: c.tipo, cor: cl.t?.cor || PALETA[4], icone: TIPOS_TABELA[c.tipo].icone, descontoRef: cl.t?.descontoRef ?? 0, piso: cl.piso, margemSugerida: cl.margemSug,
+      ativa: true, perfil: cl.t?.perfil || null, ordem: Math.max(0, ...lista(ESTADO.tabelas).map(t => t.ordem || 0)) + 1, precos: direto ? valores : null, criadoEm: agora, atualizadoEm: agora };
+    await DB.gravar(`${CAMINHOS.tabelas}/${id}`, dados);
+    ESTADO.tabelas[id] = ESTADO.tabelas[id] || { ...dados };
+    registrar('tabelas', `Tabela ${nome} criada da proposta "${pl.nome}"${direto ? ` com ${n} preços` : ''}`, { depois: { ...dados, precos: null } });
+  }
+  fecharGaveta();
+  if (!direto && n) await levarAoRascunho(alvo, valores, `proposta "${pl.nome}"`);
+  irParaGrade(alvo);
+  if (direto) grade.proxFiltro = null;
+  toast(c.modo === 'lab' ? `${nome} cadastrado · ${n} valor(es) ${direto ? 'diferenciado(s)' : 'no rascunho'}` : `Tabela ${nome} criada · ${n} preço(s)${direto ? '' : ' no rascunho'}`);
 }

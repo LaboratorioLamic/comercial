@@ -7,11 +7,14 @@
 //   'particular'   preço praticado dos exames (tabela base)
 //   {id}           tabela de preço: preço próprio por exame
 //   'lab:{id}'     laboratório apoiado: valores diferenciados
+//   'conv:{id}'    conveniado: valores diferenciados sobre a tabela base
+// Laboratório e conveniado compartilham o comportamento (cx.lab); cx.conv distingue o conveniado
+// e cx.ent / cx.caminho apontam para o cadastro dono dos valores.
 // Cada tabela tem perfil de custo e piso de margem próprios. As edições
 // ficam no rascunho do usuário (rascunhos/) até virarem proposta.
 
 const TB_POR_PAG = 50;
-let tabAba = 'tabelas', tabSel = 'particular', labSel = null;
+let tabAba = 'tabelas', tabSel = 'particular', labSel = null, convSel = null;
 SUBNAV_GANCHO.tabelas = p => { tabAba = p; renderTabelas(); };
 
 const grade = { alvo: 'particular', q: '', filtro: '', pag: 1, ordem: 'mn', dir: 1, sel: new Set() };
@@ -20,6 +23,13 @@ const tabelasLista = (todas = true) => lista(ESTADO.tabelas, (a, b) => (a.ordem 
   .filter(t => todas || t.ativa !== false);
 const tabelaLabPadrao = () => tabelasLista().find(t => t.tipo === 'lab' && t.ativa !== false) || tabelasLista().find(t => t.tipo === 'lab') || null;
 const ehLab = alvo => String(alvo).startsWith('lab:');
+const ehConv = alvo => String(alvo).startsWith('conv:');
+// Leva a aba Tabelas de preço para o alvo (tabela, laboratório ou conveniado)
+function focarAlvo(alvo) {
+  if (ehLab(alvo)) { tabAba = 'labs'; labSel = alvo.slice(4); }
+  else if (ehConv(alvo)) { tabAba = 'conv'; convSel = alvo.slice(5); }
+  else { tabAba = 'tabelas'; tabSel = alvo; }
+}
 
 // Contexto de um alvo: de onde vem o preço salvo, referência e regras de margem
 function ctxAlvo(alvo) {
@@ -34,10 +44,22 @@ function ctxAlvo(alvo) {
     if (!l) return null;
     const t = ESTADO.tabelas[l.tabelaId] || tabelaLabPadrao();
     return {
-      alvo, lab: true, id, nome: l.nome, icone: 'fa-building-user', cor: t?.cor || '#8b5cf6', tab: t ? { ...t, id: l.tabelaId || t.id } : null, descRef: 0, margemSug: t?.margemSugerida ?? null,
+      alvo, lab: true, id, ent: l, caminho: CAMINHOS.laboratorios, rotulo: 'Laboratório apoiado', nome: l.nome, icone: 'fa-building-user', cor: t?.cor || '#8b5cf6', tab: t ? { ...t, id: l.tabelaId || t.id } : null, descRef: 0, margemSug: t?.margemSugerida ?? null,
       salvo: k => l.precos?.[k] ?? null, sistema: () => null,
       ref: t ? { nome: t.nome, valor: k => t.precos?.[k] ?? null } : null,
       piso: t?.piso ?? parametro('margemMinima'), pisoNome: 'piso', todos: false
+    };
+  }
+  if (ehConv(alvo)) {
+    const id = alvo.slice(5), c = ESTADO.conveniados[id];
+    if (!c) return null;
+    const t = ESTADO.tabelas[c.tabelaId] || null;    // sem tabela = base Particular
+    return {
+      alvo, lab: true, conv: true, id, ent: c, caminho: CAMINHOS.conveniados, rotulo: 'Conveniado', nome: c.nome, icone: 'fa-handshake', cor: t?.cor || '#2a9d8f',
+      tab: t ? { ...t, id: c.tabelaId } : null, descRef: 0, margemSug: t?.margemSugerida ?? null,
+      salvo: k => c.precos?.[k] ?? null, sistema: () => null,
+      ref: t ? { nome: t.nome, valor: k => t.precos?.[k] ?? null } : { nome: 'Particular', valor: k => ESTADO.exames[k]?.precoPraticado || null },
+      piso: t?.piso ?? parametro('margemMinima'), pisoNome: t ? 'piso' : 'mínimo', todos: false
     };
   }
   const t = ESTADO.tabelas[alvo];
@@ -120,26 +142,31 @@ function renderTabelas() {
   const el = document.getElementById('s-tabelas');
   if (tabSel !== 'particular' && !ESTADO.tabelas[tabSel]) tabSel = 'particular';
   if (labSel && !ESTADO.laboratorios[labSel]) labSel = null;
+  if (convSel && !ESTADO.conveniados[convSel]) convSel = null;
   const pend = lista(ESTADO.propostas).filter(p => p.status === 'pendente').length, nQuebras = mapaQuebras().length;
   const botoes = tabAba === 'tabelas' ? (pode('tabelas', 'criar') ? `<button class="btn pri" onclick="abrirConfigTabela()"><i class="fa-solid fa-plus"></i>Nova tabela</button>` : '')
     : tabAba === 'labs' ? `${pode('tabelas', 'editar') ? `<button class="btn" onclick="abrirImportNegociados()"><i class="fa-solid fa-file-import"></i>Importar aba Negociados</button>` : ''}
-        ${pode('tabelas', 'criar') ? `<button class="btn pri" onclick="abrirLaboratorio()"><i class="fa-solid fa-plus"></i>Novo laboratório</button>` : ''}` : '';
+        ${pode('tabelas', 'criar') ? `<button class="btn pri" onclick="abrirLaboratorio()"><i class="fa-solid fa-plus"></i>Novo laboratório</button>` : ''}`
+    : tabAba === 'conv' ? (pode('tabelas', 'criar') ? `<button class="btn pri" onclick="abrirConveniado()"><i class="fa-solid fa-plus"></i>Novo conveniado</button>` : '') : '';
   el.innerHTML = `
     <div class="h-row"><div><h2>Tabelas de preço</h2><p>Edite os preços direto na tabela. As alterações ficam no seu rascunho até serem enviadas para aprovação.</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${botoes}</div></div>
     <div class="subnav" data-grupo="tabelas">
       <button data-p="tabelas" class="${tabAba === 'tabelas' ? 'on' : ''}"><i class="fa-solid fa-table-list"></i>Tabelas</button>
       <button data-p="labs" class="${tabAba === 'labs' ? 'on' : ''}"><i class="fa-solid fa-building-user"></i>Laboratórios apoiados</button>
+      <button data-p="conv" class="${tabAba === 'conv' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Conveniados</button>
       <button data-p="propostas" class="${tabAba === 'propostas' ? 'on' : ''}"><i class="fa-solid fa-stamp"></i>Propostas${pend ? `<span class="n-sub">${pend}</span>` : ''}</button>
       <button data-p="hierarquia" class="${tabAba === 'hierarquia' ? 'on' : ''}"><i class="fa-solid fa-stairs"></i>Hierarquia${nQuebras ? `<span class="n-sub aviso">${nQuebras}</span>` : ''}</button>
     </div>
     <div class="pane ${tabAba === 'tabelas' ? 'on' : ''}" id="tabelas-tabelas"></div>
     <div class="pane ${tabAba === 'labs' ? 'on' : ''}" id="tabelas-labs"></div>
+    <div class="pane ${tabAba === 'conv' ? 'on' : ''}" id="tabelas-conv"></div>
     <div class="pane ${tabAba === 'propostas' ? 'on' : ''}" id="tabelas-propostas"></div>
     <div class="pane ${tabAba === 'hierarquia' ? 'on' : ''}" id="tabelas-hierarquia"></div>`;
   iniciarSubnav();
   if (tabAba === 'tabelas') desenharPaneTabelas();
   if (tabAba === 'labs') desenharPaneLabs();
+  if (tabAba === 'conv') desenharPaneConv();
   if (tabAba === 'propostas') desenharPropostas();
   if (tabAba === 'hierarquia') desenharPaneHierarquia();
 }
@@ -148,7 +175,7 @@ function renderTabelas() {
 function statsAlvo(cx) {
   const st = { n: 0, ab: 0, sm: 0, km: 0, sd: 0, kd: 0, div: 0 };
   const exs = cx.base ? examesVisiveis().filter(e => e.ativo !== false)
-    : Object.keys((cx.lab ? ESTADO.laboratorios[cx.id]?.precos : ESTADO.tabelas[cx.id]?.precos) || {}).map(k => ESTADO.exames[k] && { ...ESTADO.exames[k], id: k }).filter(e => e && exameVisivel(e));
+    : Object.keys((cx.lab ? cx.ent?.precos : ESTADO.tabelas[cx.id]?.precos) || {}).map(k => ESTADO.exames[k] && { ...ESTADO.exames[k], id: k }).filter(e => e && exameVisivel(e));
   exs.forEach(e => {
     const p = cx.salvo(e.id);
     if (p == null) return;
@@ -170,7 +197,7 @@ function statsAlvo(cx) {
 
 function htmlCardAlvo(cx, on, clique) {
   const s = statsAlvo(cx), t = cx.tab;
-  const sub = cx.base ? 'Tabela base · preço praticado' : cx.lab ? `${esc(ESTADO.laboratorios[cx.id]?.razaoSocial || 'Laboratório apoiado')}`
+  const sub = cx.base ? 'Tabela base · preço praticado' : cx.lab ? `${esc(cx.ent?.razaoSocial || cx.rotulo)}${cx.conv ? ` · base ${esc(cx.ref.nome)}` : ''}`
     : `${TIPOS_TABELA[t.tipo]?.nome || 'Tabela'} · piso ${pct(cx.piso, 0)}`;
   const badges = [
     cx.base ? '<span class="badge-s base"><i class="fa-solid fa-star"></i>base</span>' : '',
@@ -204,7 +231,7 @@ function selecionarTabela(a) {
 // ── Grade de edição ───────────────────────────────────────────
 async function abrirGrade(alvo, contId) {
   const mudou = grade.alvo !== alvo;
-  if (mudou) Object.assign(grade, { alvo, q: '', pag: 1, ordem: 'mn', dir: 1, sel: new Set(), filtro: grade.proxFiltro ?? (alvo === 'particular' || ehLab(alvo) ? '' : 'tab') });
+  if (mudou) Object.assign(grade, { alvo, q: '', pag: 1, ordem: 'mn', dir: 1, sel: new Set(), filtro: grade.proxFiltro ?? (alvo === 'particular' || ehLab(alvo) || ehConv(alvo) ? '' : 'tab') });
   if (grade.proxQ != null) { grade.q = grade.proxQ; grade.pag = 1; }
   delete grade.proxFiltro; delete grade.proxQ;
   const cx = ctxAlvo(alvo), el = document.getElementById(contId);
@@ -233,18 +260,18 @@ async function abrirGrade(alvo, contId) {
 }
 
 function htmlCabGrade(cx) {
-  const t = cx.tab, l = cx.lab ? ESTADO.laboratorios[cx.id] : null;
+  const t = cx.tab, l = cx.lab ? cx.ent : null;
   const sub = cx.base ? `Tabela base: o valor editado aqui é o preço praticado do exame · mínimo ${pct(cx.piso)} · alvo do setor ou ${pct(parametro('margemAlvo'))}`
-    : cx.lab ? `${[l.razaoSocial, l.cnpj ? 'CNPJ ' + l.cnpj : '', l.codConvenio ? 'convênio ' + l.codConvenio : ''].filter(Boolean).map(esc).join(' · ') || 'Laboratório apoiado'}<br>Margem pelo perfil da ${esc(t?.nome || 'tabela')}: piso ${pct(cx.piso, 0)}${cx.margemSug != null ? ` · sugestão de margem ${pct(cx.margemSug, 0)}` : ''} · ${resumoPerfil(t)}`
+    : cx.lab ? `${[l.razaoSocial, l.cnpj ? 'CNPJ ' + l.cnpj : '', l.codConvenio ? 'convênio ' + l.codConvenio : ''].filter(Boolean).map(esc).join(' · ') || cx.rotulo}<br>${cx.conv ? `Tabela base <b>${esc(cx.ref.nome)}</b>: exame sem valor diferenciado segue o preço dela · ` : ''}Margem pelo perfil da ${esc(t?.nome || 'Particular')}: ${cx.pisoNome} ${pct(cx.piso, 0)}${cx.margemSug != null ? ` · sugestão de margem ${pct(cx.margemSug, 0)}` : ''} · ${resumoPerfil(t)}`
     : `Piso ${pct(cx.piso, 0)}${cx.margemSug != null ? ` · sugestão de margem ${pct(cx.margemSug, 0)}` : ''} · desconto de referência ${pct(cx.descRef, 0)} sobre a Particular · ${resumoPerfil(t)}`;
   const bts = [];
   if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportUnilabParticular()" title="CSV da tabela Particular exportado do Unilab"><i class="fa-solid fa-file-import"></i>Importar do Unilab</button>`);
   if (cx.tabela && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportTabela('${cx.id}')"><i class="fa-solid fa-file-import"></i>Importar</button>`);
-  if (cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="exportarLaboratorio('${cx.id}')"><i class="fa-solid fa-file-csv"></i>Exportar lista</button>`);
+  if (cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="${cx.conv ? 'exportarConveniado' : 'exportarLaboratorio'}('${cx.id}')"><i class="fa-solid fa-file-csv"></i>Exportar lista</button>`);
   if (!cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="exportarTabelaUnilab('${cx.alvo}')"><i class="fa-solid fa-file-csv"></i>Exportar p/ Unilab</button>`);
   if (pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="abrirPdfTabela('${cx.alvo}')" title="PDF com os preços publicados"><i class="fa-solid fa-file-pdf"></i>PDF</button>`);
   if (cx.tabela && (pode('tabelas', 'editar') || pode('tabelas', 'criar'))) bts.push(`<button class="btn sm" onclick="abrirConfigTabela('${cx.id}')"><i class="fa-solid fa-gear"></i>Configurar</button>`);
-  if (cx.lab && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirLaboratorio('${cx.id}')"><i class="fa-solid fa-pen"></i>Dados</button>`);
+  if (cx.lab && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="${cx.conv ? 'abrirConveniado' : 'abrirLaboratorio'}('${cx.id}')"><i class="fa-solid fa-pen"></i>Dados</button>`);
   return `<div class="sec-card-h"><span class="tc-ic" style="--c:${cx.cor}"><i class="fa-solid ${cx.icone}"></i></span><div style="min-width:0;flex:1"><h3>${esc(cx.nome)}</h3><div class="sub">${sub}</div></div>
     <div class="rt">${bts.join('')}</div></div>`;
 }
@@ -318,7 +345,7 @@ function desenharGrade() {
     ${cx.lab ? '' : '<th class="num col-opt">Unilab</th>'}
     ${th(cx.base ? 'Preço praticado' : cx.lab ? 'Valor diferenciado' : 'Preço na tabela', 'preco', 'num')}${th('Margem', 'margem', 'num')}<th>Situação</th><th></th></tr>`;
   body.innerHTML = pagina.map(x => htmlLinhaGrade(cx, x, edit)).join('')
-    || `<tr><td colspan="11">${cx.lab && !todas.length ? vazio('fa-building-user', `<b>Nenhum valor diferenciado</b><br>${edit ? 'Use "Adicionar exame" para incluir exames com valor próprio.' : ''}`)
+    || `<tr><td colspan="11">${cx.lab && !todas.length ? vazio(cx.icone, `<b>Nenhum valor diferenciado</b><br>${edit ? 'Use "Adicionar exame" para incluir exames com valor próprio.' : ''}`)
       : vazio('fa-magnifying-glass', 'Nenhum exame com esses filtros')}</td></tr>`;
   document.getElementById('gr-foot').innerHTML = paginacao(linhas.length, grade.pag, TB_POR_PAG, 'paginaGrade');
   desenharBulk();

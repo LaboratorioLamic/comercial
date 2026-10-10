@@ -1,26 +1,29 @@
 // ═══════════════════════════════════════════════════════════════
 // tabelapdf.js — PDF de uma tabela de preço (balcão, convênios e
-// laboratórios apoiados)
+// laboratórios apoiados e conveniados)
 // ═══════════════════════════════════════════════════════════════
 //
 // Mesmo visual do PDF da proposta (propostapdf.js): logo, cabeçalho e rodapé com
 // paginação. Sai só o preço publicado: custo, margem e rascunho nunca entram.
 
-const tpdf = { alvo: null, titulo: '', obs: '', setor: true, material: true, prazo: true, filtrada: false };
+const tpdf = { alvo: null, titulo: '', obs: '', setor: true, material: true, prazo: true, filtrada: false, base: false };
 
-// Exames com preço publicado no alvo (ou só os filtrados na grade)
+// Exames com preço publicado no alvo (ou só os filtrados na grade). Em laboratório apoiado,
+// "Incluir tabela base" completa com a tabela de referência; o preço diferenciado tem prioridade.
 function itensPdfTabela() {
   const cx = ctxAlvo(tpdf.alvo);
   const ks = tpdf.filtrada && grade.alvo === tpdf.alvo && grade.linhas ? grade.linhas.map(x => x.k)
     : examesVisiveis().filter(e => e.ativo !== false).map(e => e.id);
-  return ks.map(k => ({ k, e: ESTADO.exames[k], preco: cx.salvo(k) })).filter(x => x.e && x.preco > 0);
+  const base = tpdf.base && cx.lab && cx.ref ? cx.ref.valor : () => null;
+  return ks.map(k => ({ k, e: ESTADO.exames[k], preco: cx.salvo(k) > 0 ? cx.salvo(k) : base(k) })).filter(x => x.e && x.preco > 0);
 }
 
 function abrirPdfTabela(alvo) {
   const cx = ctxAlvo(alvo);
-  if (tpdf.alvo !== alvo) Object.assign(tpdf, { alvo, titulo: cx.lab ? `Tabela de preços · ${cx.nome}` : `Tabela ${cx.nome}`, obs: '', filtrada: false });
+  if (tpdf.alvo !== alvo) Object.assign(tpdf, { alvo, titulo: cx.lab ? `Tabela de preços · ${cx.nome}` : `Tabela ${cx.nome}`, obs: '', filtrada: false, base: false });
   if (!itensPdfTabela().length) {
     tpdf.filtrada = false;
+    if (!itensPdfTabela().length && cx.lab && cx.ref) tpdf.base = true;
     if (!itensPdfTabela().length) return toast('Tabela sem preços publicados', 'erro');
   }
   garantirCatalogo();
@@ -38,6 +41,7 @@ function abrirPdfTabela(alvo) {
         ${sw('setor', 'Agrupar por setor', 'exames separados por setor; apoio sai como "Diversos"', 'fa-layer-group')}
         ${sw('material', 'Coluna de material', 'material biológico do catálogo', 'fa-vial')}
         ${sw('prazo', 'Coluna de prazo', 'prazo de liberação do catálogo', 'fa-clock')}
+        ${cx.lab && cx.ref ? sw('base', 'Incluir tabela base', `todos os exames da ${esc(cx.ref.nome)}; valor diferenciado tem prioridade`, 'fa-table-list') : ''}
         ${grade.alvo === alvo ? sw('filtrada', 'Só os exames filtrados na tela', 'respeita busca, setor e filtro da grade', 'fa-filter') : ''}
       </div>
       ${pend ? `<div class="alert a" style="margin:0"><i class="fa-solid fa-pen"></i><div>Seu rascunho (${pend} preço(s)) <b>não</b> entra: o PDF usa os preços publicados.</div></div>` : ''}
@@ -105,15 +109,15 @@ function montarPdfTabela(logo, cx, itens) {
   const cat = ESTADO.catalogo || {};
   const cols = [{ k: 'mn', t: 'Mnemônico', w: 66 }, { k: 'ex', t: 'Exame' }];
   if (f.material) cols.push({ k: 'mat', t: 'Material', w: 84 });
-  if (f.prazo) cols.push({ k: 'pz', t: 'Prazo', w: 54, a: 'center' });
+  if (f.prazo) cols.push({ k: 'pz', t: 'Prazo', w: 66, a: 'center' });
   cols.push({ k: 'vl', t: 'Valor', w: 70, a: 'right' });
-  const linha = x => ({ mn: x.e.mn, ex: x.e.descricao || '', mat: cat[x.k]?.material || x.e.material || '-', pz: textoPrazo(x.k) || '-', vl: brl(x.preco) });
+  const linha = x => ({ mn: x.e.mn, ex: x.e.descricao || '', mat: cat[x.k]?.material || x.e.material || '-', pz: textoPrazoPdf(x.k) || '-', vl: brl(x.preco) });
   const ord = (a, b) => String(a.e.mn).localeCompare(String(b.e.mn), 'pt-BR', { sensitivity: 'base' });
   const corpo = [];
   if (f.setor) {
     const grupos = {};
     itens.forEach(x => (grupos[grupoPdf(x.e)] ??= []).push(x));
-    Object.keys(grupos).sort((a, b) => a.localeCompare(b, 'pt-BR')).forEach(s => {
+    Object.keys(grupos).sort(ordemGrupoPdf).forEach(s => {
       corpo.push([{ content: `${s}  (${grupos[s].length})`, colSpan: cols.length, styles: { fillColor: [232, 243, 249], textColor: C.navy, fontStyle: 'bold', fontSize: 8.5 } }]);
       grupos[s].sort(ord).forEach(x => { const r = linha(x); corpo.push(cols.map(c => r[c.k])); });
     });

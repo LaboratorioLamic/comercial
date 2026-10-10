@@ -84,7 +84,7 @@ const precoTabFicha = id => id in _fxTab ? _fxTab[id] : ESTADO.tabelas[id]?.prec
 function desenharTabelasFicha(id) {
   const el = document.getElementById('fx-tabs'), e = ESTADO.exames[id];
   if (!el || !e) return;
-  const labs = lista(ESTADO.laboratorios, porNome).filter(l => l.precos?.[id] != null);
+  const labs = [...lista(ESTADO.laboratorios, porNome), ...lista(ESTADO.conveniados, porNome)].filter(l => l.precos?.[id] != null);
   const ts = tabelasLista(false), edit = pode('tabelas', 'editar');
   el.innerHTML = `<div class="casc fx-tabs">${ts.map(t => {
       const p = precoTabFicha(t.id);
@@ -168,6 +168,9 @@ function desenharRodapeFicha() {
   if (!el) return;
   const editar = pode('exames', 'editar') || pode('tabelas', 'editar'), mud = mudancasPrecoFicha().length, aprova = pode('tabelas', 'aprovar');
   el.innerHTML = `${pode('exames', 'excluir') ? `<button class="btn perigo-txt" onclick="excluirExame()" title="Excluir exame"><i class="fa-solid fa-trash"></i></button>` : ''}
+    ${pode('exames', 'editar') && ESTADO.exames[_fxId] ? (ESTADO.exames[_fxId].ativo === false
+      ? `<button class="btn bt-play" onclick="alternarAtivoExame('${_fxId}')" title="Ativar exame"><i class="fa-solid fa-play"></i></button>`
+      : `<button class="btn bt-pause" onclick="alternarAtivoExame('${_fxId}')" title="Inativar exame"><i class="fa-solid fa-pause"></i></button>`) : ''}
     ${pode('exames', 'editar') ? `<button class="btn" style="margin-right:auto" onclick="abrirDadosExame('${_fxId}')" title="Dados do exame: nome, setor, material, prazo"><i class="fa-solid fa-pen-to-square"></i>${mud ? '' : 'Dados'}</button>` : '<span style="margin-right:auto"></span>'}
     <button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
     ${!editar ? '' : mud ? `<button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('enviar')" title="Cria proposta(s) para aprovação"><i class="fa-solid fa-paper-plane"></i>${aprova ? 'Enviar' : 'Enviar p/ aprovação'}</button>

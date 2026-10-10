@@ -284,3 +284,19 @@ td.desc { width: 100%; max-width: 0; min-width: 110px; }
   .fgrid.sem-pad { grid-template-columns: 1fr; }
   .drawer { width: 100%; }
 }
+
+/* Confirmação com ícone próprio (ativar/inativar exame) */
+.modal-ic.pausa { background: var(--amber-bg); color: var(--amber); }
+.modal-ic.play { background: var(--green-bg); color: var(--green); }
+.modal-ex { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; margin: 4px 0 12px; border: 1px solid var(--border); border-radius: 10px; text-align: left; }
+.modal-ex b { color: var(--cyan); font-size: 13px; letter-spacing: .3px; }
+.modal-ex span { color: var(--text-primary); font-size: 13px; }
+.modal-li { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; text-align: left; font-size: 13px; }
+.modal-li > span { display: flex; gap: 8px; align-items: baseline; }
+.modal-li i { font-size: 11px; color: var(--text-muted); }
+.modal-card small { display: block; color: var(--text-muted); font-size: 12px; }
+.bt-pause:hover:not(:disabled) { border-color: var(--amber) !important; color: var(--amber) !important; background: var(--amber-bg) !important; }
+.bt-play { color: var(--green); }
+.bt-play:hover:not(:disabled) { border-color: var(--green) !important; color: var(--green) !important; background: var(--green-bg) !important; }
+.subnav .n-sub.neutro { background: var(--border); color: var(--text-secondary); }
+.subnav button.on .n-sub.neutro { background: var(--cyan); color: #fff; }

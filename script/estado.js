@@ -14,6 +14,7 @@
 //   tabelas/{id}               tabelas de preço (exceto Particular): nome, tipo, piso, perfil de custo,
 //                              precos/{chave} preço do exame na tabela · sistema/{chave} preço no Unilab
 //   laboratorios/{id}          laboratórios apoiados: dados + precos/{chave} valores diferenciados
+//   conveniados/{id}           conveniados: dados + tabela base + precos/{chave} valores diferenciados
 //   propostas/{id}             alterações de preço enviadas para aprovação
 //   config/hierarquia          hierarquia de valor: { definida, ordem: [idTabela…] } (Particular no topo)
 //   config/modeloProposta      textos padrão do PDF da proposta para laboratório
@@ -35,6 +36,7 @@ const ESTADO = {
   apoios: {},
   tabelas: {},
   laboratorios: {},
+  conveniados: {},
   propostas: {},
   simulacoes: {},
   hierarquia: null,
@@ -56,6 +58,7 @@ const CAMINHOS = {
   apoios: 'apoios',
   tabelas: 'tabelas',
   laboratorios: 'laboratorios',
+  conveniados: 'conveniados',
   propostas: 'propostas',
   simulacoes: 'simulacoes',
   hierarquia: 'config/hierarquia',

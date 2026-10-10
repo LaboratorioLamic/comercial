@@ -2,7 +2,7 @@
 // inicio.js — Tela inicial (painel) — COMERCIAL LAMIC
 // ═══════════════════════════════════════════════════════════════
 
-const ICONE_HIST = { exames: 'fa-flask-vial', tabelas: 'fa-table-list', simulador: 'fa-calculator', grupos: 'fa-user-shield', usuarios: 'fa-users',
+const ICONE_HIST = { conveniados: 'fa-handshake', exames: 'fa-flask-vial', tabelas: 'fa-table-list', simulador: 'fa-calculator', grupos: 'fa-user-shield', usuarios: 'fa-users',
   custos: 'fa-coins', reagentes: 'fa-vials', setores: 'fa-sitemap', parametros: 'fa-sliders', apoio: 'fa-truck-medical', instrucoes: 'fa-book-medical' };
 let _iniHist = null, _iniHistEm = 0;
 

@@ -16,6 +16,7 @@ function renderImportar() {
     <div class="cards">
       ${[['fa-truck-medical', '#00a8cc', 'Laboratórios de apoio', 'Pardini 4114 e Alvaro 2656: custos negociados e vínculos', pode('custos') ? "custosAba='apoio';irPara('custos')" : ''],
          ['fa-book-medical', '#1d7044', 'Catálogo e instruções', 'Nome, material, prazo e instruções dos exames', pode('instrucoes') ? "ins.imp.passo=1;irPara('instrucoes')" : ''],
+         ['fa-file-csv', '#16a34a', 'Lista de exames (CSV)', 'Material, nome, prazo e setor pelo mnemônico; inativa os fora da lista', pode('exames', 'editar') ? "irPara('exames');abrirImportExames()" : ''],
          ['fa-code-compare', '#6366f1', 'Divergências com o Unilab', 'Relatório (CSV) dos preços diferentes em todas as tabelas', pode('importar', 'exportar') || pode('tabelas', 'exportar') ? 'exportarDivergenciasUnilab()' : ''],
          ['fa-file-export', '#2a9d8f', 'Preços das tabelas', 'Importar abas da planilha e exportar no layout do Unilab', pode('tabelas') ? "tabAba='tabelas';irPara('tabelas')" : ''],
          ['fa-building-user', '#8b5cf6', 'Laboratórios apoiados', 'Aba Negociados da Lamic-to-Lab', pode('tabelas') ? "tabAba='labs';irPara('tabelas')" : ''],

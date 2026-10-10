@@ -14,7 +14,10 @@ const CHECKS = {
   revisado: { nome: 'Revisado', icone: 'fa-user-check',  acao: 'aprovar' }
 };
 const INS_POR_PAG = 50;
-const ins = { q: '', filtro: '', pag: 1, imp: { passo: 0, texto: null, nome: '', analise: null, erro: '' } };
+// Subabas Ativos / Inativos seguem o cadastro do exame (exames/{chave}/ativo); item do catálogo sem exame conta como ativo
+const insInativo = r => ESTADO.exames[r.id]?.ativo === false;
+const catalogoAba = () => lista(ESTADO.catalogo).filter(r => insInativo(r) === ins.inativos);
+const ins = { inativos: false, q: '', filtro: '', pag: 1, imp: { passo: 0, texto: null, nome: '', analise: null, erro: '' } };
 
 // ── Anexos (links clicáveis no site L2L) ──────────────────────
 // catalogo/{chave}/anexos: [{ nome, url }]. O L2L mostra só o que está neste campo;
@@ -90,7 +93,7 @@ async function renderInstrucoes() {
     await garantirCatalogo();
     if (telaAtual !== 'instrucoes') return;
   }
-  const cat = lista(ESTADO.catalogo), n = cat.length;
+  const cat = catalogoAba(), n = cat.length, nInat = lista(ESTADO.catalogo).filter(insInativo).length;
   const qtd = k => cat.filter(r => r[k]).length;
   const comLink = pode('instrucoes', 'editar') ? cat.filter(r => temLinkNoTexto(r.instrucao)).length : 0;
   const barra = (rot, v, ic, cor) => `<div class="prog"><div class="prog-l"><i class="fa-solid ${ic}" style="color:${cor}"></i>${rot}<b>${num(v, 0)} / ${num(n, 0)}</b><span>${n ? pct(v / n, 0) : '—'}</span></div><div class="barra"><div style="width:${n ? v / n * 100 : 0}%;background:${cor}"></div></div></div>`;
@@ -100,6 +103,10 @@ async function renderInstrucoes() {
     ${ins.imp.passo ? `<div class="card" style="margin-bottom:14px" id="ins-imp">${htmlImportCatalogo()}</div>` : ''}
     ${comLink ? `<div class="alert a" style="align-items:center"><i class="fa-solid fa-paperclip"></i><div style="flex:1"><b>${comLink} instrução(ões) com link escrito no texto.</b> O site dos apoiados (L2L) só mostra os links cadastrados no campo Anexos.</div>
       <button class="btn sm" onclick="converterLinksEmAnexos()"><i class="fa-solid fa-wand-magic-sparkles"></i>Converter em anexos</button></div>` : ''}
+    <div class="subnav" data-grupo="insst">
+      <button data-p="ativos" class="${ins.inativos ? '' : 'on'}"><i class="fa-solid fa-play"></i>Ativos<span class="n-sub neutro">${num(Object.keys(ESTADO.catalogo).length - nInat, 0)}</span></button>
+      <button data-p="inativos" class="${ins.inativos ? 'on' : ''}"><i class="fa-solid fa-pause"></i>Inativos<span class="n-sub neutro">${num(nInat, 0)}</span></button>
+    </div>
     ${n ? `<div class="card progs">
       ${barra('Com instrução', qtd('instrucao'), 'fa-file-lines', 'var(--cyan)')}
       ${barra('Revisados', qtd('revisado'), CHECKS.revisado.icone, 'var(--green)')}
@@ -109,9 +116,11 @@ async function renderInstrucoes() {
     <div class="card" style="margin-top:14px">
       <div class="toolbar"><div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="q-ins" value="${esc(ins.q)}" placeholder="Buscar mnemônico, nome ou material…" oninput="ins.q=this.value;ins.pag=1;desenharInstrucoes()"></div></div>
       <div class="chips" id="ins-chips"></div>
-      <div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>MN</th><th>Nome do exame</th><th>Material</th><th>Prazo</th>${Object.values(CHECKS).map(c => `<th style="text-align:center" title="${c.nome}"><i class="fa-solid ${c.icone}"></i> ${c.nome}</th>`).join('')}<th></th></tr></thead><tbody id="ins-body"></tbody></table></div>
+      <div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>MN</th><th>Nome do exame</th><th>Material</th><th>Prazo</th>${Object.values(CHECKS).map(c => `<th style="text-align:center" title="${c.nome}">${c.nome}</th>`).join('')}<th></th></tr></thead><tbody id="ins-body"></tbody></table></div>
       <div class="foot" id="ins-foot"></div>
     </div>`;
+  iniciarSubnav();
+  SUBNAV_GANCHO.insst = p => { ins.inativos = p === 'inativos'; ins.pag = 1; ins.filtro = ''; renderInstrucoes(); };
   desenharInstrucoes();
 }
 
@@ -128,7 +137,7 @@ const FILTROS_INS = {
 function desenharInstrucoes() {
   const body = document.getElementById('ins-body');
   if (!body) return;
-  const todos = lista(ESTADO.catalogo).filter(r => contem(`${r.mn} ${r.nome || ''} ${r.material || ''}`, ins.q));
+  const todos = catalogoAba().filter(r => contem(`${r.mn} ${r.nome || ''} ${r.material || ''}`, ins.q));
   document.getElementById('ins-chips').innerHTML = `<button class="chip ${!ins.filtro ? 'on' : ''}" onclick="ins.filtro='';ins.pag=1;desenharInstrucoes()"><i class="fa-solid fa-list"></i>Todos <b>${todos.length}</b></button>` +
     Object.entries(FILTROS_INS).map(([k, x]) => `<button class="chip ${ins.filtro === k ? 'on' : ''}" onclick="ins.filtro='${k}';ins.pag=1;desenharInstrucoes()">${x.nome} <b>${todos.filter(x.f).length}</b></button>`).join('');
   const ls = todos.filter(r => !ins.filtro || FILTROS_INS[ins.filtro].f(r)).sort((a, b) => a.mn.localeCompare(b.mn));
@@ -137,18 +146,12 @@ function desenharInstrucoes() {
     <tr class="row" onclick="abrirInstrucao('${r.id}')">
       <td class="mn">${esc(r.mn)}</td><td class="desc" title="${esc(r.nome || '')}">${r.nome ? esc(r.nome) : `<span class="warn-i"><i class="fa-solid fa-triangle-exclamation"></i>${r.cadastro ? 'sem nome' : 'sem cadastro'}</span>`}</td>
       <td>${r.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(r.material)}</span>` : '—'}</td><td>${esc(prazoDe(r) || '—')}</td>
-      ${Object.entries(CHECKS).map(([k, c]) => `<td style="text-align:center" onclick="event.stopPropagation()"><button class="cb ${r[k] ? 'on' : ''}" ${pode('instrucoes', c.acao) ? '' : 'disabled'} title="${c.nome}" onclick="marcarCheck('${r.id}','${k}')"><i class="fa-solid fa-check"></i></button></td>`).join('')}
+      ${Object.entries(CHECKS).map(([k, c]) => `<td style="text-align:center"><i class="fa-solid ${c.icone} ck-ic ${r[k] ? 'on' : ''}" title="${c.nome}: ${r[k] ? `sim${r[k + 'Por'] ? ' · ' + esc(r[k + 'Por']) : ''}` : 'não'}"></i></td>`).join('')}
       <td>${r.instrucao ? '<i class="fa-solid fa-file-lines muted" title="Tem instrução"></i>' : ''}${anexosDe(r).length ? ` <i class="fa-solid fa-paperclip muted" title="${anexosDe(r).length} anexo(s)"></i>` : ''}</td></tr>`).join('')
-    || `<tr><td colspan="8">${Object.keys(ESTADO.catalogo).length ? vazio('fa-magnifying-glass', 'Nada encontrado') : vazio('fa-book-medical', '<b>Catálogo vazio</b><br>Importe a planilha de instruções (aba Exames, .csv).')}</td></tr>`;
+    || `<tr><td colspan="8">${Object.keys(ESTADO.catalogo).length ? vazio(ins.inativos && !catalogoAba().length ? 'fa-pause' : 'fa-magnifying-glass', ins.inativos && !catalogoAba().length ? 'Nenhum exame inativo' : 'Nada encontrado') : vazio('fa-book-medical', '<b>Catálogo vazio</b><br>Importe a planilha de instruções (aba Exames, .csv).')}</td></tr>`;
   document.getElementById('ins-foot').innerHTML = paginacao(ls.length, ins.pag, INS_POR_PAG, 'paginaInstrucoes');
 }
 function paginaInstrucoes(p) { ins.pag = p; desenharInstrucoes(); }
-
-async function marcarCheck(id, k) {
-  const r = ESTADO.catalogo[id], u = usuarioAtual(), v = !r[k];
-  await DB.mesclar(`catalogo/${id}`, { [k]: v, [`${k}Por`]: v ? u.nome : null, [`${k}Em`]: v ? DB.agora() : null });
-  toast(`${r.mn}: ${CHECKS[k].nome} ${v ? 'marcado' : 'desmarcado'}`);
-}
 
 // ── Importação (cartão) ───────────────────────────────────────
 function htmlImportCatalogo() {

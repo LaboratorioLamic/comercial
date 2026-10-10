@@ -85,7 +85,7 @@ async function aplicarProposta(id, p) {
       upd[`${CAMINHOS.exames}/${k}/precoPraticado`] = para;
       upd[`${CAMINHOS.exames}/${k}/atualizadoEm`] = agora;
       upd[`${CAMINHOS.exames}/${k}/atualizadoPor`] = u.nome;
-    } else if (cx.lab) upd[`${CAMINHOS.laboratorios}/${cx.id}/precos/${k}`] = para;
+    } else if (cx.lab) upd[`${cx.caminho}/${cx.id}/precos/${k}`] = para;
     else upd[`${CAMINHOS.tabelas}/${cx.id}/precos/${k}`] = para;
     upd[`historicoExames/${k}/${DB.novaChave('historicoExames')}`] = {
       descricao: `${cx.nome}: ${it.de != null ? fmt(it.de) : cx.lab ? 'sem valor' : 'fora da tabela'} → ${para != null ? fmt(para) : cx.lab ? 'valor removido' : 'retirado da tabela'}${it.revisado ? ` (revisado na aprovação; proposto ${it.proposto != null ? fmt(it.proposto) : 'retirar'})` : ''}`,
@@ -225,7 +225,7 @@ async function reabrirProposta(id) {
   Object.entries(p.itens || {}).forEach(([k, it]) => { atual[k] = it.para ?? null; });
   const n = await substituirRasc(p.alvo, atual);
   fecharGaveta();
-  if (ehLab(p.alvo)) { tabAba = 'labs'; labSel = p.alvo.slice(4); } else { tabAba = 'tabelas'; tabSel = p.alvo; }
+  focarAlvo(p.alvo);
   grade.alvo = null;
   renderTabelas();
   toast(`${n} preço(s) no seu rascunho`);

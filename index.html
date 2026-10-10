@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>COMERCIAL LAMIC</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2300a8cc'/><text x='16' y='22' font-size='17' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>$</text></svg>">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0e1628">
+  <link rel="apple-touch-icon" href="img/icone-apple-180.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -106,6 +109,7 @@
   <script src="script/inicio.js"></script>
   <script src="script/exames.js"></script>
   <script src="script/ficha.js"></script>
+  <script src="script/examesimp.js"></script>
   <script src="script/pendencias.js"></script>
   <script src="script/migracao.js"></script>
   <script src="script/importar.js"></script>
@@ -116,10 +120,12 @@
   <script src="script/tabelas.js"></script>
   <script src="script/propostas.js"></script>
   <script src="script/laboratorios.js"></script>
+  <script src="script/conveniados.js"></script>
   <script src="script/tabconfig.js"></script>
   <script src="script/tabunilab.js"></script>
   <script src="script/simulador.js"></script>
   <script src="script/hierarquia.js"></script>
+  <script src="script/logo.js"></script>
   <script src="script/propostapdf.js"></script>
   <script src="script/tabelapdf.js"></script>
   <script src="script/sincronizar.js"></script>
@@ -131,5 +137,11 @@
   <script src="script/setores.js"></script>
 
   <script src="script/app.js"></script>
+  <script>
+    // Instalação como aplicativo (só funciona em https ou localhost)
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(e => console.warn('Service worker não registrado:', e)));
+    }
+  </script>
 </body>
 </html>

@@ -53,20 +53,24 @@ async function logoPdf() {
     const b = await (await fetch('img/logo-lamic.png')).blob();
     _logoPdf = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
   } catch (e) { _logoPdf = null; }
+  // sem a imagem (arquivo aberto direto, sem servidor): usa a cópia embutida em logo.js
+  if (!/^data:image\//.test(_logoPdf || '')) _logoPdf = typeof LOGO_LAMIC_PDF === 'string' ? LOGO_LAMIC_PDF : null;
   return _logoPdf;
 }
 
-// Itens da proposta: exames com volume (ou, sem volumes, com preço digitado)
+// Itens da proposta: exames selecionados (ou, sem seleção, com preço digitado)
 function itensPdfLab() {
   const cl = ctxLabSim();
-  let ks = Object.keys(pl.itens).filter(k => ESTADO.exames[k] && pl.itens[k].v > 0);
+  let ks = Object.keys(pl.itens).filter(k => ESTADO.exames[k] && selLab(pl.itens[k]));
   if (!ks.length) ks = Object.keys(pl.itens).filter(k => ESTADO.exames[k] && pl.itens[k].p != null);
   // sem volume nem preço digitado: relatório de valores da lista filtrada na tela
   if (!ks.length) return (_plLinhas || []).filter(x => x.preco != null);
   return ks.map(k => linhaLab(cl, { ...ESTADO.exames[k], id: k })).filter(x => x.preco != null);
 }
-// Grupo do exame no PDF: todos os setores de apoio viram um só grupo "Diversos" (sem o nome do parceiro)
-const grupoPdf = e => { const s = ESTADO.setores[e.setorId]; return !s ? 'Outros exames' : s.categoria === 'apoio' ? 'Diversos' : s.nome; };
+// Grupo do exame no PDF: setores de apoio e exames sem setor viram um só grupo "Diversos" (sem o nome do parceiro)
+const grupoPdf = e => { const s = ESTADO.setores[e.setorId]; return !s || s.categoria === 'apoio' ? 'Diversos' : s.nome; };
+// Setores em ordem alfabética, com "Diversos" (apoio e exames sem setor) por último
+const ordemGrupoPdf = (a, b) => (a === 'Diversos') - (b === 'Diversos') || a.localeCompare(b, 'pt-BR');
 const numeroProposta = () => `PC-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${(pl.id || 'rasc').replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase()}`;
 
 // ── Textos: padrão (todos) × personalizado (proposta atual) ──
@@ -107,7 +111,7 @@ function abrirPdfLab() {
   const semVol = !itens.some(x => x.vol > 0);
   const f = pl.pdf, sw = (k, t, d, ic) => `<div class="casc-r"><div class="lft"><i class="fa-solid ${ic}"></i><div>${t}<div class="s">${d}</div></div></div>${chave(f[k], `pl.pdf.${k}=!pl.pdf.${k};this.classList.toggle('on')`)}</div>`;
   abrirGaveta({
-    sobre: 'Gerar PDF', titulo: pl.nome || 'Proposta para laboratório',
+    sobre: 'Gerar PDF', titulo: pl.nome || 'Proposta',
     meta: `<span class="tag"><i class="fa-solid fa-flask-vial"></i>${itens.length} exame(s)</span><span class="tag"><i class="fa-solid fa-hashtag"></i>${numeroProposta()}</span>`,
     corpo: `<div class="form-col">
       <div class="sec-t"><i class="fa-solid fa-building"></i>Destinatário</div>
@@ -159,7 +163,7 @@ function abrirModeloPdf(base) {
   _mpd = { ...(base || modeloProposta()) };
   const edit = pode('simulador', 'criar');
   abrirGaveta({
-    sobre: 'Proposta para laboratório', titulo: 'Texto padrão do PDF',
+    sobre: 'Proposta', titulo: 'Texto padrão do PDF',
     meta: ESTADO.modeloProposta?.atualizadoPor ? `<span class="tag"><i class="fa-solid fa-user-pen"></i>${esc(ESTADO.modeloProposta.atualizadoPor)} · ${dataHora(ESTADO.modeloProposta.atualizadoEm)}</span>` : '<span class="tag"><i class="fa-solid fa-file-signature"></i>texto original do sistema</span>',
     corpo: `<div class="form-col">
       <div class="alert x" style="margin:0"><i class="fa-solid fa-users"></i><div>Vale para <b>todas</b> as propostas. Propostas com texto personalizado mantêm a versão delas.</div></div>
@@ -178,7 +182,7 @@ async function salvarModeloPdf(f, fechar) {
   if (pl.pdf) { const proprio = pdfParaSalvar(pl.pdf); TEXTOS_PDF.forEach(k => { if (!(k in proprio)) pl.pdf[k] = dados[k]; }); }
   await DB.gravar(CAMINHOS.modeloProposta, dados);
   ESTADO.modeloProposta = dados;
-  registrar('simulador', 'Texto padrão do PDF da proposta para laboratório alterado');
+  registrar('simulador', 'Texto padrão do PDF da proposta alterado');
   if (fechar) fecharGaveta(); else seloTextoPdf();
   toast('Texto padrão salvo: vale para todas as propostas');
 }
@@ -299,15 +303,15 @@ function montarPdfLab(logo) {
   y += 8;
   const cols = [{ k: 'mn', t: 'Mnemônico', w: 62 }, { k: 'ex', t: 'Exame' }];
   if (f.material) cols.push({ k: 'mat', t: 'Material', w: 70 });
-  cols.push({ k: 'pz', t: 'Prazo', w: 50, a: 'center' }, { k: 'vl', t: 'Valor', w: 62, a: 'right' });
+  cols.push({ k: 'pz', t: 'Prazo', w: 64, a: 'center' }, { k: 'vl', t: 'Valor', w: 62, a: 'right' });
   if (comVol) cols.push({ k: 'qt', t: 'Qtd/mês', w: 44, a: 'center' }, { k: 'tt', t: 'Total/mês', w: 68, a: 'right' });
-  const linhaTab = x => ({ mn: x.e.mn, ex: x.e.descricao || '', mat: x.material || '-', pz: textoPrazo(x.k) || '-', vl: brl(x.preco), qt: x.vol ? String(x.vol) : '-', tt: x.vol ? brl(x.preco * x.vol) : '-' });
+  const linhaTab = x => ({ mn: x.e.mn, ex: x.e.descricao || '', mat: x.material || '-', pz: textoPrazoPdf(x.k) || '-', vl: brl(x.preco), qt: x.vol ? String(x.vol) : '-', tt: x.vol ? brl(x.preco * x.vol) : '-' });
   const ord = (a, b) => a.e.mn.localeCompare(b.e.mn, 'pt-BR', { sensitivity: 'base' });
   const corpo = [];
   if (f.setor) {
     const grupos = {};
     itens.forEach(x => (grupos[x.setor] ??= []).push(x));
-    Object.keys(grupos).sort((a, b) => a.localeCompare(b, 'pt-BR')).forEach(s => {
+    Object.keys(grupos).sort(ordemGrupoPdf).forEach(s => {
       corpo.push([{ content: `${s}  (${grupos[s].length})`, colSpan: cols.length, styles: { fillColor: [232, 243, 249], textColor: C.navy, fontStyle: 'bold', fontSize: 8.5 } }]);
       grupos[s].sort(ord).forEach(x => { const r = linhaTab(x); corpo.push(cols.map(c => r[c.k])); });
     });

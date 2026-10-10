@@ -108,6 +108,8 @@ async function excluirTabela(id) {
   const t = ESTADO.tabelas[id], n = Object.keys(t.precos || {}).length;
   const labs = lista(ESTADO.laboratorios).filter(l => l.tabelaId === id);
   if (labs.length) return toast(`Tabela usada por ${labs.length} laboratório(s): troque a referência antes`, 'erro');
+  const convs = lista(ESTADO.conveniados).filter(c => c.tabelaId === id);
+  if (convs.length) return toast(`Tabela base de ${convs.length} conveniado(s): troque a tabela base antes`, 'erro');
   const ok = await confirmar({ titulo: `Excluir ${t.nome}?`, texto: `${n} preço(s) serão apagados. Propostas pendentes desta tabela ficam sem efeito.`, botao: 'Excluir', perigo: true });
   if (!ok) return;
   await DB.remover(`${CAMINHOS.tabelas}/${id}`);
