@@ -180,7 +180,7 @@ function metaFicha() {
   return `${tagSetor(e.setorId)}<span class="tag"><i class="fa-solid ${e.origem === 'apoio' ? 'fa-truck-medical' : 'fa-microscope'}"></i>${e.origem === 'apoio' ? 'Apoio' : 'Interno'}</span>`
     + (e.ativo === false ? '<span class="tag" style="color:var(--red)"><i class="fa-solid fa-eye-slash"></i>Inativo</span>' : '')
     + (e.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(e.material)}</span>` : '')
-    + (e.prazo ? `<span class="tag"><i class="fa-solid fa-clock"></i>${esc(e.prazo)}</span>` : '');
+    + (textoPrazo(_fxId) ? `<span class="tag"><i class="fa-solid fa-clock"></i>${esc(textoPrazo(_fxId))}</span>` : '');
 }
 
 // ── Seções dinâmicas ──────────────────────────────────────────
@@ -422,7 +422,7 @@ async function excluirExame() {
 let _dx = null;
 function abrirDadosExame(id) {
   const e = id ? ESTADO.exames[id] : null;
-  _dx = { id: id || null, setorId: e?.setorId || '', origem: e?.origem || 'interno', ativo: e ? e.ativo !== false : true, negociado: false, auditar: false, fora: false };
+  _dx = { id: id || null, setorId: e?.setorId || '', origem: e?.origem || 'interno', ativo: e ? e.ativo !== false : true, negociado: false, auditar: false, fora: false, checks: { site: false, unilab: false, revisado: false } };
   const novo = !id;
   // Exame novo: instrução cadastrada junto (catálogo de instruções)
   const comIns = !id && pode('instrucoes', 'editar');
@@ -436,19 +436,19 @@ function abrirDadosExame(id) {
         ${novo ? campo('dx-custo', 'Custo do teste', '', { pre: 'R$', passo: '0.01', ph: '0,00', dica: 'manual', aoMudar: 'previaDadosExame()' }) : ''}
       </div>
       ${novo ? '<div class="hint" id="dx-calc" style="margin-top:-6px"></div>' : ''}
-      ${campo('dx-desc', 'Descrição', e?.descricao || '', { tipo: 'text', ph: 'Nome do exame' })}
+      ${campo('dx-desc', 'Nome do exame', e?.descricao || '', { tipo: 'text', ph: 'Ex.: Glicose' })}
       <div class="field"><label>Setor</label><div id="pop-dxsetor" class="block"></div></div>
       <div class="field"><label>Origem</label><div class="opt-cards" id="dx-origem">
         ${[['interno', 'Interno', 'Executado no LAMIC', 'fa-microscope'], ['apoio', 'Apoio', 'Enviado a laboratório de apoio', 'fa-truck-medical']].map(([v, t, d, ic]) =>
           `<button type="button" class="oc ${_dx.origem === v ? 'on' : ''}" data-v="${v}" onclick="_dx.origem='${v}';marcarOc('dx-origem', this);atualizarControlesDx()"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${t}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`).join('')}</div></div>
-      <div class="fgrid sem-pad" ${comIns ? 'style="grid-template-columns:2fr 1fr 1fr"' : ''}>
+      <div class="fgrid sem-pad" style="grid-template-columns:2fr 1fr">
         ${campo('dx-mat', 'Material', e?.material || '', { tipo: 'text', ph: 'Ex.: Soro' })}
-        ${campo('dx-prazo', 'Prazo', e?.prazo || '', { tipo: 'text', ph: 'Ex.: 24 H' })}
-        ${comIns ? campo('dx-dias', 'Prazo (dias)', '', { passo: '1', ph: 'Ex.: 1' }) : ''}
+        ${campo('dx-dias', 'Prazo (dias)', (id ? diasPrazo(id) : null) ?? '', { passo: '1', ph: 'Ex.: 2', dica: '0 = 24 Horas' })}
       </div>
       ${comIns ? `<div class="field"><label><i class="fa-solid fa-book-medical"></i>Instrução do exame</label>
         <textarea id="dx-ins" class="txt-grande" style="min-height:170px" placeholder="Jejum, preparo, coleta, conservação, critérios de rejeição…"></textarea>
-        <span class="hint" id="dx-cat-hint">Vai para o catálogo de instruções como "não revisada". Opcional.</span></div>` : ''}
+        <div class="dx-checks" id="dx-checks"></div>
+        <span class="hint" id="dx-cat-hint">Vai para o catálogo de instruções. Opcional.</span></div>` : ''}
       ${novo ? '<div class="sec-t"><i class="fa-solid fa-sliders"></i>Controles</div>' : ''}
       <div class="casc">
         ${novo ? `<div class="casc-r" id="dx-neg-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">marcação manual (o vínculo com a tabela do apoio é feito na ficha)</div></div></div>${chave(false, '_dx.negociado=!_dx.negociado;this.classList.toggle(\'on\')')}</div>
@@ -471,6 +471,7 @@ function abrirDadosExame(id) {
   });
   POPS['pop-dxsetor'].valor = _dx.setorId; desenharBotaoPop('pop-dxsetor');
   atualizarControlesDx();
+  desenharChecksDx();
 }
 
 // Cadastro novo: "negociado" só vale para apoio; prévia de custo e margem
@@ -489,13 +490,26 @@ function previaDadosExame() {
     + (c.margem != null ? ` · margem <b style="color:${STATUS[c.status].cor}">${pct(c.margem)}</b>` : '');
 }
 
+// Checklist de publicação (compacto) no cadastro do exame: Site · Unilab · Revisado
+function desenharChecksDx() {
+  const el = document.getElementById('dx-checks');
+  if (!el) return;
+  el.innerHTML = Object.entries(CHECKS).map(([k, c]) => {
+    const desab = !pode('instrucoes', c.acao);
+    return `<div class="dx-ck" title="${c.nome === 'Revisado' ? 'Instrução revisada' : 'Publicado no ' + c.nome}${desab ? ' · sem permissão' : ''}">
+      <span><i class="fa-solid ${c.icone}"></i>${c.nome}</span>${chave(_dx.checks[k], `_dx.checks['${k}']=!_dx.checks['${k}'];this.classList.toggle('on')`, desab)}</div>`;
+  }).join('');
+}
+
 // Mnemônico já existe no catálogo de instruções → preenche os campos vazios
 function preencherDoCatalogo() {
   const r = ESTADO.catalogo?.[chaveExame(valorCampo('dx-mn'))], hint = document.getElementById('dx-cat-hint');
   if (!hint) return;
-  if (!r) { hint.textContent = 'Vai para o catálogo de instruções como "não revisada". Opcional.'; return; }
+  if (!r) { hint.textContent = 'Vai para o catálogo de instruções. Opcional.'; return; }
+  Object.keys(CHECKS).forEach(k => { _dx.checks[k] = !!r[k]; });
+  desenharChecksDx();
   const encher = (id, v) => { const el = document.getElementById(id); if (el && !el.value.trim() && v != null && v !== '') el.value = v; };
-  encher('dx-desc', r.nome); encher('dx-mat', r.material); encher('dx-prazo', r.prazo); encher('dx-dias', r.prazoDias); encher('dx-ins', r.instrucao);
+  encher('dx-desc', r.nome); encher('dx-mat', r.material); encher('dx-dias', r.prazoDias); encher('dx-ins', r.instrucao);
   hint.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ${esc(r.mn)} já está no catálogo${r.revisado ? ' (instrução revisada)' : ''}: campos vazios preenchidos.`;
 }
 
@@ -504,21 +518,29 @@ async function gravarCatalogoNovoExame(id, mn, nome) {
   if (!pode('instrucoes', 'editar') || !document.getElementById('dx-ins')) return;
   const r = ESTADO.catalogo?.[id] || await DB.ler(`catalogo/${id}`) || {};
   const instrucao = valorCampo('dx-ins').trim() || null, dias = parseInt(valorCampo('dx-dias'), 10);
-  const material = valorCampo('dx-mat').trim() || null, prazo = valorCampo('dx-prazo').trim() || null;
-  if (!instrucao && !material && !prazo && isNaN(dias) && !r.mn) return;
-  const u = usuarioAtual(), dados = { mn, cadastro: true, nome: r.nome || nome, material: material ?? r.material ?? null, prazo: prazo ?? r.prazo ?? null,
-    prazoDias: isNaN(dias) ? (r.prazoDias ?? null) : dias, instrucao: instrucao ?? r.instrucao ?? null, atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+  const material = valorCampo('dx-mat').trim() || null;
+  const marcou = Object.keys(CHECKS).some(k => _dx.checks[k] !== !!r[k]);
+  if (!instrucao && !material && isNaN(dias) && !r.mn && !marcou) return;
+  const u = usuarioAtual(), dados = { mn, cadastro: true, nome: r.nome || nome, material: material ?? r.material ?? null, prazo: isNaN(dias) ? (r.prazo ?? null) : null,
+    prazoDias: isNaN(dias) ? (r.prazoDias ?? null) : Math.max(0, dias), instrucao: instrucao ?? r.instrucao ?? null, atualizadoEm: DB.agora(), atualizadoPor: u.nome };
   // texto diferente do revisado → volta a precisar de revisão
   if (r.revisado && (dados.instrucao || '') !== (r.instrucao || '')) Object.assign(dados, { revisado: false, revisadoPor: null, revisadoEm: null });
+  // checklist de publicação marcado no cadastro (quem marcou e quando)
+  Object.entries(CHECKS).forEach(([k, c]) => {
+    const v = _dx.checks[k];
+    if (!pode('instrucoes', c.acao) || !!r[k] === v) return;
+    Object.assign(dados, { [k]: v, [`${k}Por`]: v ? u.nome : null, [`${k}Em`]: v ? DB.agora() : null });
+  });
   await DB.mesclar(`catalogo/${id}`, dados);
   if (ESTADO.catalogo) ESTADO.catalogo[id] = { ...r, ...dados, atualizadoEm: Date.now() };   // a ficha abre em seguida
 }
 
 async function gravarDadosExame() {
   const desc = valorCampo('dx-desc').trim();
-  if (!desc) return toast('Informe a descrição', 'erro');
+  if (!desc) return toast('Informe o nome do exame', 'erro');
+  const dias = parseInt(valorCampo('dx-dias'), 10);
   const dados = { descricao: desc, setorId: _dx.setorId || null, origem: _dx.origem, ativo: _dx.ativo,
-    material: valorCampo('dx-mat').trim() || null, prazo: valorCampo('dx-prazo').trim() || null, atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome };
+    material: valorCampo('dx-mat').trim() || null, prazoDias: isNaN(dias) ? null : Math.max(0, dias), atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome };
   let id = _dx.id;
   if (!id) {
     const mn = valorCampo('dx-mn').trim();
@@ -533,7 +555,18 @@ async function gravarDadosExame() {
       negociado: _dx.origem === 'apoio' && _dx.negociado ? true : null, auditar: _dx.auditar || null, foraDoSistema: _dx.fora || null });
     await DB.gravar(`${CAMINHOS.exames}/${id}`, dados);
     await gravarCatalogoNovoExame(id, mn, desc);
-  } else await DB.mesclar(`${CAMINHOS.exames}/${id}`, dados);
+  } else {
+    // prazo em dias substitui o texto antigo, no exame e no catálogo de instruções
+    if (dados.prazoDias != null) {
+      dados.prazo = null;
+      const c = ESTADO.catalogo?.[id] ?? await DB.ler(`catalogo/${id}`);
+      if (c) {
+        await DB.mesclar(`catalogo/${id}`, { prazoDias: dados.prazoDias, prazo: null });
+        if (ESTADO.catalogo?.[id]) Object.assign(ESTADO.catalogo[id], { prazoDias: dados.prazoDias, prazo: null });
+      }
+    } else delete dados.prazoDias;
+    await DB.mesclar(`${CAMINHOS.exames}/${id}`, dados);
+  }
   await DB.gravar(`historicoExames/${id}/${DB.novaChave('historicoExames')}`, {
     descricao: _dx.id ? 'Dados do exame alterados' : 'Exame cadastrado', usuario: usuarioAtual().nome, usuarioId: usuarioAtual().id, em: DB.agora()
   });

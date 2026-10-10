@@ -44,9 +44,12 @@ módulo (`exames.js`, `custos.js`, `tabelas.js`, `importar.js`, `simulador.js`,
 ### 4.1 Login
 Tela igual à do Manutenção (usuário, senha, criar conta). Primeiro acesso cria o admin.
 
-### 4.2 Início
-Margem média, exames abaixo do mínimo, sem custo, divergências com o sistema,
-margem por setor (com linhas de mínimo e alvo) e últimas alterações.
+### 4.2 Início — painel completo ✔
+Oito indicadores clicáveis (margem média, abaixo do mínimo, sem custo, divergência com o
+Unilab em todas as tabelas, propostas pendentes, quebra de hierarquia, abaixo do alvo, a
+auditar); barra de situação dos exames; margem por setor (linhas de mínimo e alvo);
+pendências por categoria; resumo de cada tabela de preço (exames, margem média, abaixo do
+piso, diferentes do Unilab, propostas) e as últimas alterações do sistema (`historico/`).
 
 ### 4.3 Exames
 - Tabela com busca, filtros (setor, origem) e filtros rápidos por status.
@@ -132,9 +135,19 @@ Sem custo · Sem setor · Fora do sistema · Divergência de preço · A auditar
 Sem vínculo no apoio · Abaixo do mínimo.
 
 ### 4.8 Importar / Exportar
-Assistente em 5 passos (tipo → arquivo → mapear colunas → conferir → concluir);
-nada é gravado antes da conferência. Exportações: formato do sistema (CSV), Excel/CSV,
-PDF da tabela e backup JSON.
+Nada é gravado antes da conferência.
+- **Migração da planilha** (aba PARTICULAR).
+- **Sincronizar com o Unilab** ✔: vários CSVs de uma vez (Particular e demais tabelas). Cada
+  arquivo é ligado à tabela pelo nome (`PARTICULAR.csv`, `CARTOES_DE_DESCONTO.csv`…), com
+  ajuste manual. Mostra por arquivo: linhas, preços conferidos, diferentes, só no Unilab e
+  fora do arquivo. Grava o preço no Unilab de cada tabela; na Particular também efetua S/N,
+  exames novos e fora do sistema. Preço diferente: manter o do LAMIC (fica como divergência)
+  ou levar o do Unilab ao rascunho de cada tabela. Opção de incluir nas tabelas os exames
+  que só têm preço no Unilab. Relatório de divergências (CSV) de todas as tabelas.
+- **PDF da tabela** ✔ (botão PDF em cada tabela e laboratório): preços publicados, agrupado
+  por setor (apoio = "Diversos"), material e prazo opcionais, título e observação, só os
+  exames filtrados na tela se desejado. Mesmo visual do PDF da proposta; sem custo nem margem.
+- Exportação no formato do Unilab por tabela.
 
 ### 4.9 Configurações
 - **Usuários**: busca, filtro por grupo, cadastro aberto liga/desliga, ativo/inativo,
@@ -148,6 +161,10 @@ PDF da tabela e backup JSON.
   margem alvo própria. Exclusão só sem exames vinculados.
 
 ### 4.10 Instruções (catálogo do exame)
+Prazo de liberação: cadastrado só em **dias** (`prazoDias`); 0 = "24 Horas", 1 = "1 dia",
+n = "n dias". O texto livre foi removido dos formulários; o texto importado da planilha só
+aparece enquanto o exame não tiver os dias preenchidos.
+
 Fonte: planilha "BD - TABELAS CH PARTICULARES", aba Exames (CSV). Colunas A–E: mnemônico,
 material biológico, nome, prazo em dias e prazo em texto. Colunas H–L (tabela separada,
 ligada pelo mnemônico): checklist Site / Unilab / Revisado, espelho do mnemônico e a
@@ -194,6 +211,8 @@ maquininha   = projeção: lucro − preço × 2,29% (não entra no custo)
 - Tabela derivada: preço = exceção ?? arredondar(Particular × (1 − desconto));
   sinaliza "abaixo do piso" quando margem < piso da tabela.
 - Médias são simples (sem volume; a aba 0Reajuste foi descartada).
+- Preço abaixo de R$ 1,00 é simbólico: fica fora do reajuste simulado, não serve de
+  referência na proposta para laboratório e não entra na variação nem no desconto médio.
 
 ## 6. Estrutura de dados (Firebase)
 
@@ -281,7 +300,7 @@ Exames que existem só no sistema (1.503) entram na sincronização da fase 5.
 | Comercial | Exames, tabelas e simulador (criar/editar/exportar); demais ver |
 | Custos / Financeiro | Custos, parâmetros, importações e **aprovação** |
 | Técnico de setor | Ver exames; editar custos do próprio setor |
-| Visualizador | Somente consulta (grupo padrão) |
+| Visualizador | Somente consulta (grupo padrão; se nenhum grupo estiver marcado, o sistema volta a marcá-lo ao abrir) |
 
 ## 9. Decisões registradas
 
@@ -326,6 +345,7 @@ Exames que existem só no sistema (1.503) entram na sincronização da fase 5.
 4. **Comercial** ✔: tabelas de preço com edição manual, rascunho, propostas, aprovação e
    histórico; perfil de custo por tabela; Lamic-to-Lab e laboratórios apoiados;
    importação das abas e exportação no formato do Unilab por tabela.
-5. **Integração**: simulador ✔ (reajuste e proposta para laboratório); falta sincronização
-   completa com o sistema e painel inicial completo.
-6. **Finalização**: Firebase Auth + Security Rules, PDF das tabelas, novos apoios.
+5. **Integração** ✔: simulador (reajuste e proposta para laboratório), sincronização com o
+   Unilab (vários arquivos) e painel inicial completo.
+6. **Finalização**: PDF das tabelas ✔; faltam Firebase Auth + Security Rules (exige ativar
+   o provedor no console do Firebase) e novos modelos de apoio (exigem arquivo de exemplo).

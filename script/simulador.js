@@ -139,14 +139,16 @@ function novoPrecoReajuste(cx, x) {
   return Math.abs(v - atual) < 0.005 ? undefined : v;
 }
 
-let _rjLinhas = [];
+let _rjLinhas = [], _rjSimbolicos = 0;
 function calcularReajuste() {
   const cx = ctxAlvo(rj.alvo), fs = valorPop('pop-rjsetor');
+  _rjSimbolicos = 0;
   _rjLinhas = examesVisiveis().filter(e => e.ativo !== false)
     .filter(e => fs === '__sem' ? !ESTADO.setores[e.setorId] : !fs || e.setorId === fs)
     .map(e => {
       const atual = cx.salvo(e.id);
       if (atual == null) return null;
+      if (precoSimbolico(atual)) { _rjSimbolicos++; return null; }
       const c = calcular(e, atual, cx.tab);
       if (rj.escopo === 'abaixo' && c.status !== 'r') return null;
       const x = { e, k: e.id, atual, c, ref: cx.ref?.valor(e.id) ?? null };
@@ -175,7 +177,8 @@ function recalcReajuste() {
     + imp('fa-tags', 'Variação média', alt.length ? `${media(alt, x => x.var) >= 0 ? '+' : ''}${pct(media(alt, x => x.var))}` : '—', `<span class="muted">no escopo ${s0 ? `${s1 >= s0 ? '+' : ''}${pct(s1 / s0 - 1)}` : '—'}</span>`)
     + imp('fa-percent', 'Margem média', m1 != null ? pct(m1) : '—', `<i class="fa-solid fa-clock-rotate-left"></i>antes ${m0 != null ? pct(m0) : '—'}`, m1 == null || m0 == null ? 'muted' : m1 >= m0 ? 'up' : 'dn')
     + imp('fa-life-ring', `Abaixo do ${cx.pisoNome}`, num(ab1, 0), `<span class="muted">antes ${ab0}${saem ? ` · <b style="color:var(--green)">${saem} saem</b>` : ''}</span>`)
-    + (semCusto ? imp('fa-circle-question', 'Sem custo', num(semCusto, 0), '<span class="muted">margem desconhecida</span>') : '');
+    + (semCusto ? imp('fa-circle-question', 'Sem custo', num(semCusto, 0), '<span class="muted">margem desconhecida</span>') : '')
+    + (_rjSimbolicos ? imp('fa-ban', 'Ignorados', num(_rjSimbolicos, 0), `<span class="muted">preço abaixo de ${fmt(PRECO_MIN_VARIACAO)}</span>`) : '');
   desenharResultadoReajuste();
 }
 
@@ -259,24 +262,26 @@ async function levarReajuste(enviar) {
 const pl = { id: null, nome: '', labId: '', tabelaId: null, base: 'tab', d: 10, itens: {}, pdf: null, filtro: 'tab', prazo: 0, q: '', pag: 1, ordem: 'mn', dir: 1, sujo: false };
 const PRAZOS_LAB = [[0, 'Todos'], [1, '24h'], [2, '48h'], [4, '96h'], [5, '5 dias'], [30, '30 dias']];
 
-// "24 H" → 1 · "48h" → 2 · "4 Dias" → 4 · "N/A" → null
+// dias do cadastro (0 = 24 horas); texto antigo: "24 H" → 0 · "48h" → 2 · "4 Dias" → 4 · "N/A" → null
 function diasPrazo(k) {
   const c = ESTADO.catalogo?.[k];
-  if (c?.prazoDias != null && !isNaN(c.prazoDias)) return +c.prazoDias;
+  const d = c?.prazoDias ?? ESTADO.exames[k]?.prazoDias;
+  if (d != null && !isNaN(d)) return +d;
   const t = String(c?.prazo || ESTADO.exames[k]?.prazo || '');
   let m = t.match(/(\d+)\s*h/i);
-  if (m) return Math.max(1, Math.ceil(+m[1] / 24));
+  if (m) return +m[1] <= 24 ? 0 : Math.ceil(+m[1] / 24);
   m = t.match(/(\d+)\s*d/i);
   return m ? +m[1] : null;
 }
-const textoPrazo = k => { const c = ESTADO.catalogo?.[k]; return c?.prazo || ESTADO.exames[k]?.prazo || (c?.prazoDias != null ? `${c.prazoDias} dia(s)` : ''); };
+const textoPrazo = k => { const c = ESTADO.catalogo?.[k], e = ESTADO.exames[k]; return prazoTexto(c?.prazoDias ?? e?.prazoDias) || c?.prazo || e?.prazo || ''; };
 
 // Contexto: tabela de referência (perfil de custo, piso) e laboratório vinculado
 function ctxLabSim() {
   const t = ESTADO.tabelas[pl.tabelaId] || null, l = ESTADO.laboratorios[pl.labId] || null;
   return {
     t, l, tab: t ? { ...t, id: pl.tabelaId } : null, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null,
-    ref: k => t ? t.precos?.[k] ?? null : ESTADO.exames[k]?.precoPraticado || null,
+    // preço simbólico (abaixo de R$ 1,00) não serve de referência
+    ref: k => { const v = t ? t.precos?.[k] ?? null : ESTADO.exames[k]?.precoPraticado || null; return precoSimbolico(v) ? null : v; },
     refNome: t?.nome || 'Particular'
   };
 }

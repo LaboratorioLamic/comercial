@@ -304,3 +304,27 @@ td.hier-bad { color: var(--red); font-weight: 600; background: var(--red-bg); }
 .fx-tv .acts button { width: 24px; height: 24px; }
 @media (max-width: 480px) { .fx-abas button { font-size: 0; gap: 0; } .fx-abas button i { font-size: 13px; } .fx-abas .fx-n { font-size: 10px; } }
 .pdf-txt { min-height: 260px; line-height: 1.5; }
+
+/* ── Início: situação dos exames, pendências e últimas alterações ── */
+.dist { padding: 14px 18px 16px; }
+.dist-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; background: var(--bg-soft); }
+.dist-leg { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font-size: 12.5px; color: var(--text-secondary); }
+.dist-leg b { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; }
+.dist-leg strong { font-family: "DM Mono", monospace; color: var(--text-primary); }
+.dist-leg em { font-style: normal; color: var(--text-muted); font-size: 11.5px; }
+.ini-list { padding: 8px 10px 12px; }
+.ini-row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: var(--radius); font-size: 13px; }
+.ini-row.clicavel { cursor: pointer; transition: var(--t); }
+.ini-row.clicavel:hover { background: var(--bg-soft); }
+.ini-row > i { width: 18px; text-align: center; color: var(--text-muted); }
+.ini-row .nm { flex: 1; }
+.ini-row b { font-family: "DM Mono", monospace; font-size: 12.5px; padding: 2px 9px; border-radius: 10px; background: var(--amber-bg); color: var(--amber); }
+.ini-row b.zero { background: var(--bg-soft); color: var(--text-muted); font-weight: 500; }
+.ini-hist { padding: 8px 18px 14px; max-height: 420px; overflow-y: auto; }
+
+/* Cadastro de exame: checklist de publicação compacto (Site · Unilab · Revisado) */
+.dx-checks { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+.dx-ck { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; font-size: 12.5px; border-right: 1px solid var(--border); min-width: 0; }
+.dx-ck:last-child { border-right: 0; }
+.dx-ck > span { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.dx-ck > span i { color: var(--text-muted); font-size: 12px; }

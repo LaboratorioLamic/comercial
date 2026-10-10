@@ -53,7 +53,13 @@ const hashSenha = (senha, sal) => sha256(sal + ':' + senha);
 // ── Consultas ─────────────────────────────────────────────────
 const usuarioAtual = () => sessao ? { id: sessao.usuarioId, ...ESTADO.usuarios[sessao.usuarioId] } : null;
 const temAdmin = () => Object.values(ESTADO.usuarios).some(u => u.admin);
-const grupoPadrao = () => lista(ESTADO.grupos).find(g => g.padrao) || lista(ESTADO.grupos).find(g => !g.travado);
+// Sem grupo marcado como padrão: Visualizador ou, na falta, o grupo com menos permissões
+const nPermissoes = g => Object.values(g.permissoes || {}).reduce((s, l) => s + (l?.length || 0), 0);
+const grupoPadrao = () => {
+  const gs = lista(ESTADO.grupos);
+  return gs.find(g => g.padrao) || gs.find(g => !g.travado && normalizar(g.nome) === 'visualizador')
+    || gs.filter(g => !g.travado).sort((a, b) => nPermissoes(a) - nPermissoes(b))[0];
+};
 const acharUsuario = login => lista(ESTADO.usuarios).find(u => u.usuario === String(login).trim().toLowerCase());
 
 // Permissão: admin e grupo travado podem tudo

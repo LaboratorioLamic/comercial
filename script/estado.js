@@ -118,6 +118,11 @@ async function semearDados() {
   // Setores de apoio anteriores ao campo modeloImportacao: Pardini recebe o modelo 4114
   const semModelo = lista(ESTADO.setores).filter(s => s.categoria === 'apoio' && s.modeloImportacao === undefined);
   if (semModelo.length) await DB.mesclar(CAMINHOS.setores, Object.fromEntries(semModelo.map(s => [`${s.id}/modeloImportacao`, /PARDINI/i.test(s.nome) ? 'pardini4114' : ''])));
+  // Nenhum grupo marcado como padrão para novos usuários: volta ao Visualizador (ou ao mais restrito)
+  if (Object.keys(ESTADO.grupos).length && !lista(ESTADO.grupos).some(g => g.padrao)) {
+    const g = grupoPadrao();
+    if (g) await DB.gravar(`${CAMINHOS.grupos}/${g.id}/padrao`, true);
+  }
   // Tabelas de preço: o perfil de custo usa os ids dos custos fixos
   if (!Object.keys(ESTADO.tabelas).length) {
     const fixos = lista(await DB.ler(CAMINHOS.custosFixos)), obj = {};

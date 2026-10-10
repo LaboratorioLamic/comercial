@@ -11,16 +11,18 @@ function renderImportar() {
   el.innerHTML = `
     <div class="h-row"><div><h2>Importar / Exportar</h2><p>Toda importação mostra o resultado antes de gravar.</p></div></div>
     <div class="card" id="mig-card">${podeImp ? htmlMigracao() : vazio('fa-lock', 'Seu grupo não tem permissão para importar.')}</div>
+    ${podeImp ? `<div class="card" id="sinc-card" style="margin-top:14px">${htmlSinc()}</div>` : ''}
     <div class="sec-t" style="margin:22px 0 12px"><i class="fa-solid fa-layer-group"></i>Outras importações e exportações</div>
     <div class="cards">
       ${[['fa-truck-medical', '#00a8cc', 'Hermes Pardini 4114', 'Custos negociados, vínculos e vigência', pode('custos') ? "custosAba='apoio';irPara('custos')" : ''],
          ['fa-book-medical', '#1d7044', 'Catálogo e instruções', 'Nome, material, prazo e instruções dos exames', pode('instrucoes') ? "ins.imp.passo=1;irPara('instrucoes')" : ''],
-         ['fa-file-csv', '#6366f1', 'Tabela do sistema (CSV)', 'Sincronizar PARTICULAR.csv e demais tabelas · fase 5'],
+         ['fa-code-compare', '#6366f1', 'Divergências com o Unilab', 'Relatório (CSV) dos preços diferentes em todas as tabelas', pode('importar', 'exportar') || pode('tabelas', 'exportar') ? 'exportarDivergenciasUnilab()' : ''],
          ['fa-file-export', '#2a9d8f', 'Preços das tabelas', 'Importar abas da planilha e exportar no layout do Unilab', pode('tabelas') ? "tabAba='tabelas';irPara('tabelas')" : ''],
          ['fa-building-user', '#8b5cf6', 'Laboratórios apoiados', 'Aba Negociados da Lamic-to-Lab', pode('tabelas') ? "tabAba='labs';irPara('tabelas')" : ''],
-         ['fa-file-pdf', '#e63946', 'Tabela em PDF', 'Para balcão e convênios · fase 6']].map(([ic, c, t, d, acao]) =>
+         ['fa-file-pdf', '#e63946', 'Tabela em PDF', 'Para balcão, convênios e laboratórios: botão PDF em cada tabela', pode('tabelas', 'exportar') ? "tabAba='tabelas';irPara('tabelas')" : '']].map(([ic, c, t, d, acao]) =>
         `<div class="card tcard ${acao ? 'clicavel' : 'desab'}" ${acao ? `onclick="${acao}"` : ''}><div class="tc-h"><span class="tc-ic" style="--c:${c}"><i class="fa-solid ${ic}"></i></span><div><div class="tc-n">${t}</div><div class="tc-s">${d}</div></div>${acao ? '<i class="fa-solid fa-chevron-right muted" style="margin-left:auto"></i>' : ''}</div></div>`).join('')}
     </div>`;
+  if (podeImp) popsSinc();
 }
 
 const PASSOS_MIG = ['Arquivos', 'Conferir', 'Gravar', 'Concluído'];
@@ -63,7 +65,7 @@ function htmlMigracao() {
         ${r.comSistema ? kp('fa-code-compare', 'var(--amber)', 'Preço divergente', r.divergentes, 'planilha × sistema') : ''}
         ${kp('fa-plug-circle-xmark', 'var(--red)', 'Fora do sistema', r.fora, r.comSistema ? `${r.inativosSistema} com efetua = N` : 'pela coluna X')}
       </div>
-      ${r.comSistema && r.soNoSistema ? `<div class="alert x"><i class="fa-solid fa-circle-info"></i><div>${num(r.soNoSistema, 0)} mnemônicos existem só no sistema e <b>não</b> são importados agora: entram pela sincronização da tabela do sistema (fase 5).</div></div>` : ''}
+      ${r.comSistema && r.soNoSistema ? `<div class="alert x"><i class="fa-solid fa-circle-info"></i><div>${num(r.soNoSistema, 0)} mnemônicos existem só no sistema e <b>não</b> são importados agora: entram depois, em "Sincronizar com o Unilab".</div></div>` : ''}
       ${!r.comSistema ? `<div class="alert a"><i class="fa-solid fa-triangle-exclamation"></i><div>Sem a tabela do sistema, o preço de referência fica vazio e "fora do sistema" usa a coluna X da planilha.</div></div>` : ''}
       ${naoAchados.length ? `<div class="alert a"><i class="fa-solid fa-tags"></i><div>Setores da planilha não encontrados no cadastro (exames entram sem setor): ${naoAchados.map(([n, q]) => `<b>${esc(n)}</b> (${q})`).join(', ')}. Cadastre-os em Configurações → Setores antes, se quiser.</div></div>` : ''}
       <div class="sec-t" style="margin-top:16px"><i class="fa-solid fa-eye"></i>Amostra</div>

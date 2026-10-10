@@ -22,6 +22,11 @@ const STATUS = {
 const tagSt = (cls, icone, nome) => `<span class="st ${cls}" title="${nome}"><i class="fa-solid ${icone}"></i><span class="st-t">${nome}</span></span>`;
 const tagStatus = s => tagSt(s, STATUS[s].icone, STATUS[s].nome);
 
+// Preço abaixo de R$ 1,00 é simbólico (reanálise, cortesia…): fica fora das simulações
+// e dos cálculos de variação e desconto médio
+const PRECO_MIN_VARIACAO = 1;
+const precoSimbolico = p => p != null && p < PRECO_MIN_VARIACAO;
+
 // Etapas: ajuste do exame > padrão do setor > passa por todas
 function etapasExame(e) {
   const s = ESTADO.setores[e.setorId];

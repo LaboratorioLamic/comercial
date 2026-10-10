@@ -157,7 +157,7 @@ function statsAlvo(cx) {
     if (c.status === 'r') st.ab++;
     if (c.margem != null) { st.sm += c.margem; st.km++; }
     const ref = cx.ref?.valor(e.id);
-    if (ref) { st.sd += 1 - p / ref; st.kd++; }
+    if (ref && !precoSimbolico(ref) && !precoSimbolico(p)) { st.sd += 1 - p / ref; st.kd++; }
     const s = cx.sistema(e.id);
     if (s != null && Math.abs(s - p) > 0.004) st.div++;
   });
@@ -242,6 +242,7 @@ function htmlCabGrade(cx) {
   if (cx.tabela && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportTabela('${cx.id}')"><i class="fa-solid fa-file-import"></i>Importar</button>`);
   if (cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="exportarLaboratorio('${cx.id}')"><i class="fa-solid fa-file-csv"></i>Exportar lista</button>`);
   if (!cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="exportarTabelaUnilab('${cx.alvo}')"><i class="fa-solid fa-file-csv"></i>Exportar p/ Unilab</button>`);
+  if (pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="abrirPdfTabela('${cx.alvo}')" title="PDF com os preços publicados"><i class="fa-solid fa-file-pdf"></i>PDF</button>`);
   if (cx.tabela && (pode('tabelas', 'editar') || pode('tabelas', 'criar'))) bts.push(`<button class="btn sm" onclick="abrirConfigTabela('${cx.id}')"><i class="fa-solid fa-gear"></i>Configurar</button>`);
   if (cx.lab && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirLaboratorio('${cx.id}')"><i class="fa-solid fa-pen"></i>Dados</button>`);
   return `<div class="sec-card-h"><span class="tc-ic" style="--c:${cx.cor}"><i class="fa-solid ${cx.icone}"></i></span><div style="min-width:0;flex:1"><h3>${esc(cx.nome)}</h3><div class="sub">${sub}</div></div>
@@ -253,7 +254,10 @@ function linhaGrade(cx, e) {
   const k = e.id, preco = precoAtual(cx, k);
   const hier = cx.lab ? [] : quebrasHierarquia(k, (a, kk) => a === cx.alvo ? preco : precoSalvoHier(a, kk))
     .filter(q => q.alvo === cx.alvo || q.teto.alvo === cx.alvo);
-  return { e, k, preco, c: calcular(e, preco, cx.tab), ed: editado(cx, k), salvo: cx.salvo(k), ref: cx.ref?.valor(k) ?? null, sist: cx.sistema(k), hier };
+  const ref = cx.ref?.valor(k) ?? null;
+  // desconto sobre a referência (negativo = preço acima dela); descRef = desconto de referência da tabela
+  return { e, k, preco, c: calcular(e, preco, cx.tab), ed: editado(cx, k), salvo: cx.salvo(k), ref, sist: cx.sistema(k), hier,
+    desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.descRef || 0 };
 }
 
 const FILTROS_GRADE = {
@@ -264,10 +268,12 @@ const FILTROS_GRADE = {
   a:    { nome: 'Abaixo do alvo',   icone: 'fa-circle-exclamation',  f: x => x.c.status === 'a', cor: 'var(--amber)' },
   x:    { nome: 'Sem custo',        icone: 'fa-circle-question',     f: x => x.preco != null && x.c.semCusto, cor: 'var(--gray)' },
   div:  { nome: 'Diverge do Unilab', icone: 'fa-code-compare',       f: x => x.sist != null && x.preco != null && Math.abs(x.sist - x.preco) > 0.004, cor: 'var(--amber)' },
+  dref: { nome: 'Desconto referência', icone: 'fa-percent',          f: x => x.desc != null && x.desc > x.descRef + 0.0005, cor: 'var(--amber)' },
+  dneg: { nome: 'Desconto negativo', icone: 'fa-arrow-trend-up',     f: x => x.desc != null && x.desc < -0.0005, cor: 'var(--red)' },
   hier: { nome: 'Quebra hierarquia', icone: 'fa-stairs',            f: x => x.hier.length > 0, cor: 'var(--amber)' },
   ed:   { nome: 'No rascunho',      icone: 'fa-pen',                 f: x => x.ed, cor: 'var(--cyan)' }
 };
-const filtrosDe = cx => cx.base ? ['', 'r', 'a', 'x', 'div', 'hier', 'ed'] : cx.lab ? ['', 'r', 'x', 'ed'] : ['tab', '', 'fora', 'r', 'x', 'div', 'hier', 'ed'];
+const filtrosDe = cx => cx.base ? ['', 'r', 'a', 'x', 'div', 'hier', 'ed'] : cx.lab ? ['', 'r', 'x', 'dneg', 'ed'] : ['tab', '', 'fora', 'r', 'x', 'div', 'dref', 'dneg', 'hier', 'ed'];
 
 function linhasGradeBase(cx) {
   const fs = valorPop('pop-grsetor');
@@ -287,13 +293,14 @@ function desenharGrade() {
   fls.forEach(f => { cont[f] = todas.filter(FILTROS_GRADE[f].f).length; });
   document.getElementById('gr-chips').innerHTML = fls.filter(f => cont[f] || f === grade.filtro || f === '' || f === 'tab').map(f => {
     const F = FILTROS_GRADE[f], nome = f === 'r' && cx.base ? 'Abaixo do mínimo' : f === 'fora' && cx.lab ? 'Sem valor' : F.nome;
-    return `<button class="chip ${grade.filtro === f ? 'on' : ''}" onclick="grade.filtro='${f}';grade.pag=1;desenharGrade()">${F.cor ? `<span class="d" style="background:${F.cor}"></span>` : `<i class="fa-solid ${F.icone}"></i>`}${nome} <b>${cont[f]}</b></button>`;
+    const dica = f === 'dref' ? `Desconto maior que o de referência da tabela (${pct(cx.descRef, 0)})` : f === 'dneg' ? `Preço acima de ${cx.ref?.nome || 'a referência'}` : '';
+    return `<button class="chip ${grade.filtro === f ? 'on' : ''}" title="${esc(dica)}" onclick="grade.filtro='${f}';grade.pag=1;desenharGrade()">${F.cor ? `<span class="d" style="background:${F.cor}"></span>` : `<i class="fa-solid ${F.icone}"></i>`}${nome} <b>${cont[f]}</b></button>`;
   }).join('');
 
   const linhas = todas.filter(FILTROS_GRADE[grade.filtro].f);
   const val = {
     mn: x => x.e.mn.toUpperCase(), desc: x => normalizar(x.e.descricao), custo: x => x.c.custo ?? -1,
-    ref: x => (cx.base ? x.c.sugerido : x.ref) ?? -1, preco: x => x.preco ?? -1, margem: x => x.c.margem ?? -9
+    ref: x => (cx.base ? x.c.sugerido : x.ref) ?? -1, preco: x => x.preco ?? -1, margem: x => x.c.margem ?? -9, descp: x => x.desc ?? -9
   }[grade.ordem] || (x => x.e.mn.toUpperCase());
   linhas.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * grade.dir; });
   grade.linhas = linhas;
@@ -307,7 +314,7 @@ function desenharGrade() {
   document.getElementById('gr-head').innerHTML = `<tr>
     <th style="width:40px">${edit ? `<button class="cb ${todasSel ? 'on' : ''}" title="Selecionar todos os ${linhas.length} filtrados" onclick="selTodas(${!todasSel})"><i class="fa-solid fa-check"></i></button>` : ''}</th>
     ${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Custo total', 'custo', 'num')}
-    ${cx.base ? th('Sugerido', 'ref', 'num') : th(esc(cx.ref?.nome || 'Ref.'), 'ref', 'num') + '<th class="num col-opt">Desc.</th>'}
+    ${cx.base ? th('Sugerido', 'ref', 'num') : th(esc(cx.ref?.nome || 'Ref.'), 'ref', 'num') + th('Desc.', 'descp', 'num col-opt')}
     ${cx.lab ? '' : '<th class="num col-opt">Unilab</th>'}
     ${th(cx.base ? 'Preço praticado' : cx.lab ? 'Valor diferenciado' : 'Preço na tabela', 'preco', 'num')}${th('Margem', 'margem', 'num')}<th>Situação</th><th></th></tr>`;
   body.innerHTML = pagina.map(x => htmlLinhaGrade(cx, x, edit)).join('')

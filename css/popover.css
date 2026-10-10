@@ -5,6 +5,8 @@
 .pop-wrap { position: relative; display: inline-block; }
 .pop-wrap.block { display: block; }
 .pop-wrap.open { z-index: 56; }
+/* Popover dentro de bloco com cantos recortados (overflow: hidden): libera enquanto aberto */
+.casc:has(.pop-wrap.open) { overflow: visible; }
 .pop-btn {
   display: flex; align-items: center; gap: 10px; min-width: 180px; width: 100%; padding: 6px 12px 6px 10px;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text-primary); text-align: left; transition: var(--t);

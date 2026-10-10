@@ -26,6 +26,11 @@ const corAvatar = id => {
   return CORES_AVATAR[h % CORES_AVATAR.length];
 };
 
+// Prazo de liberação em dias → texto (0 = 24 Horas)
+const prazoTexto = dias => dias == null || dias === '' || isNaN(dias) ? '' : +dias <= 0 ? '24 Horas' : +dias === 1 ? '1 dia' : `${+dias} dias`;
+// Registro do catálogo ou do exame: usa os dias; texto antigo (importado) só quando não há dias
+const prazoDe = r => !r ? '' : prazoTexto(r.prazoDias) || r.prazo || '';
+
 const dataHora = ts => ts ? new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
 // Objeto {id: item} → lista ordenada

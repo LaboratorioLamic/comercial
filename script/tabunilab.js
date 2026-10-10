@@ -34,22 +34,33 @@ async function analisarImportUnilab() {
   pui.erro = ''; pui.analise = null;
   try {
     await garantirCatalogo();
-    const sis = analisarSistema(pui.texto), porMn = {};
-    Object.entries(ESTADO.exames).forEach(([k, e]) => { porMn[String(e.mn).trim().toUpperCase()] = k; });
-    const a = { linhas: Object.keys(sis).length, atualizar: [], divergentes: [], novosS: [], novosN: [], inativos: 0, fora: [] };
-    Object.values(sis).forEach(s => {
-      const k = porMn[s.mn.toUpperCase()];
-      if (!k) { (s.efetua && s.ch > 0 ? a.novosS : a.novosN).push(s); return; }
-      const e = ESTADO.exames[k];
-      a.atualizar.push({ k, s });
-      if (!s.efetua) a.inativos++;
-      if (s.efetua && s.ch > 0 && Math.abs((e.precoPraticado || 0) - s.ch) > 0.004) a.divergentes.push({ k, e, de: e.precoPraticado || null, para: s.ch });
-    });
-    a.fora = Object.keys(porMn).filter(m => !sis[m]).map(m => porMn[m]).filter(k => ESTADO.exames[k].ativo !== false);
-    if (!a.linhas) throw new Error('Nenhum exame encontrado no arquivo.');
-    pui.analise = a;
+    pui.analise = analiseUnilabParticular(analisarSistema(pui.texto));
   } catch (e) { pui.erro = e.message; }
   desenharImportUnilab();
+}
+
+// Mnemônico (maiúsculas) → chave do exame
+function mapaMnemonicos() {
+  const porMn = {};
+  Object.entries(ESTADO.exames).forEach(([k, e]) => { porMn[String(e.mn).trim().toUpperCase()] = k; });
+  return porMn;
+}
+
+// Compara a tabela Particular do Unilab (analisarSistema) com os exames cadastrados
+function analiseUnilabParticular(sis) {
+  const porMn = mapaMnemonicos();
+  const a = { linhas: Object.keys(sis).length, atualizar: [], divergentes: [], novosS: [], novosN: [], inativos: 0, fora: [] };
+  Object.values(sis).forEach(s => {
+    const k = porMn[s.mn.toUpperCase()];
+    if (!k) { (s.efetua && s.ch > 0 ? a.novosS : a.novosN).push(s); return; }
+    const e = ESTADO.exames[k];
+    a.atualizar.push({ k, s });
+    if (!s.efetua) a.inativos++;
+    if (s.efetua && s.ch > 0 && Math.abs((e.precoPraticado || 0) - s.ch) > 0.004) a.divergentes.push({ k, e, de: e.precoPraticado || null, para: s.ch });
+  });
+  a.fora = Object.keys(porMn).filter(m => !sis[m]).map(m => porMn[m]).filter(k => ESTADO.exames[k].ativo !== false);
+  if (!a.linhas) throw new Error('Nenhum exame encontrado no arquivo.');
+  return a;
 }
 
 function desenharImportUnilab() {
@@ -91,8 +102,9 @@ function desenharImportUnilab() {
     <button class="btn pri" ${a ? '' : 'disabled'} onclick="gravarImportUnilab()"><i class="fa-solid fa-check"></i>Importar</button>`;
 }
 
-async function gravarImportUnilab() {
-  const a = pui.analise, u = usuarioAtual(), agora = DB.agora(), upd = {}, cat = ESTADO.catalogo || {};
+// Monta em upd as gravações da Particular; op = { precos: rascunho|aplicar|manter, novos, novosN, fora }
+function gravacoesUnilabParticular(a, op, upd) {
+  const u = usuarioAtual(), agora = DB.agora(), cat = ESTADO.catalogo || {};
   const cria = pode('exames', 'criar');
   const hist = (k, descricao) => { upd[`historicoExames/${k}/${DB.novaChave('historicoExames')}`] = { descricao, usuario: u.nome, usuarioId: u.id, em: agora }; };
   // existentes: preço no Unilab e situação
@@ -101,27 +113,34 @@ async function gravarImportUnilab() {
     upd[`${CAMINHOS.exames}/${k}/inativoNoSistema`] = s.efetua ? null : true;
     upd[`${CAMINHOS.exames}/${k}/foraDoSistema`] = null;
   });
-  if (pui.fora) a.fora.forEach(k => { upd[`${CAMINHOS.exames}/${k}/foraDoSistema`] = true; });
+  if (op.fora) a.fora.forEach(k => { upd[`${CAMINHOS.exames}/${k}/foraDoSistema`] = true; });
   // novos
-  const novos = cria ? [...(pui.novos ? a.novosS : []), ...(pui.novosN ? a.novosN : [])] : [];
+  const novos = cria ? [...(op.novos ? a.novosS : []), ...(op.novosN ? a.novosN : [])] : [];
   novos.forEach(s => {
     const k = chaveExame(s.mn), c = cat[k] || {};
     upd[`${CAMINHOS.exames}/${k}`] = {
-      mn: s.mn, descricao: c.nome || s.mn, origem: 'interno', ativo: s.efetua, material: c.material || null, prazo: c.prazo || null,
+      mn: s.mn, descricao: c.nome || s.mn, origem: 'interno', ativo: s.efetua, material: c.material || null, prazoDias: c.prazoDias ?? null, prazo: c.prazoDias != null ? null : c.prazo || null,
       precoPraticado: s.efetua && s.ch > 0 ? s.ch : null, precoSistema: s.efetua ? s.ch : null, inativoNoSistema: s.efetua ? null : true,
       custoTeste: null, criadoEm: agora, atualizadoEm: agora, atualizadoPor: u.nome
     };
     hist(k, `Exame cadastrado pela importação do Unilab (${s.efetua ? fmt(s.ch) : 'efetua N'})`);
   });
   // preços diferentes
-  let nAplic = 0, nRasc = 0;
-  if (pui.precos === 'aplicar' && pode('tabelas', 'aprovar')) a.divergentes.forEach(x => {
+  let nAplic = 0;
+  if (op.precos === 'aplicar' && pode('tabelas', 'aprovar')) a.divergentes.forEach(x => {
     upd[`${CAMINHOS.exames}/${x.k}/precoPraticado`] = x.para;
     upd[`${CAMINHOS.exames}/${x.k}/atualizadoEm`] = agora;
     upd[`${CAMINHOS.exames}/${x.k}/atualizadoPor`] = u.nome;
     hist(x.k, `Particular: ${fmt(x.de)} → ${fmt(x.para)} (importação do Unilab)`);
     nAplic++;
   });
+  return { novos, nAplic };
+}
+
+async function gravarImportUnilab() {
+  const a = pui.analise, upd = {};
+  const { novos, nAplic } = gravacoesUnilabParticular(a, pui, upd);
+  let nRasc = 0;
   await DB.mesclar('/', upd);
   if (pui.precos === 'rascunho' && a.divergentes.length) {
     await carregarRascunho('particular');

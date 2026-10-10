@@ -107,7 +107,7 @@ function desenharInstrucoes() {
   body.innerHTML = ls.slice((ins.pag - 1) * INS_POR_PAG, ins.pag * INS_POR_PAG).map(r => `
     <tr class="row" onclick="abrirInstrucao('${r.id}')">
       <td class="mn">${esc(r.mn)}</td><td class="desc" title="${esc(r.nome || '')}">${r.nome ? esc(r.nome) : `<span class="warn-i"><i class="fa-solid fa-triangle-exclamation"></i>${r.cadastro ? 'sem nome' : 'sem cadastro'}</span>`}</td>
-      <td>${r.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(r.material)}</span>` : '—'}</td><td>${esc(r.prazo || (r.prazoDias != null ? r.prazoDias + ' dia(s)' : '—'))}</td>
+      <td>${r.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(r.material)}</span>` : '—'}</td><td>${esc(prazoDe(r) || '—')}</td>
       ${Object.entries(CHECKS).map(([k, c]) => `<td style="text-align:center" onclick="event.stopPropagation()"><button class="cb ${r[k] ? 'on' : ''}" ${pode('instrucoes', c.acao) ? '' : 'disabled'} title="${c.nome}" onclick="marcarCheck('${r.id}','${k}')"><i class="fa-solid fa-check"></i></button></td>`).join('')}
       <td>${r.instrucao ? '<i class="fa-solid fa-file-lines muted" title="Tem instrução"></i>' : ''}</td></tr>`).join('')
     || `<tr><td colspan="8">${Object.keys(ESTADO.catalogo).length ? vazio('fa-magnifying-glass', 'Nada encontrado') : vazio('fa-book-medical', '<b>Catálogo vazio</b><br>Importe a planilha de instruções (aba Exames, .csv).')}</td></tr>`;
@@ -179,13 +179,12 @@ async function abrirInstrucao(id, voltarFicha = null) {
   const quem = k => r[k] && r[`${k}Por`] ? `${esc(r[`${k}Por`])} · ${dataHora(r[`${k}Em`])}` : r[k] ? 'importado da planilha' : 'pendente';
   abrirGaveta({
     sobre: r.mn, titulo: r.nome || 'Instrução do exame',
-    meta: `${r.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(r.material)}</span>` : ''}${r.prazo ? `<span class="tag"><i class="fa-solid fa-clock"></i>${esc(r.prazo)}</span>` : ''}`,
+    meta: `${r.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(r.material)}</span>` : ''}${prazoDe(r) ? `<span class="tag"><i class="fa-solid fa-clock"></i>${esc(prazoDe(r))}</span>` : ''}`,
     corpo: `<div class="form-col">
       ${campo('in-nome', 'Nome do exame', r.nome || '', { tipo: 'text', desab: !editar })}
-      <div class="fgrid sem-pad" style="grid-template-columns:2fr 1fr 1fr">
+      <div class="fgrid sem-pad" style="grid-template-columns:2fr 1fr">
         ${campo('in-mat', 'Material biológico', r.material || '', { tipo: 'text', desab: !editar })}
-        ${campo('in-dias', 'Prazo (dias)', r.prazoDias ?? '', { passo: '1', desab: !editar })}
-        ${campo('in-prazo', 'Prazo (texto)', r.prazo || '', { tipo: 'text', ph: '24 H', desab: !editar })}
+        ${campo('in-dias', 'Prazo (dias)', diasPrazo(id) ?? '', { passo: '1', desab: !editar, dica: '0 = 24 Horas' })}
       </div>
       <div class="field"><label><i class="fa-solid fa-file-lines"></i>Instrução</label>
         <textarea id="in-txt" class="txt-grande" ${editar ? '' : 'disabled'} placeholder="Jejum, preparo, coleta, conservação…">${esc(r.instrucao || '')}</textarea></div>
@@ -202,8 +201,8 @@ async function gravarInstrucao() {
   const r = ESTADO.catalogo[_iEd.id] || {}, u = usuarioAtual(), dados = { mn: r.mn || ESTADO.exames[_iEd.id]?.mn || _iEd.id, cadastro: true };
   if (pode('instrucoes', 'editar')) {
     const dias = parseInt(valorCampo('in-dias'), 10);
-    Object.assign(dados, { nome: valorCampo('in-nome').trim() || null, material: valorCampo('in-mat').trim() || null, prazoDias: isNaN(dias) ? null : dias,
-      prazo: valorCampo('in-prazo').trim() || null, instrucao: valorCampo('in-txt').trim() || null });
+    Object.assign(dados, { nome: valorCampo('in-nome').trim() || null, material: valorCampo('in-mat').trim() || null, prazoDias: isNaN(dias) ? null : Math.max(0, dias),
+      prazo: isNaN(dias) ? (r.prazo ?? null) : null, instrucao: valorCampo('in-txt').trim() || null });
     // texto mudou → volta a precisar de revisão
     if ((dados.instrucao || '') !== (r.instrucao || '') && r.revisado && _iEd.checks.revisado) _iEd.checks.revisado = false;
   }
@@ -213,6 +212,8 @@ async function gravarInstrucao() {
   });
   dados.atualizadoEm = DB.agora(); dados.atualizadoPor = u.nome;
   await DB.mesclar(`catalogo/${_iEd.id}`, dados);
+  // o exame guarda o mesmo prazo em dias
+  if (dados.prazoDias != null && ESTADO.exames[_iEd.id]) await DB.mesclar(`${CAMINHOS.exames}/${_iEd.id}`, { prazoDias: dados.prazoDias, prazo: null });
   toast(`Instrução de ${dados.mn} salva${dados.revisado === false && r.revisado ? ' · precisa de nova revisão' : ''}`);
   if (_iEd.voltar) abrirFicha(_iEd.voltar, 'instrucoes'); else fecharGaveta();
 }
@@ -226,7 +227,7 @@ async function desenharCatalogoFicha(id) {
   const r = ESTADO.catalogo[id];
   el.innerHTML = !r ? `<div class="muted" style="font-size:12.5px"><i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)"></i> Exame fora do catálogo de instruções. ${pode('instrucoes', 'editar') ? `<a href="#" onclick="abrirInstrucao('${id}','${id}');return false">Cadastrar</a>` : ''}</div>`
     : `<div class="casc">
-      <div class="casc-r"><div class="lft"><i class="fa-solid fa-vial"></i><div>${esc(r.material || '—')}<div class="s">${esc(r.nome || '')}</div></div></div><span class="tag"><i class="fa-solid fa-clock"></i>${esc(r.prazo || (r.prazoDias != null ? r.prazoDias + ' dia(s)' : '—'))}</span></div>
+      <div class="casc-r"><div class="lft"><i class="fa-solid fa-vial"></i><div>${esc(r.material || '—')}<div class="s">${esc(r.nome || '')}</div></div></div><span class="tag"><i class="fa-solid fa-clock"></i>${esc(prazoDe(r) || '—')}</span></div>
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-file-lines"></i><div class="ins-prev">${r.instrucao ? esc(r.instrucao.slice(0, 220)) + (r.instrucao.length > 220 ? '…' : '') : '<span class="muted">sem instrução</span>'}</div></div></div>
       <div class="casc-r"><div class="lft">${Object.entries(CHECKS).map(([k, c]) => `<span class="badge-s ${r[k] ? 'ok' : 'off'}"><i class="fa-solid ${r[k] ? 'fa-check' : c.icone}"></i>${c.nome}</span>`).join(' ')}</div>
         <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></div></div>`;
