@@ -255,6 +255,11 @@ td.nw { white-space: nowrap; }
 .hier-i .acts { display: flex; gap: 2px; }
 .hier-i .acts button { width: 26px; height: 26px; }
 td.hier-bad { color: var(--red); font-weight: 600; background: var(--red-bg); }
+.hier-in { width: 92px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: inherit; font: inherit; text-align: right; outline: none; transition: var(--t); }
+.hier-in:hover { border-color: var(--border-hover); }
+.hier-in:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-light); }
+.hier-in.on { border-color: var(--cyan); background: var(--cyan-light); color: var(--text-primary); }
+#hier-bar { gap: 8px; flex-wrap: wrap; }
 .tab-hier th.num { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
 .hier-tag { color: var(--red); display: flex; flex-direction: column; align-items: flex-start; max-width: 120px; white-space: normal; line-height: 1.25; margin: 1px 0; }
 .hier-tag b { font-family: "DM Mono", monospace; font-size: 11px; }
@@ -328,3 +333,22 @@ td.hier-bad { color: var(--red); font-weight: 600; background: var(--red-bg); }
 .dx-ck:last-child { border-right: 0; }
 .dx-ck > span { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .dx-ck > span i { color: var(--text-muted); font-size: 12px; }
+
+/* ── Anexos da instrução e acessos do L2L ── */
+.anx-r { display: flex; gap: 6px; margin-bottom: 6px; }
+.anx-r .inp { flex: 1.3; min-width: 0; }
+.anx-r .inp:first-child { flex: 1; }
+.anx-r .pre i { font-size: 11px; }
+a.icon-btn { text-decoration: none; }
+.anx-ac { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.anx-links { display: flex; gap: 6px; flex-wrap: wrap; }
+.anx-links a { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 6px; background: var(--cyan-light); color: var(--cyan); text-decoration: none; transition: var(--t); }
+.anx-links a:hover { background: var(--cyan); color: #fff; }
+.anx-links a i { font-size: 10px; }
+.ap-senha { display: flex; gap: 8px; align-items: flex-end; }
+.ap-senha .field { flex: 1; }
+.ap-senha .btn { height: 38px; }
+@media (max-width: 640px) {
+  .anx-r { flex-wrap: wrap; }
+  .anx-r .inp, .anx-r .inp:first-child { flex: 1 1 100%; }
+}

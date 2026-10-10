@@ -92,5 +92,5 @@ function alternarTema() { aplicarTema(document.documentElement.dataset.theme !==
 function temaInicial() {
   let t = null;
   try { t = localStorage.getItem('prec-tema'); } catch (e) {}
-  aplicarTema(t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches);
+  aplicarTema(t === 'dark');   // claro por padrão; lembra a escolha do usuário
 }

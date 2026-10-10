@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // instrucoes.js — Catálogo do exame (nome, material, prazo) e
-// instruções com checklist de publicação (Site, Unilab, Revisado)
+// instruções com checklist de publicação (Site, Unilab, Revisado) e anexos
 // ═══════════════════════════════════════════════════════════════
 //
 // Planilha "BD - TABELAS CH PARTICULARES", aba Exames (CSV):
@@ -16,6 +16,29 @@ const CHECKS = {
 const INS_POR_PAG = 50;
 const ins = { q: '', filtro: '', pag: 1, imp: { passo: 0, texto: null, nome: '', analise: null, erro: '' } };
 
+// ── Anexos (links clicáveis no site L2L) ──────────────────────
+// catalogo/{chave}/anexos: [{ nome, url }]. O L2L mostra só o que está neste campo;
+// links escritos no texto (<a href="…">nome</a>, formato da planilha) são convertidos.
+const RE_LINK_TEXTO = /<a\s[^>]*?href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
+const temLinkNoTexto = t => /<a\s[^>]*?href\s*=/i.test(t || '');
+const urlValida = u => /^https?:\/\/\S+$/i.test(String(u ?? '').trim());
+const anexosDe = r => Object.values(r?.anexos || {}).filter(a => a && a.url);
+const linkAnexo = a => `<a href="${urlValida(a.url) ? esc(a.url) : '#'}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-paperclip"></i>${esc(a.nome || 'Anexo')}</a>`;
+
+// Tira os links do texto (e o título "Anexos" que sobra no fim) → { texto, anexos }
+function extrairAnexos(texto) {
+  const anexos = [];
+  let t = String(texto || '').replace(RE_LINK_TEXTO, (m, q, url, nome) => {
+    url = url.trim().replace(/&amp;/g, '&');
+    nome = nome.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    if (urlValida(url) && !anexos.some(a => a.url === url)) anexos.push({ nome: nome || 'Anexo', url });
+    return '';
+  });
+  if (anexos.length) t = t.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trimEnd().replace(/(^|\n)[ \t]*(?:🔗[ \t]*)?anexos?[ \t]*:?[ \t]*$/i, '').trim();
+  return { texto: t, anexos };
+}
+const juntarAnexos = (atuais, novos) => [...atuais, ...novos.filter(n => !atuais.some(a => a.url === n.url))];
+
 // ── Importação ────────────────────────────────────────────────
 function analisarCatalogo(texto) {
   const linhas = lerCSV(texto);
@@ -30,15 +53,15 @@ function analisarCatalogo(texto) {
     }
     const mn2 = String(l[10] || '').trim();
     if (mn2 && normalizar(mn2) !== 'mnemonico') {
-      const r = reg(mn2), txt = String(l[11] || '').trim();
-      Object.assign(r, { instrucao: txt || null, site: verdadeiro(l[7]), unilab: verdadeiro(l[8]), revisado: verdadeiro(l[9]) });
+      const r = reg(mn2), x = extrairAnexos(String(l[11] || '').trim());   // links do texto viram anexos
+      Object.assign(r, { instrucao: x.texto || null, anexos: x.anexos.length ? x.anexos : null, site: verdadeiro(l[7]), unilab: verdadeiro(l[8]), revisado: verdadeiro(l[9]) });
     }
   });
   const ls = Object.values(cat);
   if (!ls.length) throw new Error('Nenhum exame encontrado.');
   const exames = new Set(Object.values(ESTADO.exames).map(e => e.mn.toUpperCase()));
   return { cat, resumo: {
-    total: ls.length, comCadastro: ls.filter(r => r.cadastro).length, comInstrucao: ls.filter(r => r.instrucao).length,
+    total: ls.length, comCadastro: ls.filter(r => r.cadastro).length, comInstrucao: ls.filter(r => r.instrucao).length, comAnexos: ls.filter(r => r.anexos).length,
     site: ls.filter(r => r.site).length, unilab: ls.filter(r => r.unilab).length, revisado: ls.filter(r => r.revisado).length,
     soInstrucao: ls.filter(r => !r.cadastro).length, semInstrucao: ls.filter(r => r.cadastro && !r.instrucao).length,
     naBase: ls.filter(r => exames.has(r.mn.toUpperCase())).length,
@@ -50,6 +73,8 @@ async function gravarCatalogo(cat) {
   const u = usuarioAtual(), agora = Date.now(), dados = {};
   Object.entries(cat).forEach(([k, r]) => {
     const x = { ...r, atualizadoEm: agora, atualizadoPor: u.nome };
+    // anexos cadastrados no sistema continuam quando a planilha não traz links
+    if (!x.anexos && anexosDe(ESTADO.catalogo?.[k]).length) x.anexos = anexosDe(ESTADO.catalogo[k]);
     Object.keys(x).forEach(c => (x[c] === null || x[c] === undefined) && delete x[c]);
     dados[k] = x;
   });
@@ -67,11 +92,14 @@ async function renderInstrucoes() {
   }
   const cat = lista(ESTADO.catalogo), n = cat.length;
   const qtd = k => cat.filter(r => r[k]).length;
+  const comLink = pode('instrucoes', 'editar') ? cat.filter(r => temLinkNoTexto(r.instrucao)).length : 0;
   const barra = (rot, v, ic, cor) => `<div class="prog"><div class="prog-l"><i class="fa-solid ${ic}" style="color:${cor}"></i>${rot}<b>${num(v, 0)} / ${num(n, 0)}</b><span>${n ? pct(v / n, 0) : '—'}</span></div><div class="barra"><div style="width:${n ? v / n * 100 : 0}%;background:${cor}"></div></div></div>`;
   el.innerHTML = `
     <div class="h-row"><div><h2>Instruções</h2><p>Catálogo do exame (nome, material, prazo) e instruções de coleta com checklist de publicação</p></div>
       ${pode('instrucoes', 'importar') ? `<button class="btn" onclick="ins.imp.passo=1;ins.imp.erro='';renderInstrucoes()"><i class="fa-solid fa-file-import"></i>Importar planilha</button>` : ''}</div>
     ${ins.imp.passo ? `<div class="card" style="margin-bottom:14px" id="ins-imp">${htmlImportCatalogo()}</div>` : ''}
+    ${comLink ? `<div class="alert a" style="align-items:center"><i class="fa-solid fa-paperclip"></i><div style="flex:1"><b>${comLink} instrução(ões) com link escrito no texto.</b> O site dos apoiados (L2L) só mostra os links cadastrados no campo Anexos.</div>
+      <button class="btn sm" onclick="converterLinksEmAnexos()"><i class="fa-solid fa-wand-magic-sparkles"></i>Converter em anexos</button></div>` : ''}
     ${n ? `<div class="card progs">
       ${barra('Com instrução', qtd('instrucao'), 'fa-file-lines', 'var(--cyan)')}
       ${barra('Revisados', qtd('revisado'), CHECKS.revisado.icone, 'var(--green)')}
@@ -90,6 +118,7 @@ async function renderInstrucoes() {
 const FILTROS_INS = {
   semins:  { nome: 'Sem instrução',  f: r => !r.instrucao },
   naorev:  { nome: 'Não revisado',   f: r => r.instrucao && !r.revisado },
+  anexo:   { nome: 'Com anexos',     f: r => anexosDe(r).length },
   semsite: { nome: 'Falta no site',  f: r => r.revisado && !r.site },
   semuni:  { nome: 'Falta no Unilab', f: r => r.revisado && !r.unilab },
   semcad:  { nome: 'Sem cadastro',   f: r => !r.cadastro },
@@ -109,7 +138,7 @@ function desenharInstrucoes() {
       <td class="mn">${esc(r.mn)}</td><td class="desc" title="${esc(r.nome || '')}">${r.nome ? esc(r.nome) : `<span class="warn-i"><i class="fa-solid fa-triangle-exclamation"></i>${r.cadastro ? 'sem nome' : 'sem cadastro'}</span>`}</td>
       <td>${r.material ? `<span class="tag"><i class="fa-solid fa-vial"></i>${esc(r.material)}</span>` : '—'}</td><td>${esc(prazoDe(r) || '—')}</td>
       ${Object.entries(CHECKS).map(([k, c]) => `<td style="text-align:center" onclick="event.stopPropagation()"><button class="cb ${r[k] ? 'on' : ''}" ${pode('instrucoes', c.acao) ? '' : 'disabled'} title="${c.nome}" onclick="marcarCheck('${r.id}','${k}')"><i class="fa-solid fa-check"></i></button></td>`).join('')}
-      <td>${r.instrucao ? '<i class="fa-solid fa-file-lines muted" title="Tem instrução"></i>' : ''}</td></tr>`).join('')
+      <td>${r.instrucao ? '<i class="fa-solid fa-file-lines muted" title="Tem instrução"></i>' : ''}${anexosDe(r).length ? ` <i class="fa-solid fa-paperclip muted" title="${anexosDe(r).length} anexo(s)"></i>` : ''}</td></tr>`).join('')
     || `<tr><td colspan="8">${Object.keys(ESTADO.catalogo).length ? vazio('fa-magnifying-glass', 'Nada encontrado') : vazio('fa-book-medical', '<b>Catálogo vazio</b><br>Importe a planilha de instruções (aba Exames, .csv).')}</td></tr>`;
   document.getElementById('ins-foot').innerHTML = paginacao(ls.length, ins.pag, INS_POR_PAG, 'paginaInstrucoes');
 }
@@ -136,6 +165,7 @@ function htmlImportCatalogo() {
     return cab + `<div class="wz-body"><div class="sumgrid">
         ${kp('fa-list', 'var(--text-muted)', 'Exames', r.total, `${r.comCadastro} com cadastro (A–E)`)}
         ${kp('fa-file-lines', 'var(--cyan)', 'Com instrução', r.comInstrucao, `${r.semInstrucao} cadastrados sem instrução`)}
+        ${kp('fa-paperclip', 'var(--cyan)', 'Com anexos', r.comAnexos, 'links do texto viram anexos')}
         ${kp('fa-user-check', 'var(--green)', 'Revisados', r.revisado)}
         ${kp('fa-globe', '#6366f1', 'No site', r.site)}
         ${kp('fa-desktop', 'var(--amber)', 'No Unilab', r.unilab)}
@@ -175,7 +205,7 @@ async function abrirInstrucao(id, voltarFicha = null) {
   await garantirCatalogo();
   const r = ESTADO.catalogo[id] || { mn: ESTADO.exames[id]?.mn || id };
   const editar = pode('instrucoes', 'editar');
-  _iEd = { id, voltar: voltarFicha, checks: { site: !!r.site, unilab: !!r.unilab, revisado: !!r.revisado } };
+  _iEd = { id, voltar: voltarFicha, checks: { site: !!r.site, unilab: !!r.unilab, revisado: !!r.revisado }, anexos: anexosDe(r).map(a => ({ nome: a.nome || '', url: a.url || '' })) };
   const quem = k => r[k] && r[`${k}Por`] ? `${esc(r[`${k}Por`])} · ${dataHora(r[`${k}Em`])}` : r[k] ? 'importado da planilha' : 'pendente';
   abrirGaveta({
     sobre: r.mn, titulo: r.nome || 'Instrução do exame',
@@ -187,7 +217,9 @@ async function abrirInstrucao(id, voltarFicha = null) {
         ${campo('in-dias', 'Prazo (dias)', diasPrazo(id) ?? '', { passo: '1', desab: !editar, dica: '0 = 24 Horas' })}
       </div>
       <div class="field"><label><i class="fa-solid fa-file-lines"></i>Instrução</label>
-        <textarea id="in-txt" class="txt-grande" ${editar ? '' : 'disabled'} placeholder="Jejum, preparo, coleta, conservação…">${esc(r.instrucao || '')}</textarea></div>
+        <textarea id="in-txt" class="txt-grande" ${editar ? '' : 'disabled'} placeholder="Jejum, preparo, coleta, conservação…" oninput="atualizarExtrairAnexos()">${esc(r.instrucao || '')}</textarea></div>
+      <div class="field"><label><i class="fa-solid fa-paperclip"></i>Anexos</label><div id="in-anexos"></div>
+        <span class="hint">Links (Drive, PDF, formulário) que aparecem clicáveis para os laboratórios apoiados no L2L.</span></div>
       <div class="sec-t"><i class="fa-solid fa-list-check"></i>Publicação</div>
       <div class="casc">${Object.entries(CHECKS).map(([k, c]) => `<div class="casc-r"><div class="lft"><i class="fa-solid ${c.icone}"></i><div>${c.nome === 'Revisado' ? 'Revisado' : 'Publicado no ' + c.nome}<div class="s">${quem(k)}</div></div></div>${chave(_iEd.checks[k], `_iEd.checks['${k}']=!_iEd.checks['${k}'];this.classList.toggle('on')`, !pode('instrucoes', c.acao))}</div>`).join('')}</div>
     </div>`,
@@ -195,14 +227,74 @@ async function abrirInstrucao(id, voltarFicha = null) {
       <button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
       ${editar || pode('instrucoes', 'aprovar') ? `<button class="btn pri" onclick="gravarInstrucao()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>` : ''}`
   });
+  desenharAnexosIns();
+}
+
+// ── Anexos no editor ──────────────────────────────────────────
+function desenharAnexosIns() {
+  const el = document.getElementById('in-anexos');
+  if (!el) return;
+  const ed = pode('instrucoes', 'editar');
+  el.innerHTML = (_iEd.anexos.map((a, i) => `<div class="anx-r">
+      <div class="inp"><span class="pre"><i class="fa-solid fa-tag"></i></span><input class="txt" value="${esc(a.nome)}" placeholder="Nome do anexo" ${ed ? '' : 'disabled'} oninput="_iEd.anexos[${i}].nome=this.value"></div>
+      <div class="inp"><span class="pre"><i class="fa-solid fa-link"></i></span><input class="txt" value="${esc(a.url)}" placeholder="https://…" ${ed ? '' : 'disabled'} oninput="_iEd.anexos[${i}].url=this.value"></div>
+      ${urlValida(a.url) ? `<a class="icon-btn" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="Abrir o link"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}
+      ${ed ? `<button type="button" class="icon-btn" title="Remover anexo" onclick="_iEd.anexos.splice(${i},1);desenharAnexosIns()"><i class="fa-solid fa-trash"></i></button>` : ''}</div>`).join('')
+    || '<div class="muted" style="font-size:12.5px">Nenhum anexo cadastrado</div>')
+    + (ed ? `<div class="anx-ac"><button type="button" class="btn sm" onclick="adicionarAnexoIns()"><i class="fa-solid fa-plus"></i>Adicionar anexo</button>
+      <button type="button" class="btn sm" id="in-extrair" onclick="extrairAnexosDoTexto()"><i class="fa-solid fa-wand-magic-sparkles"></i>Converter links do texto</button></div>` : '');
+  atualizarExtrairAnexos();
+}
+function adicionarAnexoIns() {
+  _iEd.anexos.push({ nome: '', url: '' });
+  desenharAnexosIns();
+  [...document.querySelectorAll('#in-anexos .anx-r')].pop()?.querySelector('input')?.focus();
+}
+// O botão de converter só aparece enquanto o texto tem <a href="…">
+function atualizarExtrairAnexos() {
+  const b = document.getElementById('in-extrair');
+  if (b) b.style.display = temLinkNoTexto(valorCampo('in-txt')) ? '' : 'none';
+}
+function extrairAnexosDoTexto() {
+  const txt = document.getElementById('in-txt'), x = extrairAnexos(txt.value);
+  if (!x.anexos.length) return toast('Nenhum link válido no texto', 'aviso');
+  txt.value = x.texto;
+  _iEd.anexos = juntarAnexos(_iEd.anexos.filter(a => a.nome || a.url), x.anexos);
+  desenharAnexosIns();
+  toast(`${x.anexos.length} link(s) do texto viraram anexos`);
+}
+
+// Todas as instruções com link no texto de uma vez
+async function converterLinksEmAnexos() {
+  const alvo = lista(ESTADO.catalogo).filter(r => temLinkNoTexto(r.instrucao));
+  if (!alvo.length) return;
+  const ok = await confirmar({ titulo: 'Converter links em anexos?', texto: `${alvo.length} instrução(ões): os links saem do texto e passam para o campo Anexos. O restante do texto não muda.`, botao: 'Converter' });
+  if (!ok) return;
+  const upd = {}, u = usuarioAtual();
+  let n = 0;
+  alvo.forEach(r => {
+    const x = extrairAnexos(r.instrucao);
+    if (!x.anexos.length) return;
+    const anexos = juntarAnexos(anexosDe(r), x.anexos);
+    Object.assign(upd, { [`${r.id}/instrucao`]: x.texto || null, [`${r.id}/anexos`]: anexos, [`${r.id}/atualizadoEm`]: DB.agora(), [`${r.id}/atualizadoPor`]: u.nome });
+    n += x.anexos.length;
+  });
+  if (!n) return toast('Nenhum link válido encontrado', 'aviso');
+  await DB.mesclar('catalogo', upd);
+  registrar('catalogo', `Links do texto convertidos em anexos: ${n} em ${Object.keys(upd).length / 4} instruções`);
+  toast(`${n} anexo(s) criados`);
 }
 
 async function gravarInstrucao() {
   const r = ESTADO.catalogo[_iEd.id] || {}, u = usuarioAtual(), dados = { mn: r.mn || ESTADO.exames[_iEd.id]?.mn || _iEd.id, cadastro: true };
   if (pode('instrucoes', 'editar')) {
+    const anexos = _iEd.anexos.map(a => ({ nome: String(a.nome || '').trim(), url: String(a.url || '').trim() })).filter(a => a.nome || a.url);
+    const ruim = anexos.find(a => !urlValida(a.url));
+    if (ruim) return toast(`Anexo ${ruim.nome || 'sem nome'}: o link precisa começar com http:// ou https://`, 'erro');
+    anexos.forEach(a => { a.nome ||= 'Anexo'; });
     const dias = parseInt(valorCampo('in-dias'), 10);
     Object.assign(dados, { nome: valorCampo('in-nome').trim() || null, material: valorCampo('in-mat').trim() || null, prazoDias: isNaN(dias) ? null : Math.max(0, dias),
-      prazo: isNaN(dias) ? (r.prazo ?? null) : null, instrucao: valorCampo('in-txt').trim() || null });
+      prazo: isNaN(dias) ? (r.prazo ?? null) : null, instrucao: valorCampo('in-txt').trim() || null, anexos: anexos.length ? anexos : null });
     // texto mudou → volta a precisar de revisão
     if ((dados.instrucao || '') !== (r.instrucao || '') && r.revisado && _iEd.checks.revisado) _iEd.checks.revisado = false;
   }
@@ -229,6 +321,7 @@ async function desenharCatalogoFicha(id) {
     : `<div class="casc">
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-vial"></i><div>${esc(r.material || '—')}<div class="s">${esc(r.nome || '')}</div></div></div><span class="tag"><i class="fa-solid fa-clock"></i>${esc(prazoDe(r) || '—')}</span></div>
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-file-lines"></i><div class="ins-prev">${r.instrucao ? esc(r.instrucao.slice(0, 220)) + (r.instrucao.length > 220 ? '…' : '') : '<span class="muted">sem instrução</span>'}</div></div></div>
+      ${anexosDe(r).length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-paperclip"></i><div class="anx-links">${anexosDe(r).map(linkAnexo).join('')}</div></div></div>` : ''}
       <div class="casc-r"><div class="lft">${Object.entries(CHECKS).map(([k, c]) => `<span class="badge-s ${r[k] ? 'ok' : 'off'}"><i class="fa-solid ${r[k] ? 'fa-check' : c.icone}"></i>${c.nome}</span>`).join(' ')}</div>
         <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></div></div>`;
 }

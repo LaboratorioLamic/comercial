@@ -32,6 +32,8 @@ async function iniciar() {
     // Só a lista de usuários decide se a sessão continua válida
     if (chave === 'usuarios' && (!u || u.ativo === false)) { encerrarSessao(); fecharGaveta(); return mostrarAuth('login', 'Sua sessão foi encerrada pelo administrador.'); }
     if (!u) return;
+    // último acesso gravado pelo L2L: só interessa à aba de acessos
+    if (chave === 'acessosL2L' && telaAtual !== 'config') return;
     aplicarPermissoes();
     if (!podeVerTela(telaAtual)) return irPara('inicio');
     // Gaveta aberta: redesenha quando ela fechar

@@ -10,7 +10,7 @@
 //   historicoExames/{chave}/{id} alterações de cada exame
 //   reagentes/{id}             reagentes e insumos (custo por teste)
 //   apoios/{setorId}/precos/{código|material}  tabela importada do apoio (preço + vigência)
-//   catalogo/{chave}           nome, material, prazo e instrução do exame (+ checklist de publicação)
+//   catalogo/{chave}           nome, material, prazo, instrução e anexos do exame (+ checklist de publicação)
 //   tabelas/{id}               tabelas de preço (exceto Particular): nome, tipo, piso, perfil de custo,
 //                              precos/{chave} preço do exame na tabela · sistema/{chave} preço no Unilab
 //   laboratorios/{id}          laboratórios apoiados: dados + precos/{chave} valores diferenciados
@@ -19,6 +19,7 @@
 //   config/modeloProposta      textos padrão do PDF da proposta para laboratório
 //   simulacoes/{id}            propostas para laboratório salvas no simulador (preço × volume)
 //   rascunhos/{alvo}/{usuario}/{chave}  edições ainda não enviadas (-1 = retirar da tabela)
+//   l2l/acessos/{id}           login do site L2L: laboratório apoiado (ou 'lamic', interno), sal e hash da senha
 //   auth/usuarios/{id}         usuários
 //   auth/grupos/{id}           grupos e permissões
 //   auth/cargos/{id}           cargos
@@ -39,6 +40,7 @@ const ESTADO = {
   hierarquia: null,
   modeloProposta: null,
   catalogo: null,        // carregado sob demanda (textos de instrução são grandes)
+  acessosL2L: {},
   usuarios: {},
   grupos: {},
   cargos: {},
@@ -58,6 +60,7 @@ const CAMINHOS = {
   simulacoes: 'simulacoes',
   hierarquia: 'config/hierarquia',
   modeloProposta: 'config/modeloProposta',
+  acessosL2L: 'l2l/acessos',
   usuarios: 'auth/usuarios',
   grupos: 'auth/grupos',
   cargos: 'auth/cargos',

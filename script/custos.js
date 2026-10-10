@@ -23,6 +23,7 @@ function renderCustos() {
     <div class="pane ${custosAba === 'apoio' ? 'on' : ''}" id="custos-apoio">${custosAba === 'apoio' ? htmlApoios() : ''}</div>`;
   iniciarSubnav();
   if (custosAba === 'reag') desenharReagentes();
+  if (custosAba === 'apoio') popsVinculos();
 }
 
 const custoPorExame = f => f.cobranca === 'rateado' ? f.valor / parametro('examesPorAtendimento') : f.valor;

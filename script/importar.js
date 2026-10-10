@@ -14,7 +14,7 @@ function renderImportar() {
     ${podeImp ? `<div class="card" id="sinc-card" style="margin-top:14px">${htmlSinc()}</div>` : ''}
     <div class="sec-t" style="margin:22px 0 12px"><i class="fa-solid fa-layer-group"></i>Outras importações e exportações</div>
     <div class="cards">
-      ${[['fa-truck-medical', '#00a8cc', 'Hermes Pardini 4114', 'Custos negociados, vínculos e vigência', pode('custos') ? "custosAba='apoio';irPara('custos')" : ''],
+      ${[['fa-truck-medical', '#00a8cc', 'Laboratórios de apoio', 'Pardini 4114 e Alvaro 2656: custos negociados e vínculos', pode('custos') ? "custosAba='apoio';irPara('custos')" : ''],
          ['fa-book-medical', '#1d7044', 'Catálogo e instruções', 'Nome, material, prazo e instruções dos exames', pode('instrucoes') ? "ins.imp.passo=1;irPara('instrucoes')" : ''],
          ['fa-code-compare', '#6366f1', 'Divergências com o Unilab', 'Relatório (CSV) dos preços diferentes em todas as tabelas', pode('importar', 'exportar') || pode('tabelas', 'exportar') ? 'exportarDivergenciasUnilab()' : ''],
          ['fa-file-export', '#2a9d8f', 'Preços das tabelas', 'Importar abas da planilha e exportar no layout do Unilab', pode('tabelas') ? "tabAba='tabelas';irPara('tabelas')" : ''],

@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
 // apoio.js — Laboratórios de apoio: importação da tabela de preços
-// (modelo Hermes Pardini 4114), vínculo de mnemônicos e vigência
+// (modelos Hermes Pardini 4114 e Alvaro 2656), vínculo de mnemônicos e vigência
 // ═══════════════════════════════════════════════════════════════
 //
 // Pardini 4114 = preços NEGOCIADOS. Colunas usadas:
@@ -76,8 +76,29 @@ function analisarTabelaPardini(linhas) {
   return { itens, avisos };
 }
 
+// Alvaro 2656 = "Preços Negociados". Cabeçalho do cadastro do cliente nas primeiras linhas;
+// depois A Cod. Exame · B Nome Exame · F Preços Especiais R$ ("R$ 1.843,15").
+// Sem material e sem vigência: vale a partir da data da importação.
+function analisarTabelaAlvaro(linhas) {
+  const iCab = linhas.slice(0, 40).findIndex(l => l.some(c => /^cod\.? ?exame/.test(normalizar(c))));
+  if (iCab < 0) throw new Error('Cabeçalho não encontrado: o arquivo precisa ter a coluna "Cod. Exame" (modelo Alvaro, preços negociados).');
+  const cab = linhas[iCab].map(normalizar);
+  const col = (re, padrao) => { const i = cab.findIndex(c => re.test(c)); return i >= 0 ? i : padrao; };
+  const C = { cod: col(/^cod\.? ?exame/, 0), desc: col(/^nome/, 1), preco: col(/^preco/, 5) };
+  const itens = {}, avisos = [], hoje = hojeISO();
+  linhas.slice(iCab + 1).forEach(l => {
+    const codigo = String(l[C.cod] ?? '').trim();
+    if (!codigo) return;
+    const preco = typeof l[C.preco] === 'number' ? l[C.preco] : numeroBR(l[C.preco]);
+    if (preco == null) { avisos.push(`${codigo}: sem preço`); return; }
+    itens[chaveItemApoio(codigo, '')] = { codigo, material: '', descricao: String(l[C.desc] ?? '').trim(), preco: Math.round(preco * 100) / 100, vigencia: hoje };
+  });
+  if (!Object.keys(itens).length) throw new Error('Nenhum exame com preço encontrado no arquivo.');
+  return { itens, avisos };
+}
+
 // Leitor de cada modelo (linhas do arquivo → { itens, avisos })
-const LEITORES_APOIO = { pardini4114: analisarTabelaPardini };
+const LEITORES_APOIO = { pardini4114: analisarTabelaPardini, alvaro2656: analisarTabelaAlvaro };
 
 // ── Classificação dos vínculos ────────────────────────────────
 // Para cada exame do setor do apoio: vinculado | auto | conf | forte | fraca | sem
@@ -108,11 +129,12 @@ const VST = {
   fraca:     { t: 'Sugestão fraca',   c: 'base', ic: 'fa-wand-magic-sparkles', h: 'descrição parecida: confira' },
   conf:      { t: 'Conferir',         c: 'bad',  ic: 'fa-triangle-exclamation', h: 'mesmo mnemônico, exame diferente: não vincula sozinho' },
   sem:       { t: 'Sem vínculo',      c: 'off',  ic: 'fa-link-slash',          h: 'não encontrado na tabela' },
-  saiu:      { t: 'Saiu da tabela',   c: 'warn', ic: 'fa-circle-exclamation',  h: 'item vinculado não está mais na tabela' }
+  saiu:      { t: 'Saiu da tabela',   c: 'warn', ic: 'fa-circle-exclamation',  h: 'item vinculado não está mais na tabela' },
+  manual:    { t: 'Escolhido',        c: 'base', ic: 'fa-hand-pointer',        h: 'item trocado manualmente: confirme para vincular' }
 };
 
 // ── Tela (Custos → Laboratórios de apoio) ─────────────────────
-const apo = { sel: null, passo: 0, arquivo: null, analise: null, erro: '', comFortes: false, filtro: '', pag: 1, cache: null };
+const apo = { sel: null, passo: 0, arquivo: null, analise: null, erro: '', comFortes: false, filtro: '', pag: 1, cache: null, troca: {}, trocaEx: {} };
 aoAtualizar(ch => { if (ch === 'exames' || ch === 'apoios' || ch === 'setores') apo.cache = null; });
 
 function htmlApoios() {
@@ -123,7 +145,7 @@ function htmlApoios() {
       const t = ESTADO.apoios[a.id] || {}, nItens = Object.keys(t.precos || {}).length;
       const exs = lista(ESTADO.exames).filter(e => e.setorId === a.id), vinc = exs.filter(e => e.vinculoApoio?.apoioId === a.id).length;
       const modelo = modeloDoApoio(a);
-      return `<button class="card tcard ${a.id === apo.sel ? 'on' : ''}" onclick="apo.sel='${a.id}';apo.passo=0;apo.cache=null;apo.pag=1;renderCustos()">
+      return `<button class="card tcard ${a.id === apo.sel ? 'on' : ''}" onclick="apo.sel='${a.id}';apo.passo=0;apo.cache=null;apo.pag=1;apo.troca={};apo.trocaEx={};renderCustos()">
         <div class="tc-h"><span class="tc-ic" style="--c:${a.cor}"><i class="fa-solid ${a.icone}"></i></span><div><div class="tc-n">${esc(a.nome)}</div>
           <div class="tc-s">${nItens ? `tabela de ${dataBR(t.vigencia)} · ${num(nItens, 0)} itens` : modelo ? 'tabela ainda não importada' : 'modelo de importação pendente'}</div></div></div>
         <div class="tc-stats"><div><b>${exs.length}</b><span>exames LAMIC</span></div><div><b>${vinc}</b><span>vinculados</span></div><div><b>${exs.filter(e => !custoTesteExame(e)).length}</b><span>sem custo</span></div></div></button>`;
@@ -143,7 +165,7 @@ function htmlApoioDetalhe() {
   if (!t.precos) return cab + vazio('fa-file-import', `Importe a tabela (${esc(MODELOS_APOIO[modelo].exemplo)}) para vincular os exames e atualizar os custos.`);
   return cab + htmlVinculos();
 }
-const desenharApoioDet = () => { const el = document.getElementById('apoio-det'); if (el) el.innerHTML = htmlApoioDetalhe(); };
+const desenharApoioDet = () => { const el = document.getElementById('apoio-det'); if (el) { el.innerHTML = htmlApoioDetalhe(); popsVinculos(); } };
 
 // ── Assistente de importação ──────────────────────────────────
 function htmlImportacaoApoio() {
@@ -231,9 +253,11 @@ async function aplicarTabelaApoio() {
   const ok = await confirmar({ titulo: 'Aplicar a nova tabela?', texto: 'Os custos dos exames vinculados passam a usar os preços desta tabela, respeitando a vigência.', botao: 'Aplicar' });
   if (!ok) return;
   // preços: guarda o preço anterior quando muda (vigência futura continua usando o anterior)
-  const precos = {};
+  const precos = {}, semVig = MODELOS_APOIO[modeloDoApoio(ESTADO.setores[id])]?.semVigencia;
   Object.entries(an.itens).forEach(([k, it]) => {
     const old = antes[k];
+    // modelo sem vigência no arquivo: preço igual mantém a data em que passou a valer
+    if (semVig && old && old.preco === it.preco && old.vigencia) it = { ...it, vigencia: old.vigencia };
     precos[k] = { ...it };
     if (old && (old.preco !== it.preco || old.vigencia !== it.vigencia)) precos[k].anterior = { preco: old.preco, vigencia: old.vigencia || null };
     else if (old?.anterior && it.vigencia > hojeISO()) precos[k].anterior = old.anterior;
@@ -279,21 +303,45 @@ function htmlVinculos() {
     </div>
     <div class="tbl-wrap"><table><thead><tr><th>MN LAMIC</th><th>Exame LAMIC</th><th></th><th>Item do apoio</th><th>Descrição no apoio</th><th class="num">Preço</th><th>Situação</th><th></th></tr></thead><tbody>
     ${ls.slice((apo.pag - 1) * VINC_POR_PAG, apo.pag * VINC_POR_PAG).map(v => {
-      const s = VST[v.st], it = v.it, p = v.st === 'vinculado' ? precoApoio(apo.sel, v.k) : null;
-      return `<tr><td class="mn" style="cursor:pointer" onclick="abrirFicha('${v.e.id}')">${esc(v.e.mn)}</td><td class="desc" title="${esc(v.e.descricao)}">${esc(v.e.descricao)}</td>
+      // item trocado à mão na linha: vale no lugar da sugestão até confirmar
+      const lin = v.e.id, tr = v.st !== 'vinculado' && itens[apo.troca[lin]];
+      if (tr) v = { ...v, k: tr.k, it: tr, sc: similaridade(v.e.descricao, tr.descricao), manual: true };
+      // exame LAMIC trocado à mão: o item da linha passa a ser oferecido a outro exame do setor
+      const ex = v.st !== 'vinculado' && v.it && ESTADO.exames[apo.trocaEx[lin]];
+      if (ex) v = { ...v, e: { ...ex, id: apo.trocaEx[lin] }, sc: similaridade(ex.descricao, v.it.descricao), manual: true };
+      const podeTrocar = editar && v.st !== 'vinculado';
+      const s = v.manual ? VST.manual : VST[v.st], it = v.it, p = v.st === 'vinculado' ? precoApoio(apo.sel, v.k) : null;
+      return `<tr><td><span class="mn" style="cursor:pointer" onclick="abrirFicha('${v.e.id}')">${esc(v.e.mn)}</span>${podeTrocar && it ? `<span class="pop-mini" id="pop-ve-${lin}" data-ex="${lin}" data-tipo="ex" title="Trocar o exame LAMIC"></span>` : ''}</td><td class="desc" title="${esc(v.e.descricao)}">${esc(v.e.descricao)}</td>
         <td class="muted"><i class="fa-solid fa-arrows-left-right"></i></td>
-        <td>${it ? `<span class="mn">${esc(it.codigo)}</span> <span class="tag">${esc(it.material || '—')}</span>` : '—'}</td>
-        <td class="desc" title="${esc(it?.descricao || '')}">${it ? (v.st === 'conf' ? `<span style="color:var(--red)">${esc(it.descricao)}</span>` : esc(it.descricao)) : '<span class="muted">não encontrado</span>'}</td>
+        <td>${it ? `<span class="mn">${esc(it.codigo)}</span> <span class="tag">${esc(it.material || '—')}</span>` : '—'}${podeTrocar ? `<span class="pop-mini" id="pop-vt-${lin}" data-ex="${lin}" title="Trocar o item do apoio"></span>` : ''}</td>
+        <td class="desc" title="${esc(it?.descricao || '')}">${it ? (v.st === 'conf' && !v.manual ? `<span style="color:var(--red)">${esc(it.descricao)}</span>` : esc(it.descricao)) : '<span class="muted">não encontrado</span>'}</td>
         <td class="num">${p ? fmt(p.valor) + (p.agendado ? ` <i class="fa-solid fa-clock" style="color:var(--amber)" title="${fmt(p.agendado.preco)} a partir de ${dataBR(p.agendado.vigencia)}"></i>` : '') : it ? fmt(it.preco) : '—'}</td>
-        <td><span class="badge-s ${s.c}" title="${s.h}"><i class="fa-solid ${s.ic}"></i>${s.t}${v.sc != null && v.st !== 'vinculado' && v.st !== 'auto' ? ` ${Math.round(v.sc * 100)}%` : ''}</span></td>
+        <td><span class="badge-s ${s.c}" title="${s.h}"><i class="fa-solid ${s.ic}"></i>${s.t}${v.sc != null && (v.manual || (v.st !== 'vinculado' && v.st !== 'auto')) ? ` ${Math.round(v.sc * 100)}%` : ''}</span></td>
         <td class="acts">${editar ? (v.st === 'vinculado'
           ? `<button title="Remover vínculo" onclick="definirVinculo('${v.e.id}', null)"><i class="fa-solid fa-link-slash"></i></button>`
-          : `${v.k && v.st !== 'saiu' ? `<button title="Confirmar vínculo" onclick="definirVinculo('${v.e.id}', '${v.k}')"><i class="fa-solid fa-check"></i></button>` : ''}<button title="Escolher na ficha do exame" onclick="abrirFicha('${v.e.id}');setTimeout(()=>trocarFonteCusto('apoio'),80)"><i class="fa-solid fa-magnifying-glass"></i></button>`) : ''}</td></tr>`;
+          : `${v.manual ? `<button title="Desfazer a troca" onclick="delete apo.troca['${lin}'];delete apo.trocaEx['${lin}'];desenharApoioDet()"><i class="fa-solid fa-rotate-left"></i></button>` : ''}${v.k && (v.manual || v.st !== 'saiu') ? `<button title="Confirmar vínculo" onclick="definirVinculo('${v.e.id}', '${v.k}')"><i class="fa-solid fa-check"></i></button>` : ''}<button title="Escolher na ficha do exame" onclick="abrirFicha('${v.e.id}');setTimeout(()=>trocarFonteCusto('apoio'),80)"><i class="fa-solid fa-magnifying-glass"></i></button>`) : ''}</td></tr>`;
     }).join('') || `<tr><td colspan="8">${vazio('fa-link', 'Nada nesta situação')}</td></tr>`}
     </tbody></table></div>
     <div class="foot">${paginacao(ls.length, apo.pag, VINC_POR_PAG, 'paginaVinculos')}</div>`;
 }
 function paginaVinculos(p) { apo.pag = p; desenharApoioDet(); }
+
+// Botão de troca em cada linha: popover com a tabela do apoio; a escolha fica na linha até confirmar
+function popsVinculos() {
+  document.querySelectorAll('#apoio-det .pop-mini').forEach(el => {
+    delete POPS[el.id];
+    const lin = el.dataset.ex, ex = el.dataset.tipo === 'ex', mapa = ex ? apo.trocaEx : apo.troca;
+    criarPop(el.id, {
+      rotulo: 'Trocar', titulo: ex ? 'Trocar o exame LAMIC' : 'Trocar o item do apoio', icone: 'fa-right-left', busca: ex ? 'Mnemônico ou nome…' : 'Código ou nome…', padrao: '',
+      opcoes: () => [{ valor: '', rotulo: 'Escolha', icone: 'fa-right-left' }, ...(ex
+        ? lista(ESTADO.exames, (a, b) => a.mn.localeCompare(b.mn)).filter(e => e.setorId === apo.sel && !e.vinculoApoio && e.id !== lin)
+          .map(e => ({ valor: e.id, rotulo: `${e.mn} · ${e.descricao}`, icone: 'fa-vial' }))
+        : lista(ESTADO.apoios[apo.sel]?.precos, (a, b) => String(a.codigo).localeCompare(b.codigo))
+          .map(p => ({ valor: p.id, rotulo: `${p.codigo} · ${p.descricao}`, icone: 'fa-flask', desc: [p.material, fmt(p.preco)].filter(Boolean).join(' · ') })))].filter(o => o.valor || !popAberto),
+      aoMudar: k => { if (k) mapa[lin] = k; else delete mapa[lin]; desenharApoioDet(); }
+    });
+  });
+}
 
 async function definirVinculo(exameId, chaveItem) {
   const e = ESTADO.exames[exameId], u = usuarioAtual();
@@ -305,5 +353,7 @@ async function definirVinculo(exameId, chaveItem) {
     descricao: chaveItem ? `Vinculado ao item ${it?.codigo} (${it?.material || '—'}) do apoio` : 'Vínculo com o apoio removido', usuario: u.nome, usuarioId: u.id, em: DB.agora()
   });
   apo.cache = null;
+  const lin = Object.keys(apo.trocaEx).find(k => apo.trocaEx[k] === exameId) || exameId;
+  delete apo.troca[lin]; delete apo.trocaEx[lin];
   toast(chaveItem ? `${e.mn} vinculado` : `Vínculo de ${e.mn} removido`);
 }

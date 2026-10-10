@@ -39,6 +39,12 @@ const MODELOS_APOIO = {
     nome: 'Hermes Pardini · tabela 4114', icone: 'fa-file-excel', cor: '#1d7044', negociada: true,
     desc: 'Excel do portal · mnemônico (B), vigência (F) e preço (G)',
     arquivo: 'Tabela de preços do apoio (.xlsx)', exemplo: '4114_tabela_preços.xlsx', aceita: '.xlsx,.xls,.csv'
+  },
+  // O arquivo não traz material nem vigência: a vigência é a data da importação
+  alvaro2656: {
+    nome: 'Alvaro · tabela 2656', icone: 'fa-file-excel', cor: '#00a8cc', negociada: true, semVigencia: true,
+    desc: 'Excel do portal · código (A), nome (B) e preço especial (F)',
+    arquivo: 'Preços negociados do Alvaro (.xlsx)', exemplo: 'Alvaro - Tabela 2656.xlsx', aceita: '.xlsx,.xls,.csv'
   }
 };
 
@@ -114,7 +120,7 @@ const PADRAO_SETORES = [
   { nome: 'UROANÁLISE', categoria: 'interno', icone: 'fa-toilet', cor: '#eab308', etapas: { coleta: false, triagem: true } },
   { nome: 'VACINAS', categoria: 'servico', icone: 'fa-syringe', cor: '#e8913a', etapas: { coleta: false, triagem: false }, margemAlvo: 0.30 },
   { nome: 'CONCURSO', categoria: 'servico', icone: 'fa-id-card', cor: '#64748b' },
-  { nome: 'ALVARO', categoria: 'apoio', icone: 'fa-building', cor: '#00a8cc' },
+  { nome: 'ALVARO', categoria: 'apoio', icone: 'fa-building', cor: '#00a8cc', modeloImportacao: 'alvaro2656' },
   { nome: 'DIAGNÓSTICO BRASIL', categoria: 'apoio', icone: 'fa-building', cor: '#6366f1' },
   { nome: 'HERMES PARDINI - NTO', categoria: 'apoio', icone: 'fa-building', cor: '#0e7490', modeloImportacao: 'pardini4114' },
   { nome: 'YATROS PATOLOGIA', categoria: 'apoio', icone: 'fa-building', cor: '#e8913a' }

@@ -6,6 +6,7 @@
 //
 // laboratorios/{id}: nome, razaoSocial, cnpj, codConvenio, tabelaId (referência,
 //   normalmente a Lamic-to-Lab), ativo, obs, precos/{chave}: valor diferenciado
+// O login do laboratório no site L2L fica em l2l/acessos/{id} (Configurações → Apoiados)
 
 function desenharPaneLabs() {
   const el = document.getElementById('tabelas-labs');
@@ -82,10 +83,12 @@ async function gravarLaboratorio() {
     await DB.gravar(`${CAMINHOS.laboratorios}/${id}`, { ...dados, criadoEm: DB.agora() });
     ESTADO.laboratorios[id] = ESTADO.laboratorios[id] || { ...dados };
   }
+  // o login do L2L mostra o nome do laboratório
+  if (ESTADO.acessosL2L[id] && ESTADO.acessosL2L[id].nome !== nome) await DB.mesclar(`${CAMINHOS.acessosL2L}/${id}`, { nome });
   registrar('laboratorios', `Laboratório ${nome} ${_labEd.id ? 'alterado' : 'cadastrado'}`, { depois: dados });
   fecharGaveta();
   labSel = id; tabAba = 'labs';
-  renderTabelas();
+  renderTela();
   toast(`${nome} salvo`);
 }
 
@@ -95,6 +98,7 @@ async function excluirLaboratorio(id) {
   if (!ok) return;
   await DB.remover(`${CAMINHOS.laboratorios}/${id}`);
   await DB.remover(`rascunhos/lab:${id}`);
+  await DB.remover(`${CAMINHOS.acessosL2L}/${id}`);
   registrar('laboratorios', `Laboratório ${l.nome} excluído`, { antes: { ...l, precos: null }, valores: n });
   fecharGaveta();
   if (labSel === id) labSel = null;

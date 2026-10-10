@@ -50,7 +50,8 @@ function mapaQuebras() {
 }
 
 // ── Aba Hierarquia (tela Tabelas) ─────────────────────────────
-const hier = { q: '', tab: '', pag: 1 };
+const hier = { q: '', tab: '', pag: 1, ed: {} };          // ed: alvo → { chave: novo valor } (edição direta na lista de quebras)
+const precoHier = (a, k) => hier.ed[a]?.[k] ?? precoSalvoHier(a, k);
 
 function desenharPaneHierarquia() {
   const el = document.getElementById('tabelas-hierarquia');
@@ -90,9 +91,11 @@ function desenharQuebras() {
   const n = Math.max(1, Math.ceil(ls.length / 50));
   if (hier.pag > n) hier.pag = n;
   const fora = foraHierarquia().filter(a => porTab[a]);
+  const edit = pode('tabelas', 'editar');
   const cel = (x, a) => {
-    const p = precoSalvoHier(a, x.k), qb = x.q.find(q => q.alvo === a);
-    return `<td class="num ${qb ? 'hier-bad' : p == null ? 'muted' : ''}" ${qb ? `title="${esc(textoQuebra(qb))}"` : ''}>${p != null ? fmt(p) : '—'}</td>`;
+    const p = precoHier(a, x.k), qb = x.qs.find(q => q.alvo === a), ed = hier.ed[a]?.[x.k] != null;
+    return `<td class="num ${qb ? 'hier-bad' : p == null ? 'muted' : ''}" data-a="${a}" title="${qb ? esc(textoQuebra(qb)) : ''}">${p == null ? '—' : !edit ? fmt(p)
+      : `<input class="hier-in ${ed ? 'on' : ''}" type="number" step="0.01" min="0" value="${p.toFixed(2)}" oninput="editarHier(this)" onkeydown="teclaHier(event)" onfocus="this.select()">`}</td>`;
   };
   el.innerHTML = `<div class="card-h"><h3><i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)"></i>Exames que quebram a hierarquia</h3>
       <span>${todas.length ? `${num(todas.length, 0)} exame(s)` : 'nenhuma quebra'}</span></div>
@@ -104,20 +107,82 @@ function desenharQuebras() {
       <button class="chip ${!hier.tab ? 'on' : ''}" onclick="hier.tab='';hier.pag=1;desenharQuebras()"><i class="fa-solid fa-list"></i>Todas <b>${todas.length}</b></button>
       ${[...ordem, ...foraHierarquia()].filter(a => porTab[a] || hier.tab === a).map(a => `<button class="chip ${hier.tab === a ? 'on' : ''}" onclick="hier.tab='${a}';hier.pag=1;desenharQuebras()"><span class="d" style="background:${ESTADO.tabelas[a].cor}"></span>${esc(ESTADO.tabelas[a].nome)} <b>${porTab[a] || 0}</b></button>`).join('')}
     </div>
+    <div class="alert x" id="hier-bar" style="display:none;margin:10px 18px 0;align-items:center"></div>
     <div class="tbl-wrap" style="margin-top:10px"><table class="tab-hier"><thead><tr><th>MN</th><th class="desc">Exame</th><th class="num">Particular</th>
       ${ordem.map(a => `<th class="num" title="${esc(ESTADO.tabelas[a].nome)}">${esc(ESTADO.tabelas[a].nome)}</th>`).join('')}
       ${fora.length ? '<th>Fora da hierarquia</th>' : ''}<th></th></tr></thead>
       <tbody>${ls.slice((hier.pag - 1) * 50, hier.pag * 50).map(x => {
+        x.qs = quebrasHierarquia(x.k, precoHier);          // com os valores em edição
         const qf = x.q.filter(q => q.tipo === 'fora'), alvo = (x.q.find(q => q.alvo === hier.tab) || x.q[0]).alvo;
-        return `<tr><td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha('${esc(x.k)}');return false">${esc(x.e.mn)}</a></td>
+        return `<tr data-k="${esc(x.k)}"><td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha('${esc(x.k)}');return false">${esc(x.e.mn)}</a></td>
           <td class="desc" title="${esc(x.e.descricao)}">${esc(x.e.descricao)}</td>
           ${cel(x, 'particular')}${ordem.map(a => cel(x, a)).join('')}
           ${fora.length ? `<td>${qf.map(q => `<span class="tag hier-tag" title="${esc(textoQuebra(q))}">${esc(q.nome)}<b>${fmt(q.p)}</b></span>`).join('') || '<span class="muted">—</span>'}</td>` : ''}
           <td class="acts">${pode('tabelas', 'editar') ? `<button title="Corrigir na grade de ${esc(nomeAlvoHier(alvo))}" onclick="corrigirQuebra('${alvo}','${esc(x.e.mn)}')"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}</td></tr>`;
       }).join('') || `<tr><td colspan="${ordem.length + 5}">${vazio('fa-circle-check', todas.length ? 'Nenhum exame com esses filtros' : '<b>Hierarquia respeitada</b><br>Nenhum exame quebra a ordem de valor entre as tabelas.')}</td></tr>`}</tbody></table></div>
     <div class="foot">${paginacao(ls.length, hier.pag, 50, 'paginaQuebras')}</div>`;
+  desenharBarraHier();
 }
 function paginaQuebras(p) { hier.pag = p; desenharQuebras(); }
+
+// ── Edição direta do valor na lista de quebras ────────────────
+function editarHier(inp) {
+  const td = inp.closest('td'), tr = inp.closest('tr'), a = td.dataset.a, k = tr.dataset.k, s = precoSalvoHier(a, k);
+  const v = inp.value.trim() === '' ? NaN : Math.round(parseFloat(inp.value) * 100) / 100;
+  if (isNaN(v) || v < 0 || Math.abs(v - s) < 0.005) { if (hier.ed[a]) delete hier.ed[a][k]; }
+  else (hier.ed[a] ??= {})[k] = v;
+  // realça de novo a linha sem recriar os campos (mantém o foco)
+  const qs = quebrasHierarquia(k, precoHier);
+  tr.querySelectorAll('td[data-a]').forEach(c => {
+    const qb = qs.find(q => q.alvo === c.dataset.a);
+    c.classList.toggle('hier-bad', !!qb); c.title = qb ? textoQuebra(qb) : '';
+    c.querySelector('input')?.classList.toggle('on', hier.ed[c.dataset.a]?.[k] != null);
+  });
+  desenharBarraHier();
+}
+function teclaHier(ev) {
+  if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(ev.key)) return;
+  ev.preventDefault();
+  const a = ev.target.closest('td').dataset.a, ins = [...document.querySelectorAll('#hier-res td[data-a] input')].filter(i => i.closest('td').dataset.a === a);
+  ins[ins.indexOf(ev.target) + (ev.key === 'ArrowUp' ? -1 : 1)]?.focus();
+}
+const edicoesHier = () => Object.entries(hier.ed).map(([a, o]) => [a, Object.entries(o).filter(([k]) => ESTADO.exames[k])]).filter(([a, l]) => l.length && ctxAlvo(a));
+
+function desenharBarraHier() {
+  const bar = document.getElementById('hier-bar');
+  if (!bar) return;
+  const eds = edicoesHier(), n = eds.reduce((s, [, l]) => s + l.length, 0);
+  bar.style.display = n ? 'flex' : 'none';
+  if (!n) { bar.innerHTML = ''; return; }
+  const ks = new Set(eds.flatMap(([, l]) => l.map(([k]) => k)));
+  const ainda = [...ks].filter(k => quebrasHierarquia(k, precoHier).length).length;
+  bar.innerHTML = `<i class="fa-solid fa-pen-to-square"></i><div style="flex:1"><b>${n} valor(es) alterado(s)</b> em ${eds.map(([a]) => esc(nomeAlvoHier(a))).join(', ')}
+      <div class="s">${ainda ? `<span style="color:var(--red)">${ainda} exame(s) alterado(s) ainda quebram a hierarquia</span>` : 'exames alterados passam a respeitar a hierarquia'}</div></div>
+    <button class="btn sm" onclick="hier.ed={};desenharQuebras()"><i class="fa-solid fa-trash-can"></i>Descartar</button>
+    <button class="btn sm ${pode('tabelas', 'aprovar') ? '' : 'pri'}" onclick="enviarHier(false)"><i class="fa-solid fa-paper-plane"></i>Enviar para aprovação</button>
+    ${pode('tabelas', 'aprovar') ? `<button class="btn sm pri" onclick="enviarHier(true)"><i class="fa-solid fa-stamp"></i>Publicar direto</button>` : ''}`;
+}
+
+// Uma proposta por tabela alterada (mesmo fluxo da grade): pendente ou já publicada
+async function enviarHier(publicar) {
+  const eds = edicoesHier(), n = eds.reduce((s, [, l]) => s + l.length, 0), u = usuarioAtual();
+  if (!n) return;
+  if (publicar && !pode('tabelas', 'aprovar')) return toast('Sem permissão para publicar', 'erro');
+  const ok = await confirmar({ titulo: publicar ? 'Publicar os valores?' : 'Enviar para aprovação?',
+    texto: `${n} valor(es) em ${eds.map(([a]) => esc(nomeAlvoHier(a))).join(', ')}. ${publicar ? 'Os preços passam a valer agora.' : 'Os preços só valem depois de aprovados.'}`, botao: publicar ? 'Publicar' : 'Enviar' });
+  if (!ok) return;
+  for (const [a, l] of eds) {
+    const cx = ctxAlvo(a), itens = Object.fromEntries(l.map(([k, v]) => [k, { mn: ESTADO.exames[k].mn, de: cx.salvo(k) ?? null, para: v }]));
+    const id = DB.novaChave('propostas');
+    const p = { alvo: a, alvoNome: cx.nome, itens, n: l.length, justificativa: 'Correção de hierarquia', autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente' };
+    await DB.gravar(`propostas/${id}`, { ...p, em: DB.agora() });
+    if (publicar) await aplicarProposta(id, p);
+    else registrar('tabelas', `${cx.nome}: proposta com ${l.length} preço(s) enviada (hierarquia)`, { proposta: id });
+  }
+  hier.ed = {};
+  toast(publicar ? `${n} preço(s) publicados` : `${eds.length} proposta(s) enviada(s): ${n} preço(s) aguardando aprovação`);
+  desenharQuebras();
+}
 
 // Abre a grade da tabela já filtrada nas quebras e buscando o exame
 function corrigirQuebra(alvo, mn) {

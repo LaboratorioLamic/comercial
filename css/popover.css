@@ -6,7 +6,14 @@
 .pop-wrap.block { display: block; }
 .pop-wrap.open { z-index: 56; }
 /* Popover dentro de bloco com cantos recortados (overflow: hidden): libera enquanto aberto */
-.casc:has(.pop-wrap.open) { overflow: visible; }
+.casc:has(.pop-wrap.open), .tbl-wrap:has(.pop-wrap.open) { overflow: visible; }
+/* Popover em botão de ícone (dentro de linha de tabela) */
+.pop-mini { vertical-align: middle; margin-left: 6px; }
+.pop-mini .pop-btn { min-width: 0; width: 26px; height: 26px; padding: 0; justify-content: center; border-color: transparent; background: none; }
+.pop-mini .pop-btn:hover, .pop-mini.open .pop-btn { border-color: var(--cyan); background: var(--cyan-light); }
+.pop-mini .pb-txt, .pop-mini .pb-chev { display: none; }
+.pop-mini .pb-ic { width: auto; height: auto; background: none; color: var(--text-muted); }
+.pop-mini .pop-btn:hover .pb-ic, .pop-mini.open .pb-ic { color: var(--cyan); }
 .pop-btn {
   display: flex; align-items: center; gap: 10px; min-width: 180px; width: 100%; padding: 6px 12px 6px 10px;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text-primary); text-align: left; transition: var(--t);

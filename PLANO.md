@@ -154,6 +154,10 @@ Nada é gravado antes da conferência.
   setores visíveis, redefinir senha.
 - **Grupos e permissões**: matriz módulo × ver/criar/editar/excluir/aprovar/importar/
   exportar; Admin travado; grupo padrão para novos usuários.
+- **Apoiados (L2L)**: login e senha dos laboratórios apoiados no site L2L (4.12). Lista os
+  mesmos laboratórios de Tabelas de Preço → Laboratórios apoiados, mais o acesso interno
+  (Laboratório LAMIC). Senha cifrada (sal + SHA-256), gerar senha, ativar/bloquear, remover,
+  último acesso. Importação dos logins do L2L antigo (`info.json`).
 - **Parâmetros**: imposto, taxa da maquininha (só projeção), margem mínima, margem alvo,
   exames por atendimento; mostra impacto antes de salvar; alteração passa por aprovação.
 - **Setores**: cadastro e edição com nome, categoria (interno / serviço / apoio), cor
@@ -172,6 +176,11 @@ instrução. Tela com progresso de publicação, filtros (sem instrução, não 
 site, falta no Unilab, sem cadastro, sem nome), edição do texto e do checklist (quem marcou
 e quando). Alterar o texto desmarca "Revisado". A ficha do exame mostra material, prazo,
 resumo da instrução e o checklist.
+
+**Anexos**: cada instrução tem uma lista de anexos (nome + link) editada na gaveta. É o
+único lugar de onde o L2L tira os links clicáveis. Links escritos no texto no formato da
+planilha (`<a href="…">nome</a>`, sob o título "🔗 Anexos") viram anexos: na importação da
+planilha, pelo botão "Converter links do texto" do editor ou em lote pelo aviso da tela.
 
 ### 4.11 Lamic-to-Lab e laboratórios apoiados — fase 4 ✔
 Tabela para laboratórios que o LAMIC atende (planilha "Tabela LAMIC-TO-LAB", aba L2L BASE):
@@ -214,6 +223,19 @@ maquininha   = projeção: lucro − preço × 2,29% (não entra no custo)
 - Preço abaixo de R$ 1,00 é simbólico: fica fora do reajuste simulado, não serve de
   referência na proposta para laboratório e não entra na variação nem no desconto médio.
 
+### 4.12 Site L2L (LAMIC Apoiados) — repositório `L2L`
+Página única (`index.html`, mesma identidade visual) onde o laboratório apoiado consulta a
+própria tabela. Não usa mais a planilha: lê o banco do Comercial.
+- **Login**: escolhe o laboratório e informa a senha (`l2l/acessos`); 5 erros → espera de
+  10 s; sessão de 30 dias, derrubada se a senha for redefinida ou o acesso bloqueado.
+- **Tabela**: exames da tabela de referência do laboratório + valores diferenciados (que
+  substituem o valor da tabela). Mnemônico, nome, material, prazo e valor; busca sem
+  acento/pontuação, filtros por material e prazo, negociados, com instrução, com anexos.
+- **Detalhe do exame**: valor, instrução (texto puro) e anexos clicáveis.
+- **Acesso interno** (Laboratório LAMIC): tabela escolhida em Configurações e proposta em PDF.
+- Lê: `l2l/acessos`, `laboratorios/{id}`, `tabelas/{tabelaId}`, `exames` (ativo, nome),
+  `catalogo` (nome, material, prazo, instrução, anexos). Grava só `ultimoAcesso`.
+
 ## 6. Estrutura de dados (Firebase)
 
 ```
@@ -234,6 +256,10 @@ tabelas/{id}            nome, tipo (convenio|lab), icone, cor, ordem, ativa, des
                         sistema {chave: preço no Unilab}, importadoEm, arquivo
 laboratorios/{id}       nome, razaoSocial, cnpj, codConvenio, tabelaId, ativo, obs,
                         precos {chave: valor diferenciado}
+l2l/acessos/{id}        id = id do laboratório | 'lamic' (interno): nome, sal, hash, ativo,
+                        interno, tabelaId (interno), atualizadoEm/Por, ultimoAcesso
+catalogo/{chave}        mn, nome, material, prazoDias, instrucao, anexos [{nome, url}],
+                        site, unilab, revisado (+ quem e quando)
 rascunhos/{alvo}/{usuario}  {chave: preço | -1 (retirar)}   alvo = particular | idTabela | lab:id
 propostas/{id}          alvo, alvoNome, itens {chave: {mn, de, para}}, n, justificativa,
                         autor, em, status (pendente|aprovada|rejeitada|cancelada),
@@ -317,7 +343,8 @@ Exames que existem só no sistema (1.503) entram na sincronização da fase 5.
 | SOLUMEDI | Removida |
 | Índice/filme | Constantes (só planos de saúde) |
 | Tabelas do sistema | Todas no mesmo layout CSV |
-| Pardini 4114 | Preços negociados; modelo exclusivo da Pardini; demais custos manuais |
+| Pardini 4114 | Preços negociados; modelo exclusivo da Pardini |
+| Alvaro 2656 | Preços negociados (código, nome, preço especial); sem material e sem vigência no arquivo: vale a partir da data da importação |
 | Modelo de importação do apoio | Escolhido no cadastro do setor (categoria Laboratório de apoio); novos modelos entram na lista quando criados a partir de um arquivo de exemplo |
 | Usuários | Base separada do Manutenção |
 | Segurança | Adiada para a fase final |
@@ -326,14 +353,18 @@ Exames que existem só no sistema (1.503) entram na sincronização da fase 5.
 | L2L preço | Definido exame a exame |
 | Laboratórios apoiados | Nome, razão social, CNPJ, código do convênio |
 | Fluxo de preço | Rascunho por usuário → proposta → aprovação (ou publicação direta por quem aprova) |
+| Site L2L | Lê direto o banco do Comercial (sem planilha); login por laboratório apoiado, gerido em Configurações → Apoiados |
+| Anexos da instrução | Campo próprio (nome + link); o L2L não procura links no texto |
 
 ## 10. Em aberto (não bloqueia o início)
 
-- Modelos de importação de Alvaro, Diagnóstico Brasil e Yatros (até lá: custo manual).
+- Modelos de importação de Diagnóstico Brasil e Yatros (até lá: custo manual).
 - Mostrar na ficha de exames internos o custo de enviar ao apoio (comparação).
 - L2L: o bloco do Unilab colado ao lado da aba L2L BASE bate com a coluna I (Proposta) em
   262 de 271 exames, não com G nem H. Confirmar qual valor está de fato no Unilab.
 - Planilha de instruções: coluna F oculta (formato novo com emojis) — hoje ignorada.
+- L2L na fase de segurança: hoje a página baixa `exames` e `catalogo` inteiros (inclui
+  custos). Com as Security Rules, publicar um nó só com o que o apoiado pode ver.
 
 ## 11. Fases de desenvolvimento
 
