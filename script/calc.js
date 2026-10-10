@@ -83,16 +83,41 @@ const negociadoExame = e => e.vinculoApoio ? true : !!e.negociado;
 const extrasExame = e => (Array.isArray(e.extras) ? e.extras : Object.values(e.extras || {})).filter(x => x && x.valor > 0);
 const alvoExame = e => ESTADO.setores[e.setorId]?.margemAlvo ?? parametro('margemAlvo');
 
-// tab (opcional): tabela de preço → usa o perfil de custo e o piso de margem dela
+// ── Regras por faixa de custo total ───────────────────────────
+// Piso de margem, desconto de referência e sugestão de margem são um valor único ou progressivos:
+//   faixas/{campo} = [{ ate: 100, v: .20 }, { ate: 500, v: .15 }, { v: .10 }]
+// (a primeira começa em 0; a última, sem "ate", vale para todo custo acima do limite anterior).
+// tab = tabela de preço; sem tabela vale a configuração própria da Particular (config/particular).
+const PADRAO_REGRA = { piso: () => parametro('margemMinima'), descontoRef: () => 0, margemSugerida: () => null };
+const faixasDe = (o, campo) => { const f = o?.faixas?.[campo]; return f ? Object.values(f).filter(Boolean) : []; };
+function regraTab(tab, campo, custo = null) {
+  const o = tab || ESTADO.particular || {}, padrao = o[campo] ?? PADRAO_REGRA[campo]();
+  const fx = faixasDe(o, campo);
+  if (!fx.length || custo == null) return padrao;
+  return (fx.find(f => f.ate == null || custo <= f.ate) || fx[fx.length - 1]).v ?? padrao;
+}
+// "20%" ou, com faixas, "10% a 20% progressivo"
+function textoRegra(tab, campo, casas = 0) {
+  const fx = faixasDe(tab || ESTADO.particular, campo).map(f => f.v).filter(v => v != null), v = regraTab(tab, campo);
+  if (fx.length > 1) { const a = Math.min(...fx), b = Math.max(...fx); return a === b ? pct(a, casas) : `${pct(a, casas)} a ${pct(b, casas)} progressivo`; }
+  return v != null ? pct(v, casas) : '—';
+}
+// Margem alvo da Particular: setor com alvo próprio > configuração da Particular > parâmetro geral
+const textoAlvoParticular = () => regraTab(null, 'margemSugerida') != null ? textoRegra(null, 'margemSugerida', 1) : pct(parametro('margemAlvo'));
+
+// tab (opcional): tabela de preço → usa o perfil de custo e as regras de margem dela
 function calcular(e, preco = e.precoPraticado, tab = null) {
   const fx = fixosExame(e, tab?.perfil), extras = extrasExame(e);
   const fixo = fx.filter(f => f.aplica).reduce((s, f) => s + f.v, 0);
   const somaExtras = extras.reduce((s, x) => s + x.valor, 0);
-  const imp = parametro('imposto'), alvo = alvoExame(e), min = tab ? (tab.piso ?? parametro('margemMinima')) : parametro('margemMinima');
-  const ct = custoTesteExame(e);
-  const r = { fx, extras, fixo, somaExtras, alvo, preco: preco || null, teste: ct, semCusto: !ct };
+  const imp = parametro('imposto'), ct = custoTesteExame(e), custo = ct ? ct.valor + fixo + somaExtras : null;
+  const min = regraTab(tab, 'piso', custo);
+  const alvo = tab ? alvoExame(e) : ESTADO.setores[e.setorId]?.margemAlvo ?? regraTab(null, 'margemSugerida', custo) ?? parametro('margemAlvo');
+  // min, descRef e margemSug: regras da tabela já resolvidas para a faixa de custo deste exame
+  const r = { fx, extras, fixo, somaExtras, alvo, min, descRef: regraTab(tab, 'descontoRef', custo), margemSug: regraTab(tab, 'margemSugerida', custo),
+    preco: preco || null, teste: ct, semCusto: !ct };
   if (r.semCusto) { r.status = 'x'; return r; }
-  r.custo = ct.valor + fixo + somaExtras;
+  r.custo = custo;
   r.sugerido = 1 - imp - alvo > 0 ? Math.ceil(r.custo / (1 - imp - alvo)) : null;
   r.minimo = 1 - imp - min > 0 ? Math.ceil(r.custo / (1 - imp - min)) : null;
   if (!preco) { r.status = 'p'; return r; }

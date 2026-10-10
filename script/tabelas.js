@@ -37,7 +37,7 @@ function ctxAlvo(alvo) {
     alvo, base: true, nome: 'Particular', icone: 'fa-user', cor: '#00a8cc', tab: null, descRef: 0,
     salvo: k => ESTADO.exames[k]?.precoPraticado || null,
     sistema: k => ESTADO.exames[k]?.precoSistema ?? null,
-    ref: null, piso: parametro('margemMinima'), pisoNome: 'mínimo', todos: true
+    ref: null, piso: regraTab(null, 'piso'), pisoTxt: textoRegra(null, 'piso'), descTxt: '0%', msugTxt: '—', pisoNome: 'mínimo', todos: true
   };
   if (ehLab(alvo)) {
     const id = alvo.slice(4), l = ESTADO.laboratorios[id];
@@ -47,7 +47,7 @@ function ctxAlvo(alvo) {
       alvo, lab: true, id, ent: l, caminho: CAMINHOS.laboratorios, rotulo: 'Laboratório apoiado', nome: l.nome, icone: 'fa-building-user', cor: t?.cor || '#8b5cf6', tab: t ? { ...t, id: l.tabelaId || t.id } : null, descRef: 0, margemSug: t?.margemSugerida ?? null,
       salvo: k => l.precos?.[k] ?? null, sistema: () => null,
       ref: t ? { nome: t.nome, valor: k => t.precos?.[k] ?? null } : null,
-      piso: t?.piso ?? parametro('margemMinima'), pisoNome: 'piso', todos: false
+      piso: regraTab(t, 'piso'), pisoTxt: textoRegra(t, 'piso'), descTxt: '0%', msugTxt: textoRegra(t, 'margemSugerida'), pisoNome: 'piso', todos: false
     };
   }
   if (ehConv(alvo)) {
@@ -59,7 +59,7 @@ function ctxAlvo(alvo) {
       tab: t ? { ...t, id: c.tabelaId } : null, descRef: 0, margemSug: t?.margemSugerida ?? null,
       salvo: k => c.precos?.[k] ?? null, sistema: () => null,
       ref: t ? { nome: t.nome, valor: k => t.precos?.[k] ?? null } : { nome: 'Particular', valor: k => ESTADO.exames[k]?.precoPraticado || null },
-      piso: t?.piso ?? parametro('margemMinima'), pisoNome: t ? 'piso' : 'mínimo', todos: false
+      piso: regraTab(t, 'piso'), pisoTxt: textoRegra(t, 'piso'), descTxt: '0%', msugTxt: textoRegra(t, 'margemSugerida'), pisoNome: t ? 'piso' : 'mínimo', todos: false
     };
   }
   const t = ESTADO.tabelas[alvo];
@@ -68,7 +68,7 @@ function ctxAlvo(alvo) {
     alvo, tabela: true, id: alvo, nome: t.nome, icone: t.icone, cor: t.cor, tab: t, descRef: t.descontoRef || 0, margemSug: t.margemSugerida ?? null,
     salvo: k => t.precos?.[k] ?? null, sistema: k => t.sistema?.[k] ?? null,
     ref: { nome: 'Particular', valor: k => ESTADO.exames[k]?.precoPraticado || null },
-    piso: t.piso ?? parametro('margemMinima'), pisoNome: 'piso', todos: true
+    piso: regraTab(t, 'piso'), pisoTxt: textoRegra(t, 'piso'), descTxt: textoRegra(t, 'descontoRef'), msugTxt: textoRegra(t, 'margemSugerida'), pisoNome: 'piso', todos: true
   };
 }
 const ctxAtual = () => ctxAlvo(grade.alvo);
@@ -198,7 +198,7 @@ function statsAlvo(cx) {
 function htmlCardAlvo(cx, on, clique) {
   const s = statsAlvo(cx), t = cx.tab;
   const sub = cx.base ? 'Tabela base · preço praticado' : cx.lab ? `${esc(cx.ent?.razaoSocial || cx.rotulo)}${cx.conv ? ` · base ${esc(cx.ref.nome)}` : ''}`
-    : `${TIPOS_TABELA[t.tipo]?.nome || 'Tabela'} · piso ${pct(cx.piso, 0)}`;
+    : `${TIPOS_TABELA[t.tipo]?.nome || 'Tabela'} · piso ${cx.pisoTxt}`;
   const badges = [
     cx.base ? '<span class="badge-s base"><i class="fa-solid fa-star"></i>base</span>' : '',
     t && t.ativa === false && !cx.lab ? '<span class="badge-s off">inativa</span>' : '',
@@ -261,10 +261,11 @@ async function abrirGrade(alvo, contId) {
 
 function htmlCabGrade(cx) {
   const t = cx.tab, l = cx.lab ? cx.ent : null;
-  const sub = cx.base ? `Tabela base: o valor editado aqui é o preço praticado do exame · mínimo ${pct(cx.piso)} · alvo do setor ou ${pct(parametro('margemAlvo'))}`
-    : cx.lab ? `${[l.razaoSocial, l.cnpj ? 'CNPJ ' + l.cnpj : '', l.codConvenio ? 'convênio ' + l.codConvenio : ''].filter(Boolean).map(esc).join(' · ') || cx.rotulo}<br>${cx.conv ? `Tabela base <b>${esc(cx.ref.nome)}</b>: exame sem valor diferenciado segue o preço dela · ` : ''}Margem pelo perfil da ${esc(t?.nome || 'Particular')}: ${cx.pisoNome} ${pct(cx.piso, 0)}${cx.margemSug != null ? ` · sugestão de margem ${pct(cx.margemSug, 0)}` : ''} · ${resumoPerfil(t)}`
-    : `Piso ${pct(cx.piso, 0)}${cx.margemSug != null ? ` · sugestão de margem ${pct(cx.margemSug, 0)}` : ''} · desconto de referência ${pct(cx.descRef, 0)} sobre a Particular · ${resumoPerfil(t)}`;
+  const sub = cx.base ? `Tabela base: o valor editado aqui é o preço praticado do exame · mínimo ${cx.pisoTxt} · alvo do setor ou ${textoAlvoParticular()}`
+    : cx.lab ? `${[l.razaoSocial, l.cnpj ? 'CNPJ ' + l.cnpj : '', l.codConvenio ? 'convênio ' + l.codConvenio : ''].filter(Boolean).map(esc).join(' · ') || cx.rotulo}<br>${cx.conv ? `Tabela base <b>${esc(cx.ref.nome)}</b>: exame sem valor diferenciado segue o preço dela · ` : ''}Margem pelo perfil da ${esc(t?.nome || 'Particular')}: ${cx.pisoNome} ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · ${resumoPerfil(t)}`
+    : `Piso ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · desconto de referência ${cx.descTxt} sobre a Particular · ${resumoPerfil(t)}`;
   const bts = [];
+  if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirConfigParticular()" title="Margem mínima e alvo próprios da Particular"><i class="fa-solid fa-gear"></i>Configurar</button>`);
   if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportUnilabParticular()" title="CSV da tabela Particular exportado do Unilab"><i class="fa-solid fa-file-import"></i>Importar do Unilab</button>`);
   if (cx.tabela && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportTabela('${cx.id}')"><i class="fa-solid fa-file-import"></i>Importar</button>`);
   if (cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="${cx.conv ? 'exportarConveniado' : 'exportarLaboratorio'}('${cx.id}')"><i class="fa-solid fa-file-csv"></i>Exportar lista</button>`);
@@ -283,8 +284,9 @@ function linhaGrade(cx, e) {
     .filter(q => q.alvo === cx.alvo || q.teto.alvo === cx.alvo);
   const ref = cx.ref?.valor(k) ?? null;
   // desconto sobre a referência (negativo = preço acima dela); descRef = desconto de referência da tabela
-  return { e, k, preco, c: calcular(e, preco, cx.tab), ed: editado(cx, k), salvo: cx.salvo(k), ref, sist: cx.sistema(k), hier,
-    desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.descRef || 0 };
+  const c = calcular(e, preco, cx.tab);
+  return { e, k, preco, c, ed: editado(cx, k), salvo: cx.salvo(k), ref, sist: cx.sistema(k), hier,
+    desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.lab || cx.base ? 0 : c.descRef };
 }
 
 const FILTROS_GRADE = {
@@ -320,7 +322,7 @@ function desenharGrade() {
   fls.forEach(f => { cont[f] = todas.filter(FILTROS_GRADE[f].f).length; });
   document.getElementById('gr-chips').innerHTML = fls.filter(f => cont[f] || f === grade.filtro || f === '' || f === 'tab').map(f => {
     const F = FILTROS_GRADE[f], nome = f === 'r' && cx.base ? 'Abaixo do mínimo' : f === 'fora' && cx.lab ? 'Sem valor' : F.nome;
-    const dica = f === 'dref' ? `Desconto maior que o de referência da tabela (${pct(cx.descRef, 0)})` : f === 'dneg' ? `Preço acima de ${cx.ref?.nome || 'a referência'}` : '';
+    const dica = f === 'dref' ? `Desconto maior que o de referência da tabela (${cx.descTxt})` : f === 'dneg' ? `Preço acima de ${cx.ref?.nome || 'a referência'}` : '';
     return `<button class="chip ${grade.filtro === f ? 'on' : ''}" title="${esc(dica)}" onclick="grade.filtro='${f}';grade.pag=1;desenharGrade()">${F.cor ? `<span class="d" style="background:${F.cor}"></span>` : `<i class="fa-solid ${F.icone}"></i>`}${nome} <b>${cont[f]}</b></button>`;
   }).join('');
 
@@ -362,9 +364,9 @@ function htmlLinhaGrade(cx, x, edit) {
   const divg = sist != null && preco != null && Math.abs(sist - preco) > 0.004;
   const b = (a, ic, t, off) => `<button title="${t}" ${off ? 'disabled' : ''} onclick="acaoLinha(this,'${a}')"><i class="fa-solid ${ic}"></i></button>`;
   const acoes = !edit ? '' : (cx.base ? b('sug', 'fa-wand-magic-sparkles', `Preço sugerido (alvo ${pct(c.alvo)})`, !c.sugerido)
-      : b('ref', cx.lab ? 'fa-equals' : 'fa-percent', cx.lab ? `Usar valor da ${esc(cx.ref?.nome || 'tabela')}` : `Particular − ${pct(cx.descRef, 0)}`, ref == null))
-    + (cx.base ? '' : b('msug', 'fa-bullseye', cx.margemSug != null ? `Sugestão de margem (${pct(cx.margemSug, 0)})` : 'Sugestão de margem: defina o percentual em Configurar', cx.margemSug == null || c.semCusto))
-    + b('piso', 'fa-arrow-up', `Levar ao ${cx.pisoNome} (${pct(cx.piso, 0)})`, !c.minimo)
+      : b('ref', cx.lab ? 'fa-equals' : 'fa-percent', cx.lab ? `Usar valor da ${esc(cx.ref?.nome || 'tabela')}` : `Particular − ${pct(c.descRef, 0)}`, ref == null))
+    + (cx.base ? '' : b('msug', 'fa-bullseye', c.margemSug != null ? `Sugestão de margem (${pct(c.margemSug, 0)})` : 'Sugestão de margem: defina o percentual em Configurar', c.margemSug == null || c.semCusto))
+    + b('piso', 'fa-arrow-up', `Levar ao ${cx.pisoNome} (${pct(c.min, 0)})`, !c.minimo)
     + b('desf', 'fa-rotate-left', 'Desfazer alteração', !ed)
     + (cx.base ? '' : b('rem', 'fa-xmark', cx.lab ? 'Remover valor diferenciado' : 'Retirar da tabela', preco == null));
   const tag = cx.base || c.status === 'x' ? tagStatus(c.status)
@@ -427,8 +429,8 @@ const precoParaMargem = (c, m) => m == null || c.semCusto || 1 - parametro('impo
 
 function valorAcao(cx, x, a, p = 0) {
   if (a === 'sug') return x.c.sugerido || undefined;
-  if (a === 'msug') return precoParaMargem(x.c, cx.margemSug);
-  if (a === 'ref') return x.ref != null ? (cx.lab ? x.ref : Math.round(x.ref * (1 - cx.descRef))) : undefined;
+  if (a === 'msug') return precoParaMargem(x.c, x.c.margemSug);
+  if (a === 'ref') return x.ref != null ? (cx.lab ? x.ref : Math.round(x.ref * (1 - x.c.descRef))) : undefined;
   if (a === 'piso') return x.c.minimo || undefined;
   if (a === 'pct') return x.preco != null ? Math.round(x.preco * (1 + p) * 100) / 100 : undefined;
   if (a === 'desc') return x.ref != null ? Math.round(x.ref * (1 - p)) : undefined;
@@ -471,7 +473,7 @@ function desenharBulk() {
     <button class="btn sm" onclick="acaoLote('pct')" title="Aumenta (ou reduz, com valor negativo) o preço atual"><i class="fa-solid fa-arrow-trend-up"></i>Reajustar</button>
     ${cx.base ? '' : `<button class="btn sm" onclick="acaoLote('desc')" title="${esc(cx.ref?.nome || 'Referência')} menos o percentual"><i class="fa-solid fa-percent"></i>Desconto s/ ${esc(cx.ref?.nome || 'ref.')}</button>`}
     ${cx.base ? `<button class="btn sm" onclick="acaoLote('sug')"><i class="fa-solid fa-wand-magic-sparkles"></i>Sugerido</button>` : ''}
-    ${!cx.base && cx.margemSug != null ? `<button class="btn sm" onclick="acaoLote('msug')" title="Preço que atinge ${pct(cx.margemSug, 0)} de margem"><i class="fa-solid fa-bullseye"></i>Sugestão de margem</button>` : ''}
+    ${!cx.base && cx.margemSug != null ? `<button class="btn sm" onclick="acaoLote('msug')" title="Preço que atinge ${cx.msugTxt} de margem"><i class="fa-solid fa-bullseye"></i>Sugestão de margem</button>` : ''}
     <button class="btn sm" onclick="acaoLote('piso')" title="Só os que estão abaixo"><i class="fa-solid fa-arrow-up"></i>Levar ao ${cx.pisoNome}</button>
     <button class="btn sm" onclick="acaoLote('arr')" title="Arredonda para cima, sem centavos"><i class="fa-solid fa-coins"></i>Arredondar</button>
     ${cx.base ? '' : `<button class="btn sm" onclick="acaoLote('rem')"><i class="fa-solid fa-xmark"></i>${cx.lab ? 'Remover' : 'Retirar da tabela'}</button>`}

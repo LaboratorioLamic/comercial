@@ -91,7 +91,7 @@ function desenharTabelasFicha(id) {
       return `<div class="casc-r ${t.ativa === false ? 'skip' : ''}" data-t="${t.id}"><div class="lft"><i class="fa-solid ${t.icone}" style="color:${t.cor}"></i><div>${esc(t.nome)}
           <div class="s" id="fxt-s-${t.id}"></div></div></div>
         <div class="fx-tv"><div class="fx-tv-l"><div class="price-in" id="fxt-pi-${t.id}"><span>R$</span><input type="number" step="0.01" min="0" data-t="${t.id}" value="${p != null ? Number(p).toFixed(2) : ''}" placeholder="—" ${edit ? '' : 'disabled'} oninput="editarTabFicha(this)" onfocus="this.select()"></div>
-          ${edit ? `<div class="acts"><button title="Margem alvo: ${pct(margemAlvoTab(t), 0)}${t.margemSugerida != null ? ' (sugestão de margem da tabela)' : ' (alvo do setor/geral: tabela sem sugestão de margem)'}" ${calcular(e, null, t).semCusto ? 'disabled' : ''} onclick="margemTabFicha('${t.id}')"><i class="fa-solid fa-bullseye"></i></button><button title="Particular − ${pct(t.descontoRef || 0, 0)} (desconto de referência)" onclick="refTabFicha('${t.id}')"><i class="fa-solid fa-percent"></i></button><button title="Retirar da tabela" onclick="definirTabFicha('${t.id}', null, true)"><i class="fa-solid fa-xmark"></i></button></div>` : ''}</div>
+          ${edit ? `<div class="acts"><button title="Margem alvo: ${pct(margemAlvoTab(t), 0)}${t.margemSugerida != null ? ' (sugestão de margem da tabela)' : ' (alvo do setor/geral: tabela sem sugestão de margem)'}" ${calcular(e, null, t).semCusto ? 'disabled' : ''} onclick="margemTabFicha('${t.id}')"><i class="fa-solid fa-bullseye"></i></button><button title="Particular − ${pct(calcular(e, null, t).descRef, 0)} (desconto de referência)" onclick="refTabFicha('${t.id}')"><i class="fa-solid fa-percent"></i></button><button title="Retirar da tabela" onclick="definirTabFicha('${t.id}', null, true)"><i class="fa-solid fa-xmark"></i></button></div>` : ''}</div>
           <div class="delta" id="fxt-d-${t.id}"></div></div></div>`;
     }).join('')}
     ${labs.length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-building-user"></i><div>Valores diferenciados<div class="s">${labs.map(l => `${esc(l.nome)} ${fmt(l.precos[id])}`).join(' · ')}</div></div></div></div>` : ''}
@@ -114,7 +114,7 @@ function editarTabFicha(inp) {
   definirTabFicha(inp.dataset.t, v);
 }
 // Margem alvo da tabela: sugestão de margem configurada ou alvo do setor/geral
-const margemAlvoTab = t => t.margemSugerida ?? alvoExame(_fx);
+const margemAlvoTab = t => calcular(_fx, null, t).margemSug ?? alvoExame(_fx);
 function margemTabFicha(id) {
   const t = ESTADO.tabelas[id], v = precoParaMargem(calcular(_fx, null, t), margemAlvoTab(t));
   if (v == null) return toast('Exame sem custo: margem desconhecida', 'erro');
@@ -123,7 +123,7 @@ function margemTabFicha(id) {
 function refTabFicha(id) {
   const part = _fx.precoPraticado, t = ESTADO.tabelas[id];
   if (!part) return toast('Exame sem preço praticado', 'erro');
-  definirTabFicha(id, Math.round(part * (1 - (t.descontoRef || 0))), true);
+  definirTabFicha(id, Math.round(part * (1 - calcular(_fx, null, t).descRef)), true);
 }
 
 // Margem, piso, desconto e delta de cada tabela (sem recriar os campos)
@@ -133,8 +133,8 @@ function atualizarTabsFicha() {
     const sEl = document.getElementById('fxt-s-' + t.id);
     if (!sEl) return;
     const p = precoTabFicha(t.id), c = p != null ? calcular(_fx, p, t) : null, salvo = t.precos?.[_fxId] ?? null, ed = t.id in _fxTab;
-    sEl.innerHTML = p == null ? `fora da tabela${part && t.descontoRef ? ` · ref. ${fmt(Math.round(part * (1 - t.descontoRef)))}` : ''}`
-      : `${c.semCusto ? 'sem custo' : `<span style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">margem ${pct(c.margem)}</span>`} · piso ${pct(t.piso ?? parametro('margemMinima'), 0)}${part ? ` · desc. ${pct(1 - p / part)}` : ''}`;
+    sEl.innerHTML = p == null ? `fora da tabela${part && calcular(_fx, null, t).descRef ? ` · ref. ${fmt(Math.round(part * (1 - calcular(_fx, null, t).descRef)))}` : ''}`
+      : `${c.semCusto ? 'sem custo' : `<span style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">margem ${pct(c.margem)}</span>`} · piso ${pct(c.min, 0)}${part ? ` · desc. ${pct(1 - p / part)}` : ''}`;
     document.getElementById('fxt-pi-' + t.id).className = `price-in ${ed ? 'on' : ''}`;
     const d = ed && p != null && salvo != null ? p - salvo : 0;
     document.getElementById('fxt-d-' + t.id).innerHTML = !ed ? '' : salvo == null ? '<span class="delta-dn">entra na tabela</span>' : p == null ? '<span class="delta-up">sai da tabela</span>'
@@ -191,7 +191,7 @@ function atualizarFicha() {
   const e = _fx, c = calcular(e), preco = e.precoPraticado;
   const alertas = [];
   if (c.semCusto) alertas.push(['x', 'fa-circle-question', '<b>Custo do teste não informado.</b> Sem ele a margem é desconhecida.']);
-  if (c.status === 'r') alertas.push(['r', 'fa-circle-xmark', `Margem ${pct(c.margem)} abaixo do mínimo de ${pct(parametro('margemMinima'))}. Preço mínimo viável: <b>${fmt(c.minimo)}</b>.`]);
+  if (c.status === 'r') alertas.push(['r', 'fa-circle-xmark', `Margem ${pct(c.margem)} abaixo do mínimo de ${pct(c.min)}. Preço mínimo viável: <b>${fmt(c.minimo)}</b>.`]);
   if (e.foraDoSistema) alertas.push(['a', 'fa-plug-circle-xmark', 'Mnemônico não encontrado no catálogo do sistema do laboratório.']);
   document.getElementById('fx-alertas').innerHTML = alertas.map(([t, ic, txt]) => `<div class="alert ${t}"><i class="fa-solid ${ic}"></i><div>${txt}</div></div>`).join('');
 

@@ -56,7 +56,7 @@ function abrirLaboratorio(id) {
   });
   criarPop('pop-lbtab', {
     rotulo: 'Tabela', titulo: 'Tabela de referência', icone: 'fa-table-list', padrao: '',
-    opcoes: () => [...tabs.map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, desc: `piso ${pct(t.piso ?? parametro('margemMinima'), 0)} · ${resumoPerfil(t)}` })),
+    opcoes: () => [...tabs.map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, desc: `piso ${textoRegra(t, 'piso')} · ${resumoPerfil(t)}` })),
       ...(tabs.length ? [] : [{ valor: '', rotulo: 'Nenhuma tabela de laboratórios', icone: 'fa-ban', cor: 'var(--gray)' }])]
   });
   POPS['pop-lbtab'].valor = l?.tabelaId || tabelaLabPadrao()?.id || ''; desenharBotaoPop('pop-lbtab');

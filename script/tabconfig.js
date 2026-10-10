@@ -13,6 +13,8 @@ function abrirConfigTabela(id) {
     descontoRef: t?.descontoRef ?? 0.2, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null, ativa: t ? t.ativa !== false : true,
     perfil: { ...(t?.perfil || {}) }, inicial: 'vazia', copiar: ''
   };
+  iniciarRegras(t, { piso: parametro('margemMinima'), descontoRef: 0.2, margemSugerida: null });
+  _rgRedesenhar = desenharConfigTabela;
   const editar = id ? pode('tabelas', 'editar') : pode('tabelas', 'criar');
   abrirGaveta({
     sobre: id ? 'Configurar tabela' : 'Nova tabela', titulo: t ? t.nome : 'Cadastrar tabela de preço',
@@ -30,15 +32,11 @@ function desenharConfigTabela() {
   const modo = f => e.perfil[f.id] === false ? 'nao' : typeof e.perfil[f.id] === 'number' ? 'valor' : 'padrao';
   document.getElementById('tb-ed').innerHTML = `<div class="form-col">
     <div class="set-prev"><span class="tc-ic" style="--c:${e.cor};width:46px;height:46px;font-size:19px"><i class="fa-solid ${e.icone}"></i></span>
-      <div><div style="font-weight:600">${e.nome ? esc(e.nome) : '<span class="muted">Nome da tabela</span>'}</div><div class="hint">${TIPOS_TABELA[e.tipo].nome} · piso ${pct(e.piso, 1)}</div></div></div>
+      <div><div style="font-weight:600">${e.nome ? esc(e.nome) : '<span class="muted">Nome da tabela</span>'}</div><div class="hint">${TIPOS_TABELA[e.tipo].nome} · piso ${_rg.piso.fx ? 'progressivo' : pct(_rg.piso.v || 0, 1)}</div></div></div>
     ${campo('tb-nome', 'Nome', e.nome, { tipo: 'text', ph: 'Ex.: Cartão Saúde', aoMudar: "_tbEd.nome=this.value;document.querySelector('.set-prev b, .set-prev div div').textContent=this.value" })}
     <div class="field"><label>Tipo</label><div class="opt-cards">${Object.entries(TIPOS_TABELA).map(([k, x]) => oc('_tbEd.tipo', k, x.nome, x.desc, x.icone, e.tipo === k)).join('')}</div></div>
-    <div class="fgrid sem-pad">
-      ${campo('tb-piso', 'Piso de margem', +(e.piso * 100).toFixed(1), { suf: '%', icone: 'fa-shield-halved', aoMudar: '_tbEd.piso=(parseFloat(this.value)||0)/100', dica: 'abaixo disso o preço é sinalizado' })}
-      ${campo('tb-desc', 'Desconto de referência', +(e.descontoRef * 100).toFixed(1), { suf: '%', icone: 'fa-percent', aoMudar: '_tbEd.descontoRef=(parseFloat(this.value)||0)/100', dica: 'sobre a Particular: atalho na edição' })}
-    </div>
-    ${campo('tb-msug', 'Sugestão de margem', e.margemSug != null ? +(e.margemSug * 100).toFixed(1) : '', { suf: '%', icone: 'fa-bullseye', ph: 'Ex.: 40',
-      aoMudar: "_tbEd.margemSug=this.value.trim()===''?null:(parseFloat(this.value)||0)/100", dica: 'na edição, o botão "Sugestão de margem" calcula o preço que atinge esta margem (custo do perfil + imposto)' })}
+    ${_rg.piso.fx || _rg.descontoRef.fx ? htmlRegra('piso') + htmlRegra('descontoRef') : `<div class="fgrid sem-pad">${htmlRegra('piso')}${htmlRegra('descontoRef')}</div>`}
+    ${htmlRegra('margemSugerida')}
     <div class="field"><label><i class="fa-solid fa-calculator"></i>Perfil de custo</label>
       <div class="casc">${fixos.map(f => `<div class="casc-r"><div class="lft"><i class="fa-solid ${f.icone || 'fa-coins'}"></i><div>${esc(f.nome)}<div class="s">padrão ${fmt(f.valor)}${f.etapa ? ` · só com ${f.etapa}` : ''}</div></div></div>
         <div style="display:flex;gap:6px;align-items:center">
@@ -49,7 +47,7 @@ function desenharConfigTabela() {
     <div class="field"><label><i class="fa-solid fa-icons"></i>Ícone</label><div class="icon-grid pequeno">${ICONES_TABELA.map(ic => `<button type="button" class="ig ${e.icone === ic ? 'on' : ''}" style="--c:${e.cor}" onclick="_tbEd.icone='${ic}';desenharConfigTabela()"><i class="fa-solid ${ic}"></i></button>`).join('')}</div></div>
     ${!e.id ? `<div class="field"><label><i class="fa-solid fa-table-list"></i>Preços iniciais</label><div class="opt-cards">
         ${oc('_tbEd.inicial', 'vazia', 'Tabela vazia', 'Inclua os exames depois, na edição ou importando', 'fa-file', e.inicial === 'vazia')}
-        ${oc('_tbEd.inicial', 'desconto', 'Particular com desconto', `Todos os exames com preço: Particular − ${pct(e.descontoRef, 0)}, arredondado`, 'fa-percent', e.inicial === 'desconto')}
+        ${oc('_tbEd.inicial', 'desconto', 'Particular com desconto', 'Todos os exames com preço: Particular − desconto de referência, arredondado', 'fa-percent', e.inicial === 'desconto')}
         ${tabelasLista().length ? oc('_tbEd.inicial', 'copiar', 'Copiar de outra tabela', 'Mesmos exames e preços', 'fa-copy', e.inicial === 'copiar') : ''}</div>
         ${e.inicial === 'copiar' ? '<div id="pop-tbcopia" class="block" style="margin-top:8px"></div>' : ''}</div>` : ''}
     <div class="casc"><div class="casc-r"><div class="lft"><i class="fa-solid fa-eye"></i><div>Tabela ativa<div class="s">inativa fica esmaecida e fora dos laboratórios</div></div></div>${chave(e.ativa, '_tbEd.ativa=!_tbEd.ativa;this.classList.toggle(\'on\')')}</div></div>
@@ -76,10 +74,9 @@ async function gravarConfigTabela() {
   e.nome = valorCampo('tb-nome').trim();
   if (!e.nome) return toast('Informe o nome', 'erro');
   if (lista(ESTADO.tabelas).some(t => t.id !== e.id && normalizar(t.nome) === normalizar(e.nome)) || normalizar(e.nome) === 'particular') return toast('Já existe uma tabela com esse nome', 'erro');
-  if (!(e.piso >= 0 && e.piso < 1 - parametro('imposto'))) return toast('Piso de margem inválido', 'erro');
-  if (e.margemSug != null && !(e.margemSug > 0 && e.margemSug < 1 - parametro('imposto'))) return toast(`Sugestão de margem deve ficar entre 0 e ${pct(1 - parametro('imposto'), 0)}`, 'erro');
-  const dados = { nome: e.nome, tipo: e.tipo, cor: e.cor, icone: e.icone, descontoRef: Math.round(e.descontoRef * 10000) / 10000, piso: Math.round(e.piso * 10000) / 10000,
-    margemSugerida: e.margemSug != null ? Math.round(e.margemSug * 10000) / 10000 : null,
+  const erro = validarRegras();
+  if (erro) return toast(erro, 'erro');
+  const dados = { nome: e.nome, tipo: e.tipo, cor: e.cor, icone: e.icone, ...dadosRegras(),
     ativa: e.ativa, perfil: Object.keys(e.perfil).length ? e.perfil : null, atualizadoEm: DB.agora() };
   let id = e.id;
   if (id) {
@@ -90,7 +87,7 @@ async function gravarConfigTabela() {
     let precos = null;
     if (e.inicial === 'desconto') {
       precos = {};
-      examesVisiveis().filter(x => x.ativo !== false && x.precoPraticado > 0).forEach(x => { precos[x.id] = Math.round(x.precoPraticado * (1 - e.descontoRef)); });
+      examesVisiveis().filter(x => x.ativo !== false && x.precoPraticado > 0).forEach(x => { precos[x.id] = Math.round(x.precoPraticado * (1 - calcular(x, null, dados).descRef)); });
     }
     if (e.inicial === 'copiar' && e.copiar) precos = { ...(ESTADO.tabelas[e.copiar]?.precos || {}) };
     dados.ordem = Math.max(0, ...lista(ESTADO.tabelas).map(t => t.ordem || 0)) + 1;

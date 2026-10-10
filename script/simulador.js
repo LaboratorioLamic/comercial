@@ -83,21 +83,21 @@ function desenharFormReajuste() {
       <span class="hint">Negativo reduz o preço</span>`
     : rj.tipo === 'marg' ? `<span class="f-label">Margem desejada</span>
       <div class="inp" style="width:130px"><input type="number" step="0.5" value="${rj.m}" oninput="rj.m=parseFloat(this.value)||0;recalcReajuste()"><span class="suf">%</span></div>
-      <span class="hint">${cx.base ? `Alvo geral ${pct(parametro('margemAlvo'))}` : cx.margemSug != null ? `Sugestão de margem da tabela: ${pct(cx.margemSug, 0)}` : `Piso da tabela: ${pct(cx.piso, 0)}`} · exames sem custo ficam de fora</span>`
+      <span class="hint">${cx.base ? `Alvo geral ${textoAlvoParticular()}` : cx.margemSug != null ? `Sugestão de margem da tabela: ${cx.msugTxt}` : `Piso da tabela: ${cx.pisoTxt}`} · exames sem custo ficam de fora</span>`
     : rj.tipo === 'desc' ? `<span class="f-label">Desconto sobre ${esc(cx.ref?.nome || 'a referência')}</span>
       <div class="inp" style="width:130px"><input type="number" step="0.5" value="${rj.d}" oninput="rj.d=parseFloat(this.value)||0;recalcReajuste()"><span class="suf">%</span></div>
-      <span class="hint">${cx.descRef ? `Desconto de referência da tabela: ${pct(cx.descRef, 0)}` : ''}</span>`
-    : rj.tipo === 'piso' ? `<span class="f-label">Regra</span><div class="hint"><i class="fa-solid fa-circle-info"></i> Exames abaixo de ${pct(cx.piso, 0)} sobem até o ${cx.pisoNome}; os demais não mudam.</div>`
+      <span class="hint">${cx.descRef ? `Desconto de referência da tabela: ${cx.descTxt}` : ''}</span>`
+    : rj.tipo === 'piso' ? `<span class="f-label">Regra</span><div class="hint"><i class="fa-solid fa-circle-info"></i> Exames abaixo de ${cx.pisoTxt} sobem até o ${cx.pisoNome}; os demais não mudam.</div>`
     : `<span class="f-label">Regra</span><div class="hint"><i class="fa-solid fa-circle-info"></i> Preço = custo total ÷ (1 − imposto − margem alvo do setor).</div>`;
   el.innerHTML = `
     <div class="fg"><span class="f-label">Tabela</span><div id="pop-rjalvo" class="block"></div></div>
     <div class="fg"><span class="f-label">Setor</span><div id="pop-rjsetor" class="block"></div></div>
     <div class="fg"><span class="f-label">Aplicar em</span>
-      <div class="seg"><button class="${rj.escopo === 'todos' ? 'on' : ''}" onclick="rj.escopo='todos';desenharFormReajuste()" title="Todos os exames com preço"><i class="fa-solid fa-list"></i>Todos</button><button class="${rj.escopo === 'abaixo' ? 'on' : ''}" onclick="rj.escopo='abaixo';desenharFormReajuste()" title="Só os exames abaixo de ${pct(cx.piso, 0)}"><i class="fa-solid fa-circle-xmark"></i>Abaixo do ${cx.pisoNome}</button></div></div>
+      <div class="seg"><button class="${rj.escopo === 'todos' ? 'on' : ''}" onclick="rj.escopo='todos';desenharFormReajuste()" title="Todos os exames com preço"><i class="fa-solid fa-list"></i>Todos</button><button class="${rj.escopo === 'abaixo' ? 'on' : ''}" onclick="rj.escopo='abaixo';desenharFormReajuste()" title="Só os exames abaixo de ${cx.pisoTxt}"><i class="fa-solid fa-circle-xmark"></i>Abaixo do ${cx.pisoNome}</button></div></div>
     <div class="fg"><span class="f-label">Arredondamento</span><div id="pop-rjarred" class="block"></div></div>
     <div class="fg full"><span class="f-label">Tipo de reajuste</span>
       <div class="opt-cards">${tipos.map(t => { const T = TIPOS_REAJUSTE[t]; return `<button type="button" class="oc ${rj.tipo === t ? 'on' : ''}" onclick="rj.tipo='${t}';rj.pag=1;desenharFormReajuste()">
-        <span class="po-ic"><i class="fa-solid ${T.icone}"></i></span><span><b>${t === 'piso' ? `Levar ao ${cx.pisoNome}` : T.nome}</b><small>${t === 'piso' ? `Só os abaixo de ${pct(cx.piso, 0)}` : t === 'desc' ? `${esc(cx.ref?.nome || 'Referência')} menos o percentual` : T.desc}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`; }).join('')}</div></div>
+        <span class="po-ic"><i class="fa-solid ${T.icone}"></i></span><span><b>${t === 'piso' ? `Levar ao ${cx.pisoNome}` : T.nome}</b><small>${t === 'piso' ? `Só os abaixo de ${cx.pisoTxt}` : t === 'desc' ? `${esc(cx.ref?.nome || 'Referência')} menos o percentual` : T.desc}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`; }).join('')}</div></div>
     <div class="fg">${param}</div>
     <div class="fg"><span class="f-label">Proteção</span>
       <div class="casc"><div class="casc-r"><div class="lft"><i class="fa-solid fa-shield"></i><div>Não reduzir preços<div class="s">mantém o atual quando a regra daria menos</div></div></div>${chave(rj.naoReduzir, 'rj.naoReduzir=!rj.naoReduzir;this.classList.toggle(\'on\');recalcReajuste()')}</div></div></div>
@@ -109,7 +109,7 @@ function desenharFormReajuste() {
     rotulo: 'Tabela', titulo: 'Tabela a simular', icone: 'fa-table-list', padrao: 'particular', busca: 'Buscar tabela…',
     opcoes: () => alvosSimulaveis().map(a => {
       const c = ctxAlvo(a);
-      return { valor: a, rotulo: c.nome, icone: c.icone, cor: c.cor, grupo: c.conv ? 'Conveniados' : c.lab ? 'Laboratórios apoiados' : 'Tabelas', desc: c.base ? 'Preço praticado' : `piso ${pct(c.piso, 0)}` };
+      return { valor: a, rotulo: c.nome, icone: c.icone, cor: c.cor, grupo: c.conv ? 'Conveniados' : c.lab ? 'Laboratórios apoiados' : 'Tabelas', desc: c.base ? 'Preço praticado' : `piso ${c.pisoTxt}` };
     }),
     aoMudar: a => { rj.alvo = a; rj.man = {}; rj.m = null; rj.d = null; rj.pag = 1; desenharFormReajuste(); }
   });
@@ -314,7 +314,7 @@ function precoPadraoLab(cl, e, ref) {
   const atualLab = cl.l?.precos?.[e.id];
   if (pl.base === 'tab') return atualLab ?? ref;
   if (pl.base === 'desc') return ref != null ? Math.round(ref * (1 - (pl.d || 0) / 100)) : null;
-  if (pl.base === 'msug') { const c = calcular(e, null, cl.tab); return precoParaMargem(c, cl.margemSug) ?? null; }
+  if (pl.base === 'msug') { const c = calcular(e, null, cl.tab); return precoParaMargem(c, c.margemSug ?? cl.margemSug) ?? null; }
   return ref;
 }
 
@@ -386,7 +386,7 @@ function desenharSimLab() {
   POPS['pop-pllab'].valor = pl.labId; desenharBotaoPop('pop-pllab');
   criarPop('pop-pltab', {
     rotulo: 'Tabela', titulo: 'Tabela de referência', icone: 'fa-table-list', padrao: '',
-    opcoes: () => [...tabelasLista().map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, grupo: TIPOS_TABELA[t.tipo]?.nome, desc: `piso ${pct(t.piso ?? parametro('margemMinima'), 0)} · ${resumoPerfil(t)}` })),
+    opcoes: () => [...tabelasLista().map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, grupo: TIPOS_TABELA[t.tipo]?.nome, desc: `piso ${textoRegra(t, 'piso')} · ${resumoPerfil(t)}` })),
       { valor: '', rotulo: 'Particular', icone: 'fa-user', cor: '#00a8cc', grupo: 'Base', desc: 'Preço praticado e custos fixos padrão' }],
     aoMudar: v => { pl.tabelaId = v; pl.sujo = true; desenharSimLab(); }
   });
@@ -729,7 +729,7 @@ function desenharConverterLab() {
     const tabs = tabelasLista().filter(t => t.tipo === 'lab');
     criarPop('pop-plconvtab', {
       rotulo: 'Tabela', titulo: 'Tabela base', icone: 'fa-table-list', padrao: '',
-      opcoes: () => tabs.length ? tabs.map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, desc: `piso ${pct(t.piso ?? parametro('margemMinima'), 0)} · ${resumoPerfil(t)}` })) : [{ valor: '', rotulo: 'Nenhuma tabela de laboratórios', icone: 'fa-ban', cor: 'var(--gray)' }],
+      opcoes: () => tabs.length ? tabs.map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, desc: `piso ${textoRegra(t, 'piso')} · ${resumoPerfil(t)}` })) : [{ valor: '', rotulo: 'Nenhuma tabela de laboratórios', icone: 'fa-ban', cor: 'var(--gray)' }],
       aoMudar: v => { _plConv.tabelaId = v; desenharConverterLab(); }
     });
     POPS['pop-plconvtab'].valor = c.tabelaId; desenharBotaoPop('pop-plconvtab');
@@ -765,7 +765,7 @@ async function converterLab() {
     if (lista(ESTADO.tabelas).some(t => normalizar(t.nome) === normalizar(nome)) || normalizar(nome) === 'particular') return toast('Já existe uma tabela com esse nome', 'erro');
     if (!n) return toast('Nenhum preço para a tabela', 'erro');
     id = DB.novaChave(CAMINHOS.tabelas); alvo = id;
-    const dados = { nome, tipo: c.tipo, cor: cl.t?.cor || PALETA[4], icone: TIPOS_TABELA[c.tipo].icone, descontoRef: cl.t?.descontoRef ?? 0, piso: cl.piso, margemSugerida: cl.margemSug,
+    const dados = { nome, tipo: c.tipo, cor: cl.t?.cor || PALETA[4], icone: TIPOS_TABELA[c.tipo].icone, descontoRef: cl.t?.descontoRef ?? 0, piso: cl.piso, margemSugerida: cl.margemSug, faixas: cl.t?.faixas || null,
       ativa: true, perfil: cl.t?.perfil || null, ordem: Math.max(0, ...lista(ESTADO.tabelas).map(t => t.ordem || 0)) + 1, precos: direto ? valores : null, criadoEm: agora, atualizadoEm: agora };
     await DB.gravar(`${CAMINHOS.tabelas}/${id}`, dados);
     ESTADO.tabelas[id] = ESTADO.tabelas[id] || { ...dados };

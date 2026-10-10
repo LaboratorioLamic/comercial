@@ -36,7 +36,7 @@ async function abrirEnvioProposta() {
     meta: `<span class="tag"><i class="fa-solid fa-pen"></i>${s.n} alteração(ões)</span>${s.ab ? `<span class="tag" style="color:var(--red)"><i class="fa-solid fa-circle-xmark"></i>${s.ab} abaixo do ${cx.pisoNome}</span>` : ''}`,
     corpo: `
       ${s.k ? `<div class="alert x"><i class="fa-solid fa-chart-line"></i><div>Margem média dos exames alterados: <b>${pct(s.m0 / s.k)}</b> → <b>${pct(s.m1 / s.k)}</b></div></div>` : ''}
-      ${s.ab ? `<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>${s.ab} preço(s) ficam abaixo do ${cx.pisoNome} de ${pct(cx.piso, 0)}.</div></div>` : ''}
+      ${s.ab ? `<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>${s.ab} preço(s) ficam abaixo do ${cx.pisoNome} de ${cx.pisoTxt}.</div></div>` : ''}
       <div class="sec-t"><i class="fa-solid fa-list"></i>Alterações</div>
       <div class="tbl-wrap card-in"><table><thead><tr><th>MN</th><th class="num">Atual</th><th class="num">Proposto</th><th class="num">Margem</th></tr></thead>
         <tbody>${itens.map(x => `<tr><td class="mn" title="${esc(x.e.descricao)}">${esc(x.e.mn)}</td><td class="num">${fmtOuFora(x.o, cx.lab)}</td>

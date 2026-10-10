@@ -16,6 +16,7 @@
 //   laboratorios/{id}          laboratórios apoiados: dados + precos/{chave} valores diferenciados
 //   conveniados/{id}           conveniados: dados + tabela base + precos/{chave} valores diferenciados
 //   propostas/{id}             alterações de preço enviadas para aprovação
+//   config/particular          regras próprias da Particular: piso (margem mínima), margemSugerida (alvo) e faixas
 //   config/hierarquia          hierarquia de valor: { definida, ordem: [idTabela…] } (Particular no topo)
 //   config/modeloProposta      textos padrão do PDF da proposta para laboratório
 //   simulacoes/{id}            propostas para laboratório salvas no simulador (preço × volume)
@@ -40,6 +41,7 @@ const ESTADO = {
   propostas: {},
   simulacoes: {},
   hierarquia: null,
+  particular: null,
   modeloProposta: null,
   catalogo: null,        // carregado sob demanda (textos de instrução são grandes)
   acessosL2L: {},
@@ -62,6 +64,7 @@ const CAMINHOS = {
   propostas: 'propostas',
   simulacoes: 'simulacoes',
   hierarquia: 'config/hierarquia',
+  particular: 'config/particular',
   modeloProposta: 'config/modeloProposta',
   acessosL2L: 'l2l/acessos',
   usuarios: 'auth/usuarios',

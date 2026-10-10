@@ -58,8 +58,8 @@ function abrirConveniado(id) {
   });
   criarPop('pop-cvtab', {
     rotulo: 'Tabela', titulo: 'Tabela base', icone: 'fa-table-list', padrao: '',
-    opcoes: () => [{ valor: '', rotulo: 'Particular', icone: 'fa-user', cor: '#00a8cc', desc: `preço praticado · mínimo ${pct(parametro('margemMinima'), 0)}` },
-      ...tabs.map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, desc: `piso ${pct(t.piso ?? parametro('margemMinima'), 0)} · ${resumoPerfil(t)}` }))]
+    opcoes: () => [{ valor: '', rotulo: 'Particular', icone: 'fa-user', cor: '#00a8cc', desc: `preço praticado · mínimo ${textoRegra(null, 'piso')}` },
+      ...tabs.map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, desc: `piso ${textoRegra(t, 'piso')} · ${resumoPerfil(t)}` }))]
   });
   POPS['pop-cvtab'].valor = c?.tabelaId && ESTADO.tabelas[c.tabelaId] ? c.tabelaId : ''; desenharBotaoPop('pop-cvtab');
 }
