@@ -244,6 +244,7 @@ td.desc { width: 100%; max-width: 0; min-width: 110px; }
   transform: translateX(100%); transition: transform .25s ease; display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
 }
 .drawer.open { transform: none; }
+.drawer.larga { width: 760px; }
 .dr-h { padding: 18px 22px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
 .dr-h .mn { font-size: 13px; }
 .dr-h h3 { font-size: 16px; font-weight: 600; margin-top: 4px; line-height: 1.3; }

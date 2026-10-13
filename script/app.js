@@ -64,7 +64,7 @@ function entrarApp() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !popAberto && document.getElementById('gaveta').classList.contains('open') && !document.getElementById('modal').classList.contains('open')) fecharGaveta();
+  if (e.key === 'Escape' && !popAberto && document.getElementById('gaveta').classList.contains('open') && !document.getElementById('modal').classList.contains('open')) clicarForaGaveta();
 });
 
 document.addEventListener('DOMContentLoaded', iniciar);

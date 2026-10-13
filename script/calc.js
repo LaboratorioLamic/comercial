@@ -88,7 +88,7 @@ const alvoExame = e => ESTADO.setores[e.setorId]?.margemAlvo ?? parametro('marge
 //   faixas/{campo} = [{ ate: 100, v: .20 }, { ate: 500, v: .15 }, { v: .10 }]
 // (a primeira começa em 0; a última, sem "ate", vale para todo custo acima do limite anterior).
 // tab = tabela de preço; sem tabela vale a configuração própria da Particular (config/particular).
-const PADRAO_REGRA = { piso: () => parametro('margemMinima'), descontoRef: () => 0, margemSugerida: () => null };
+const PADRAO_REGRA = { piso: () => parametro('margemMinima'), descontoRef: () => 0, descontoMax: () => null, margemSugerida: () => null };
 const faixasDe = (o, campo) => { const f = o?.faixas?.[campo]; return f ? Object.values(f).filter(Boolean) : []; };
 function regraTab(tab, campo, custo = null) {
   const o = tab || ESTADO.particular || {}, padrao = o[campo] ?? PADRAO_REGRA[campo]();
@@ -105,6 +105,16 @@ function textoRegra(tab, campo, casas = 0) {
 // Margem alvo da Particular: setor com alvo próprio > configuração da Particular > parâmetro geral
 const textoAlvoParticular = () => regraTab(null, 'margemSugerida') != null ? textoRegra(null, 'margemSugerida', 1) : pct(parametro('margemAlvo'));
 
+// Preço que atinge a margem m, em múltiplos de "passo": arredonda para cima; com tolerância (Particular),
+// arredonda para baixo quando o valor de baixo ainda fica dentro dela (margem ≥ m − tolerância)
+function precoAlvo(custo, m, passo = 1, tol = ESTADO.particular?.tolerancia || 0) {
+  const div = 1 - parametro('imposto') - m;
+  if (custo == null || m == null || div <= 0) return null;
+  const exato = custo / div, baixo = Math.floor(exato / passo + 1e-9) * passo;
+  if (tol > 0 && baixo > 0 && 1 - parametro('imposto') - custo / baixo >= m - tol - 1e-9) return baixo;
+  return Math.ceil(exato / passo - 1e-9) * passo;
+}
+
 // tab (opcional): tabela de preço → usa o perfil de custo e as regras de margem dela
 function calcular(e, preco = e.precoPraticado, tab = null) {
   const fx = fixosExame(e, tab?.perfil), extras = extrasExame(e);
@@ -113,12 +123,12 @@ function calcular(e, preco = e.precoPraticado, tab = null) {
   const imp = parametro('imposto'), ct = custoTesteExame(e), custo = ct ? ct.valor + fixo + somaExtras : null;
   const min = regraTab(tab, 'piso', custo);
   const alvo = tab ? alvoExame(e) : ESTADO.setores[e.setorId]?.margemAlvo ?? regraTab(null, 'margemSugerida', custo) ?? parametro('margemAlvo');
-  // min, descRef e margemSug: regras da tabela já resolvidas para a faixa de custo deste exame
-  const r = { fx, extras, fixo, somaExtras, alvo, min, descRef: regraTab(tab, 'descontoRef', custo), margemSug: regraTab(tab, 'margemSugerida', custo),
+  // min, descRef, descMax e margemSug: regras da tabela já resolvidas para a faixa de custo deste exame
+  const r = { fx, extras, fixo, somaExtras, alvo, min, descRef: regraTab(tab, 'descontoRef', custo), descMax: tab ? regraTab(tab, 'descontoMax', custo) : null, margemSug: regraTab(tab, 'margemSugerida', custo),
     preco: preco || null, teste: ct, semCusto: !ct };
   if (r.semCusto) { r.status = 'x'; return r; }
   r.custo = custo;
-  r.sugerido = 1 - imp - alvo > 0 ? Math.ceil(r.custo / (1 - imp - alvo)) : null;
+  r.sugerido = tab ? (1 - imp - alvo > 0 ? Math.ceil(r.custo / (1 - imp - alvo)) : null) : precoAlvo(r.custo, alvo);
   r.minimo = 1 - imp - min > 0 ? Math.ceil(r.custo / (1 - imp - min)) : null;
   if (!preco) { r.status = 'p'; return r; }
   r.imposto = preco * imp;
@@ -127,8 +137,9 @@ function calcular(e, preco = e.precoPraticado, tab = null) {
   r.taxaCartao = preco * parametro('taxaMaquininha');
   r.lucroCartao = r.lucro - r.taxaCartao;
   r.margemCartao = r.lucroCartao / preco;
-  // Tabelas de preço só têm piso: abaixo dele ou OK
-  r.status = r.margem < min ? 'r' : tab || r.margem >= alvo ? 'g' : 'a';
+  // Tabelas de preço só têm piso: abaixo dele ou OK.
+  // Particular: margem até "tolerância" pontos abaixo do alvo ainda conta como no alvo
+  r.status = r.margem < min ? 'r' : tab || r.margem >= alvo - (ESTADO.particular?.tolerancia || 0) - 1e-9 ? 'g' : 'a';
   return r;
 }
 

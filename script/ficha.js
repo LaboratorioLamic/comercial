@@ -21,7 +21,7 @@ const ABAS_FICHA = [
 function abrirFicha(id, aba = 'valores') {
   const e = ESTADO.exames[id];
   if (!e) return;
-  _fxId = id; _fxFonte = null; _fxAba = aba; _fxTab = {};
+  _fxId = id; _fxFonte = null; _fxAba = aba; _fxTab = {}; _fxRasc = {};
   _fxOrig = JSON.parse(JSON.stringify(e));
   _fx = JSON.parse(JSON.stringify(e));
   _fx.extras = extrasExame(_fx).map(x => ({ ...x }));
@@ -35,6 +35,7 @@ function abrirFicha(id, aba = 'valores') {
       ${pane('valores', `
         <div id="fx-alertas"></div>
         <div id="fx-pend"></div>
+        <div id="fx-rasc"></div>
         <div class="sec-t"><i class="fa-solid fa-user"></i>Particular · preço praticado</div>
         <div class="prices"><div id="fx-sug"></div>
           <div class="pbox ${editar ? 'edit' : ''}"><div class="l"><i class="fa-solid fa-pen"></i>Praticado</div>
@@ -63,7 +64,35 @@ function abrirFicha(id, aba = 'valores') {
   atualizarFicha();
   carregarHistoricoExame(id);
   if (pode('instrucoes')) desenharCatalogoFicha(id);
+  carregarRascFicha(id);
 }
+
+// Rascunho do usuário para este exame (Particular e tabelas): a ficha abre já com esses valores.
+// _fxRasc: alvo → valor que estava no rascunho ao abrir (null = retirar)
+let _fxRasc = {};
+async function carregarRascFicha(id) {
+  if (!usuarioAtual() || !(pode('exames', 'editar') || pode('tabelas', 'editar'))) return;
+  const alvos = ['particular', ...(pode('tabelas') ? tabelasLista(false).map(t => t.id) : [])];
+  await Promise.all(alvos.map(a => carregarRascunho(a)));
+  // ficha trocada, fechada ou já editada enquanto carregava: não mexe
+  if (_fxId !== id || !document.getElementById('fx-rodape') || mudancasPrecoFicha().length) return;
+  alvos.forEach(a => { if (id in rasc(a)) _fxRasc[a] = rasc(a)[id]; });
+  const n = Object.keys(_fxRasc).length;
+  if (!n) return;
+  Object.entries(_fxRasc).forEach(([a, v]) => {
+    if (a !== 'particular') { _fxTab[a] = v; return; }
+    _fx.precoPraticado = v;
+    document.getElementById('fx-preco').value = Number(v).toFixed(2);
+  });
+  document.getElementById('fx-rasc').innerHTML = `<div class="alert x"><i class="fa-solid fa-pen-to-square"></i><div><b>${n} valor(es) do seu rascunho</b> nesta ficha · ainda não enviados para aprovação.</div></div>`;
+  if (pode('tabelas')) desenharTabelasFicha(id);
+  atualizarFicha();
+}
+// Alvos que estavam no rascunho e voltaram ao valor publicado na ficha
+const rascDesfeitosFicha = precos => Object.keys(_fxRasc).filter(a => !precos.some(m => m.alvo === a));
+// Preços da ficha diferentes do que já está no rascunho
+const rascMudouFicha = precos => rascDesfeitosFicha(precos).length > 0
+  || precos.some(m => !(m.alvo in _fxRasc) || (m.para == null) !== (_fxRasc[m.alvo] == null) || (m.para != null && Math.abs(m.para - _fxRasc[m.alvo]) > 0.004));
 
 function desenharAbasFicha() {
   const el = document.getElementById('fx-abas');
@@ -151,6 +180,25 @@ function mudancasPrecoFicha() {
   return m;
 }
 
+// Campos de dados (custos, controles…) alterados na ficha
+const _fxIgual = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const mudancasDadosFicha = () => !_fx ? [] : Object.keys(CAMPOS_FICHA).filter(c => !_fxIgual(c === 'extras' ? extrasExame(_fxOrig) : _fxOrig[c], _fx[c]));
+
+// Clique fora, botão de fechar ou Esc: com preço alterado na ficha, pergunta se fecha ou guarda no rascunho
+async function clicarForaGaveta() {
+  const precos = document.getElementById('fx-rodape') && (pode('exames', 'editar') || pode('tabelas', 'editar')) ? mudancasPrecoFicha() : [];
+  if (!rascMudouFicha(precos)) return fecharGaveta();
+  if (!precos.length) return salvarFicha('rascunho');
+  const v = x => x != null ? fmt(x) : 'fora';
+  const r = await confirmar({
+    titulo: precos.length > 1 ? 'Salvar os preços como rascunho?' : `Salvar como rascunho da ${precos[0].nome}?`, icone: 'fa-pen-to-square', botao: 'Salvar no rascunho', cancelar: 'Fechar sem salvar',
+    texto: `Você alterou ${precos.length > 1 ? 'preços' : 'o preço'} de <b>${esc(_fx.mn)}</b>. No rascunho nada é publicado: fica para revisar e enviar para aprovação.`
+      + `<span class="fx-conf">${precos.map(m => `<span><b>${esc(m.nome)}</b><i>${v(m.de)} → <b>${m.para != null ? fmt(m.para) : 'retirar'}</b></i></span>`).join('')}</span>`
+  });
+  if (r === true) salvarFicha('rascunho');
+  else if (r === false) fecharGaveta();
+}
+
 // Propostas pendentes que incluem o exame
 function desenharPendentesFicha(id) {
   const el = document.getElementById('fx-pend');
@@ -162,18 +210,21 @@ function desenharPendentesFicha(id) {
     }).join('')}</div></div>` : '';
 }
 
-// Rodapé: com alteração de preço vira "enviar para aprovação" / "aprovar e publicar"
+// Rodapé: com alteração de preço vira "salvar no rascunho" / "aprovar e publicar"
 function desenharRodapeFicha() {
   const el = document.getElementById('fx-rodape');
   if (!el) return;
   const editar = pode('exames', 'editar') || pode('tabelas', 'editar'), mud = mudancasPrecoFicha().length, aprova = pode('tabelas', 'aprovar');
+  // com preço pendente, custos e controles têm o próprio Salvar (não mexe em preço nem fecha a ficha)
+  const dados = mud && pode('exames', 'editar') && mudancasDadosFicha().length;
   el.innerHTML = `${pode('exames', 'excluir') ? `<button class="btn perigo-txt" onclick="excluirExame()" title="Excluir exame"><i class="fa-solid fa-trash"></i></button>` : ''}
     ${pode('exames', 'editar') && ESTADO.exames[_fxId] ? (ESTADO.exames[_fxId].ativo === false
       ? `<button class="btn bt-play" onclick="alternarAtivoExame('${_fxId}')" title="Ativar exame"><i class="fa-solid fa-play"></i></button>`
       : `<button class="btn bt-pause" onclick="alternarAtivoExame('${_fxId}')" title="Inativar exame"><i class="fa-solid fa-pause"></i></button>`) : ''}
     ${pode('exames', 'editar') ? `<button class="btn" style="margin-right:auto" onclick="abrirDadosExame('${_fxId}')" title="Dados do exame: nome, setor, material, prazo"><i class="fa-solid fa-pen-to-square"></i>${mud ? '' : 'Dados'}</button>` : '<span style="margin-right:auto"></span>'}
-    <button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
-    ${!editar ? '' : mud ? `<button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('enviar')" title="Cria proposta(s) para aprovação"><i class="fa-solid fa-paper-plane"></i>${aprova ? 'Enviar' : 'Enviar p/ aprovação'}</button>
+    ${editar ? '' : '<button class="btn" onclick="fecharGaveta()">Fechar</button>'}
+    ${dados ? `<button class="btn" onclick="salvarFicha('dados')" title="Salva custos e controles agora; os preços continuam pendentes"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>` : ''}
+    ${!editar ? '' : mud ? `<button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('rascunho')" title="Guarda os preços no seu rascunho de cada tabela, para revisar e enviar depois"><i class="fa-solid fa-pen-to-square"></i>${aprova ? (dados ? '' : 'Rascunho') : 'Salvar no rascunho'}</button>
         ${aprova ? `<button class="btn pri" onclick="salvarFicha('publicar')" title="Publica os preços agora"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : ''}`
       : `<button class="btn pri" onclick="salvarFicha()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>`}`;
 }
@@ -354,7 +405,8 @@ async function carregarHistoricoExame(id) {
 }
 
 // ── Gravação ──────────────────────────────────────────────────
-// Preços (praticado e outras tabelas) viram proposta: uma por tabela alterada.
+// Preços (praticado e outras tabelas) vão para o rascunho de cada tabela;
+// quem aprova também pode publicar direto (uma proposta por tabela alterada).
 // Os demais campos são gravados direto no exame.
 const CAMPOS_FICHA = {
   custoTeste: v => `Custo do teste ${fmt(v[0])} → ${fmt(v[1])}`,
@@ -368,15 +420,15 @@ const CAMPOS_FICHA = {
   foraDoSistema: v => v[1] ? 'Marcado como fora do sistema' : 'Encontrado no sistema'
 };
 
-// modo: undefined (só dados) | 'enviar' (proposta para aprovação) | 'publicar' (aprova e publica)
+// modo: undefined (só dados) | 'dados' (só dados, ficha continua aberta com os preços pendentes) | 'rascunho' (preços no rascunho) | 'enviar' (proposta para aprovação) | 'publicar' (aprova e publica)
 async function salvarFicha(modo) {
   const e = _fx, o = _fxOrig, k = _fxId;
-  const igual = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-  const mud = Object.keys(CAMPOS_FICHA).filter(c => !igual(c === 'extras' ? extrasExame(o) : o[c], e[c]));
-  const precos = mudancasPrecoFicha();
-  if (!mud.length && !precos.length) { fecharGaveta(); return; }
+  const mud = mudancasDadosFicha();
+  const precos = modo === 'dados' ? [] : mudancasPrecoFicha(), desfeitos = modo === 'dados' ? [] : rascDesfeitosFicha(precos);
+  if (modo === 'dados' && !mud.length) return;
+  if (!mud.length && !precos.length && !desfeitos.length) { fecharGaveta(); return; }
   if (precos.some(m => m.para != null && !(m.para > 0))) return toast('Preço inválido', 'erro');
-  if (precos.length && !modo) modo = 'enviar';
+  if ((precos.length || desfeitos.length) && !modo) modo = 'rascunho';
   if (modo === 'publicar' && !pode('tabelas', 'aprovar')) return toast('Seu grupo não pode publicar preços', 'erro');
   if (precos.some(m => m.alvo === 'particular') && !pode('exames', 'editar')) return toast('Seu grupo não pode alterar o preço praticado', 'erro');
   if (precos.some(m => m.alvo !== 'particular') && !pode('tabelas', 'editar')) return toast('Seu grupo não pode alterar tabelas de preço', 'erro');
@@ -396,6 +448,26 @@ async function salvarFicha(modo) {
       usuario: u.nome, usuarioId: u.id, em: DB.agora()
     });
   }
+  if (modo === 'dados') {
+    // o salvo passa a ser a base de comparação; preços editados seguem pendentes
+    mud.forEach(c => { o[c] = JSON.parse(JSON.stringify(e[c] ?? null)); });
+    atualizarFicha();
+    return toast(`${e.mn}: dados salvos`);
+  }
+
+  // preços no rascunho de cada tabela (substitui o que já havia lá para este exame)
+  if (modo === 'rascunho') {
+    for (const m of precos) {
+      await carregarRascunho(m.alvo);
+      definirRasc(ctxAlvo(m.alvo), k, m.para);
+      await gravarRasc(m.alvo);
+    }
+    // valor devolvido ao publicado: sai do rascunho
+    for (const a of desfeitos) { definirRasc(ctxAlvo(a), k, undefined); await gravarRasc(a); }
+    fecharGaveta();
+    if (document.getElementById('gr-body')) desenharGrade();
+    return toast(precos.length ? `${e.mn}: ${precos.length} preço(s) no rascunho` : desfeitos.length ? `${e.mn}: retirado do rascunho` : `${e.mn} salvo`);
+  }
 
   // preços: uma proposta por tabela
   const just = (e.justificativa || '').trim() || null;
@@ -407,6 +479,8 @@ async function salvarFicha(modo) {
     if (modo === 'publicar') await aplicarProposta(id, p);
     else registrar('tabelas', `${m.nome}: proposta de preço de ${e.mn} enviada (ficha do exame)`, { proposta: id });
   }
+  // publicado direto: o rascunho deste exame deixa de valer
+  if (modo === 'publicar') for (const a of new Set([...precos.map(m => m.alvo), ...desfeitos])) { await carregarRascunho(a); definirRasc(ctxAlvo(a), k, undefined); await gravarRasc(a); }
   fecharGaveta();
   toast(!precos.length ? `${e.mn} salvo` : modo === 'publicar' ? `${e.mn}: ${precos.length} preço(s) publicados` : `${e.mn}: ${precos.length} proposta(s) enviadas para aprovação`);
 }

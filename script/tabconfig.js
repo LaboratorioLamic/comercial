@@ -13,7 +13,7 @@ function abrirConfigTabela(id) {
     descontoRef: t?.descontoRef ?? 0.2, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null, ativa: t ? t.ativa !== false : true,
     perfil: { ...(t?.perfil || {}) }, inicial: 'vazia', copiar: ''
   };
-  iniciarRegras(t, { piso: parametro('margemMinima'), descontoRef: 0.2, margemSugerida: null });
+  iniciarRegras(t, { piso: parametro('margemMinima'), descontoRef: 0.2, descontoMax: null, margemSugerida: null });
   _rgRedesenhar = desenharConfigTabela;
   const editar = id ? pode('tabelas', 'editar') : pode('tabelas', 'criar');
   abrirGaveta({
@@ -36,7 +36,7 @@ function desenharConfigTabela() {
     ${campo('tb-nome', 'Nome', e.nome, { tipo: 'text', ph: 'Ex.: Cartão Saúde', aoMudar: "_tbEd.nome=this.value;document.querySelector('.set-prev b, .set-prev div div').textContent=this.value" })}
     <div class="field"><label>Tipo</label><div class="opt-cards">${Object.entries(TIPOS_TABELA).map(([k, x]) => oc('_tbEd.tipo', k, x.nome, x.desc, x.icone, e.tipo === k)).join('')}</div></div>
     ${_rg.piso.fx || _rg.descontoRef.fx ? htmlRegra('piso') + htmlRegra('descontoRef') : `<div class="fgrid sem-pad">${htmlRegra('piso')}${htmlRegra('descontoRef')}</div>`}
-    ${htmlRegra('margemSugerida')}
+    ${_rg.descontoMax.fx || _rg.margemSugerida.fx ? htmlRegra('descontoMax') + htmlRegra('margemSugerida') : `<div class="fgrid sem-pad">${htmlRegra('descontoMax')}${htmlRegra('margemSugerida')}</div>`}
     <div class="field"><label><i class="fa-solid fa-calculator"></i>Perfil de custo</label>
       <div class="casc">${fixos.map(f => `<div class="casc-r"><div class="lft"><i class="fa-solid ${f.icone || 'fa-coins'}"></i><div>${esc(f.nome)}<div class="s">padrão ${fmt(f.valor)}${f.etapa ? ` · só com ${f.etapa}` : ''}</div></div></div>
         <div style="display:flex;gap:6px;align-items:center">

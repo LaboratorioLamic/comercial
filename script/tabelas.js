@@ -68,7 +68,7 @@ function ctxAlvo(alvo) {
     alvo, tabela: true, id: alvo, nome: t.nome, icone: t.icone, cor: t.cor, tab: t, descRef: t.descontoRef || 0, margemSug: t.margemSugerida ?? null,
     salvo: k => t.precos?.[k] ?? null, sistema: k => t.sistema?.[k] ?? null,
     ref: { nome: 'Particular', valor: k => ESTADO.exames[k]?.precoPraticado || null },
-    piso: regraTab(t, 'piso'), pisoTxt: textoRegra(t, 'piso'), descTxt: textoRegra(t, 'descontoRef'), msugTxt: textoRegra(t, 'margemSugerida'), pisoNome: 'piso', todos: true
+    piso: regraTab(t, 'piso'), pisoTxt: textoRegra(t, 'piso'), descTxt: textoRegra(t, 'descontoRef'), dmaxTxt: regraTab(t, 'descontoMax') != null ? textoRegra(t, 'descontoMax') : null, msugTxt: textoRegra(t, 'margemSugerida'), pisoNome: 'piso', todos: true
   };
 }
 const ctxAtual = () => ctxAlvo(grade.alvo);
@@ -173,7 +173,7 @@ function renderTabelas() {
 
 // Estatísticas de um alvo (preços salvos)
 function statsAlvo(cx) {
-  const st = { n: 0, ab: 0, sm: 0, km: 0, sd: 0, kd: 0, div: 0 };
+  const st = { n: 0, ab: 0, dm: 0, sm: 0, km: 0, sd: 0, kd: 0, div: 0 };
   const exs = cx.base ? examesVisiveis().filter(e => e.ativo !== false)
     : Object.keys((cx.lab ? cx.ent?.precos : ESTADO.tabelas[cx.id]?.precos) || {}).map(k => ESTADO.exames[k] && { ...ESTADO.exames[k], id: k }).filter(e => e && exameVisivel(e));
   exs.forEach(e => {
@@ -185,6 +185,7 @@ function statsAlvo(cx) {
     if (c.margem != null) { st.sm += c.margem; st.km++; }
     const ref = cx.ref?.valor(e.id);
     if (ref && !precoSimbolico(ref) && !precoSimbolico(p)) { st.sd += 1 - p / ref; st.kd++; }
+    if (cx.tabela && !precoSimbolico(p) && acimaDescMax(ref && 1 - p / ref, c.descMax)) st.dm++;
     const s = cx.sistema(e.id);
     if (s != null && Math.abs(s - p) > 0.004) st.div++;
   });
@@ -203,6 +204,7 @@ function htmlCardAlvo(cx, on, clique) {
     cx.base ? '<span class="badge-s base"><i class="fa-solid fa-star"></i>base</span>' : '',
     t && t.ativa === false && !cx.lab ? '<span class="badge-s off">inativa</span>' : '',
     s.ab ? `<span class="badge-s bad"><i class="fa-solid fa-circle-xmark"></i>${s.ab} abaixo do ${cx.pisoNome}</span>` : s.n ? '<span class="badge-s ok"><i class="fa-solid fa-check"></i>ok</span>' : '',
+    s.dm ? `<span class="badge-s bad"><i class="fa-solid fa-ban"></i>${s.dm} acima do desc. máximo</span>` : '',
     s.pend ? `<span class="badge-s warn"><i class="fa-solid fa-stamp"></i>${s.pend} proposta(s)</span>` : '',
     s.rasc ? `<span class="badge-s base"><i class="fa-solid fa-pen"></i>${s.rasc} no rascunho</span>` : ''
   ].join('');
@@ -240,10 +242,11 @@ async function abrirGrade(alvo, contId) {
     <div class="toolbar">
       <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="gr-q" value="${esc(grade.q)}" placeholder="Buscar exame…" oninput="grade.q=this.value;grade.pag=1;desenharGrade()"></div>
       <div id="pop-grsetor"></div>
+      <div id="pop-grfiltro"></div>
       ${cx.lab && pode('tabelas', 'editar') ? '<div id="pop-gradd"></div>' : ''}
+      <button type="button" class="btn-rasc" id="gr-rasc" onclick="abrirRascunhoGrade()"></button>
       <span class="hint"><i class="fa-solid fa-keyboard"></i> Enter / ↑ ↓ navegam entre preços</span>
     </div>
-    <div class="chips" id="gr-chips"></div>
     <div class="bulk" id="gr-bulk"></div>
     <div class="tbl-wrap" style="margin-top:10px"><table class="tab-edit"><thead id="gr-head"></thead><tbody id="gr-body"><tr><td colspan="11"><div class="vazio"><i class="fa-solid fa-circle-notch fa-spin"></i>Carregando…</div></td></tr></tbody></table></div>
     <div class="foot" id="gr-foot"></div>
@@ -252,6 +255,12 @@ async function abrirGrade(alvo, contId) {
     rotulo: 'Setor', titulo: 'Filtrar por setor', icone: 'fa-filter', busca: 'Buscar setor…', limpavel: true,
     opcoes: () => opcoesSetorPop('Todos os setores', [{ valor: '__sem', rotulo: 'Sem setor', icone: 'fa-triangle-exclamation', cor: 'var(--amber)' }]),
     aoMudar: () => { grade.pag = 1; desenharGrade(); }
+  });
+  grade.cont = {};
+  criarPop('pop-grfiltro', {
+    rotulo: 'Filtro', titulo: 'Filtrar exames', icone: 'fa-sliders', limpavel: true, padrao: filtrosDe(cx)[0],
+    opcoes: () => opcoesFiltroGrade(cx),
+    aoMudar: f => { grade.filtro = f; grade.pag = 1; desenharGrade(); }
   });
   if (cx.lab && pode('tabelas', 'editar')) criarPopAdicionarExame(cx);
   await carregarRascunho(alvo);
@@ -263,14 +272,14 @@ function htmlCabGrade(cx) {
   const t = cx.tab, l = cx.lab ? cx.ent : null;
   const sub = cx.base ? `Tabela base: o valor editado aqui é o preço praticado do exame · mínimo ${cx.pisoTxt} · alvo do setor ou ${textoAlvoParticular()}`
     : cx.lab ? `${[l.razaoSocial, l.cnpj ? 'CNPJ ' + l.cnpj : '', l.codConvenio ? 'convênio ' + l.codConvenio : ''].filter(Boolean).map(esc).join(' · ') || cx.rotulo}<br>${cx.conv ? `Tabela base <b>${esc(cx.ref.nome)}</b>: exame sem valor diferenciado segue o preço dela · ` : ''}Margem pelo perfil da ${esc(t?.nome || 'Particular')}: ${cx.pisoNome} ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · ${resumoPerfil(t)}`
-    : `Piso ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · desconto de referência ${cx.descTxt} sobre a Particular · ${resumoPerfil(t)}`;
+    : `Piso ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · desconto de referência ${cx.descTxt}${cx.dmaxTxt ? ` e máximo ${cx.dmaxTxt}` : ''} sobre a Particular · ${resumoPerfil(t)}`;
   const bts = [];
-  if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirConfigParticular()" title="Margem mínima e alvo próprios da Particular"><i class="fa-solid fa-gear"></i>Configurar</button>`);
   if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportUnilabParticular()" title="CSV da tabela Particular exportado do Unilab"><i class="fa-solid fa-file-import"></i>Importar do Unilab</button>`);
   if (cx.tabela && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportTabela('${cx.id}')"><i class="fa-solid fa-file-import"></i>Importar</button>`);
   if (cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="${cx.conv ? 'exportarConveniado' : 'exportarLaboratorio'}('${cx.id}')"><i class="fa-solid fa-file-csv"></i>Exportar lista</button>`);
   if (!cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="exportarTabelaUnilab('${cx.alvo}')"><i class="fa-solid fa-file-csv"></i>Exportar p/ Unilab</button>`);
   if (pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="abrirPdfTabela('${cx.alvo}')" title="PDF com os preços publicados"><i class="fa-solid fa-file-pdf"></i>PDF</button>`);
+  if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirConfigParticular()" title="Margem mínima e alvo próprios da Particular"><i class="fa-solid fa-gear"></i>Configurar</button>`);
   if (cx.tabela && (pode('tabelas', 'editar') || pode('tabelas', 'criar'))) bts.push(`<button class="btn sm" onclick="abrirConfigTabela('${cx.id}')"><i class="fa-solid fa-gear"></i>Configurar</button>`);
   if (cx.lab && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="${cx.conv ? 'abrirConveniado' : 'abrirLaboratorio'}('${cx.id}')"><i class="fa-solid fa-pen"></i>Dados</button>`);
   return `<div class="sec-card-h"><span class="tc-ic" style="--c:${cx.cor}"><i class="fa-solid ${cx.icone}"></i></span><div style="min-width:0;flex:1"><h3>${esc(cx.nome)}</h3><div class="sub">${sub}</div></div>
@@ -286,23 +295,52 @@ function linhaGrade(cx, e) {
   // desconto sobre a referência (negativo = preço acima dela); descRef = desconto de referência da tabela
   const c = calcular(e, preco, cx.tab);
   return { e, k, preco, c, ed: editado(cx, k), salvo: cx.salvo(k), ref, sist: cx.sistema(k), hier,
-    desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.lab || cx.base ? 0 : c.descRef };
+    desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.lab || cx.base ? 0 : c.descRef, descMax: cx.tabela && !precoSimbolico(preco) ? c.descMax : null };
 }
 
+// Desconto acima do máximo da tabela (sem máximo configurado = sem limite)
+const acimaDescMax = (desc, max) => max != null && desc != null && desc !== 0 && desc > max + 0.0005;
+
+// "Na tabela" e "Fora da tabela" seguem o preço publicado: alterar o rascunho não tira o exame da lista em que ele está
 const FILTROS_GRADE = {
-  tab:  { nome: 'Na tabela',        icone: 'fa-table-list',          f: x => x.preco != null },
+  tab:  { nome: 'Na tabela',        icone: 'fa-table-list',          f: x => x.preco != null || x.salvo != null },
   '':   { nome: 'Todos',            icone: 'fa-list',                f: () => true },
-  fora: { nome: 'Fora da tabela',   icone: 'fa-circle-minus',        f: x => x.preco == null },
+  fora: { nome: 'Fora da tabela',   icone: 'fa-circle-minus',        f: x => x.salvo == null },
   r:    { nome: 'Abaixo do piso',   icone: 'fa-circle-xmark',        f: x => x.c.status === 'r', cor: 'var(--red)' },
   a:    { nome: 'Abaixo do alvo',   icone: 'fa-circle-exclamation',  f: x => x.c.status === 'a', cor: 'var(--amber)' },
   x:    { nome: 'Sem custo',        icone: 'fa-circle-question',     f: x => x.preco != null && x.c.semCusto, cor: 'var(--gray)' },
   div:  { nome: 'Diverge do Unilab', icone: 'fa-code-compare',       f: x => x.sist != null && x.preco != null && Math.abs(x.sist - x.preco) > 0.004, cor: 'var(--amber)' },
   dref: { nome: 'Desconto referência', icone: 'fa-percent',          f: x => x.desc != null && x.desc > x.descRef + 0.0005, cor: 'var(--amber)' },
+  dmax: { nome: 'Acima do desc. máximo', icone: 'fa-ban',          f: x => acimaDescMax(x.desc, x.descMax), cor: 'var(--red)' },
   dneg: { nome: 'Desconto negativo', icone: 'fa-arrow-trend-up',     f: x => x.desc != null && x.desc < -0.0005, cor: 'var(--red)' },
   hier: { nome: 'Quebra hierarquia', icone: 'fa-stairs',            f: x => x.hier.length > 0, cor: 'var(--amber)' },
   ed:   { nome: 'No rascunho',      icone: 'fa-pen',                 f: x => x.ed, cor: 'var(--cyan)' }
 };
-const filtrosDe = cx => cx.base ? ['', 'r', 'a', 'x', 'div', 'hier', 'ed'] : cx.lab ? ['', 'r', 'x', 'dneg', 'ed'] : ['tab', '', 'fora', 'r', 'x', 'div', 'dref', 'dneg', 'hier', 'ed'];
+const filtrosDe = cx => cx.base ? ['', 'r', 'a', 'x', 'div', 'hier', 'ed'] : cx.lab ? ['', 'r', 'x', 'dneg', 'ed'] : ['tab', '', 'fora', 'r', 'x', 'div', 'dref', 'dmax', 'dneg', 'hier', 'ed'];
+
+// Opções do popover de filtro: visão e alertas (o rascunho tem botão próprio), com a contagem da última grade desenhada
+function opcoesFiltroGrade(cx) {
+  const cont = grade.cont || {};
+  return filtrosDe(cx).filter(f => f !== 'ed').filter(f => cont[f] || f === grade.filtro || f === '' || f === 'tab').map(f => {
+    const F = FILTROS_GRADE[f];
+    return { valor: f, rotulo: f === 'r' && cx.base ? 'Abaixo do mínimo' : f === 'fora' && cx.lab ? 'Sem valor' : F.nome, icone: F.icone, cor: F.cor, qtd: cont[f] ?? null,
+      grupo: ['tab', '', 'fora'].includes(f) ? 'Exibir' : 'Alertas',
+      desc: f === 'dref' ? `Maior que o de referência (${cx.descTxt})` : f === 'dmax' ? `Maior que o máximo da tabela (${cx.dmaxTxt})` : f === 'dneg' ? `Preço acima de ${cx.ref?.nome || 'a referência'}` : '' };
+  });
+}
+
+// Botão "Rascunho": liga e desliga o filtro das alterações ainda não enviadas
+// Botão Rascunho: abre a janela do rascunho; sem permissão de edição só filtra a grade
+function abrirRascunhoGrade() {
+  if (pode('tabelas', 'editar')) abrirGerirExames(grade.alvo); else alternarFiltroRascunho();
+}
+function alternarFiltroRascunho() {
+  const cx = ctxAtual();
+  if (!cx) return;
+  grade.filtro = grade.filtro === 'ed' ? filtrosDe(cx)[0] : 'ed';
+  grade.pag = 1;
+  desenharGrade();
+}
 
 function linhasGradeBase(cx) {
   const fs = valorPop('pop-grsetor');
@@ -320,11 +358,14 @@ function desenharGrade() {
   if (!fls.includes(grade.filtro)) grade.filtro = fls[0];
   const cont = {};
   fls.forEach(f => { cont[f] = todas.filter(FILTROS_GRADE[f].f).length; });
-  document.getElementById('gr-chips').innerHTML = fls.filter(f => cont[f] || f === grade.filtro || f === '' || f === 'tab').map(f => {
-    const F = FILTROS_GRADE[f], nome = f === 'r' && cx.base ? 'Abaixo do mínimo' : f === 'fora' && cx.lab ? 'Sem valor' : F.nome;
-    const dica = f === 'dref' ? `Desconto maior que o de referência da tabela (${cx.descTxt})` : f === 'dneg' ? `Preço acima de ${cx.ref?.nome || 'a referência'}` : '';
-    return `<button class="chip ${grade.filtro === f ? 'on' : ''}" title="${esc(dica)}" onclick="grade.filtro='${f}';grade.pag=1;desenharGrade()">${F.cor ? `<span class="d" style="background:${F.cor}"></span>` : `<i class="fa-solid ${F.icone}"></i>`}${nome} <b>${cont[f]}</b></button>`;
-  }).join('');
+  grade.cont = cont;
+  const noRasc = grade.filtro === 'ed', bRasc = document.getElementById('gr-rasc');
+  if (POPS['pop-grfiltro']) { POPS['pop-grfiltro'].valor = noRasc ? fls[0] : grade.filtro; desenharBotaoPop('pop-grfiltro'); }
+  if (bRasc) {
+    bRasc.className = `btn-rasc ${noRasc ? 'on' : ''} ${cont.ed ? 'tem' : ''}`;
+    bRasc.title = !pode('tabelas', 'editar') ? (noRasc ? 'Voltar a ver todos os exames' : 'Ver só os exames alterados no rascunho') : cont.ed ? `Abrir o rascunho: ${cont.ed} exame(s) alterados` : 'Abrir o rascunho (vazio)';
+    bRasc.innerHTML = `<i class="fa-solid fa-pen-to-square"></i>Rascunho${cont.ed ? `<b>${cont.ed > 99 ? '99+' : cont.ed}</b>` : ''}`;
+  }
 
   const linhas = todas.filter(FILTROS_GRADE[grade.filtro].f);
   const val = {
@@ -360,7 +401,7 @@ function htmlLinhaGrade(cx, x, edit) {
   const delta = !ed ? '' : salvo == null ? `<span class="delta-dn">${cx.lab ? 'novo valor' : 'entra na tabela'}</span>`
     : preco == null ? `<span class="delta-up">${cx.lab ? 'remover valor' : 'sai da tabela'}</span>`
     : Math.abs(d) > 0.004 ? `<span class="${d > 0 ? 'delta-dn' : 'delta-up'}">${d > 0 ? '+' : ''}${fmt(d)} (${d > 0 ? '+' : ''}${pct(d / salvo)})</span>` : '';
-  const desc = ref && preco != null ? 1 - preco / ref : null;
+  const desc = ref && preco != null ? 1 - preco / ref : null, dmax = acimaDescMax(desc, x.descMax);
   const divg = sist != null && preco != null && Math.abs(sist - preco) > 0.004;
   const b = (a, ic, t, off) => `<button title="${t}" ${off ? 'disabled' : ''} onclick="acaoLinha(this,'${a}')"><i class="fa-solid ${ic}"></i></button>`;
   const acoes = !edit ? '' : (cx.base ? b('sug', 'fa-wand-magic-sparkles', `Preço sugerido (alvo ${pct(c.alvo)})`, !c.sugerido)
@@ -377,7 +418,7 @@ function htmlLinhaGrade(cx, x, edit) {
     <td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha(this.closest('tr').dataset.k);return false" title="Abrir ficha do exame">${esc(e.mn)}</a></td>
     <td class="desc" title="${esc(e.descricao)}">${esc(e.descricao)}</td>
     <td class="num">${celulaCusto(c)}</td>
-    ${cx.base ? `<td class="num muted">${c.sugerido ? fmt(c.sugerido) : '—'}</td>` : `<td class="num muted">${ref != null ? fmt(ref) : '—'}</td><td class="num muted col-opt">${desc != null ? pct(desc) : '—'}</td>`}
+    ${cx.base ? `<td class="num muted">${c.sugerido ? fmt(c.sugerido) : '—'}</td>` : `<td class="num muted">${ref != null ? fmt(ref) : '—'}</td><td class="num col-opt ${dmax ? '' : 'muted'}" ${dmax ? `style="color:var(--red)" title="Acima do desconto máximo da tabela (${pct(x.descMax, 0)})"` : ''}>${desc != null ? pct(desc) : '—'}${dmax ? ' <i class="fa-solid fa-ban"></i>' : ''}</td>`}
     ${cx.lab ? '' : `<td class="num col-opt ${divg ? 'aviso' : 'muted'}">${sist != null ? fmt(sist) : '—'}${divg ? ' <i class="fa-solid fa-code-compare" title="Diferente do preço na tabela"></i>' : ''}</td>`}
     <td class="num"><div class="price-in ${ed ? 'on' : ''}"><span>R$</span><input type="number" step="0.01" min="0" value="${preco != null ? preco.toFixed(2) : ''}" placeholder="—" ${edit ? '' : 'disabled'}
       oninput="editarPreco(this)" onchange="desenharChipsDepois()" onkeydown="teclaGrade(event)" onfocus="this.select()"></div><div class="delta">${delta}</div></td>
@@ -427,9 +468,15 @@ function teclaGrade(ev) {
 // Preço que atinge a margem m: custo total ÷ (1 − imposto − m), arredondado para cima
 const precoParaMargem = (c, m) => m == null || c.semCusto || 1 - parametro('imposto') - m <= 0 ? undefined : Math.ceil(c.custo / (1 - parametro('imposto') - m));
 
+// Preço alvo fora da Particular nunca passa do valor da Particular do exame
+function tetoParticular(cx, x, v) {
+  const part = cx.base ? null : x.e.precoPraticado;
+  return v != null && part && v > part ? part : v;
+}
+
 function valorAcao(cx, x, a, p = 0) {
-  if (a === 'sug') return x.c.sugerido || undefined;
-  if (a === 'msug') return precoParaMargem(x.c, x.c.margemSug);
+  if (a === 'sug') return tetoParticular(cx, x, x.c.sugerido || undefined);
+  if (a === 'msug') return tetoParticular(cx, x, precoParaMargem(x.c, x.c.margemSug));
   if (a === 'ref') return x.ref != null ? (cx.lab ? x.ref : Math.round(x.ref * (1 - x.c.descRef))) : undefined;
   if (a === 'piso') return x.c.minimo || undefined;
   if (a === 'pct') return x.preco != null ? Math.round(x.preco * (1 + p) * 100) / 100 : undefined;
@@ -498,12 +545,12 @@ function acaoLote(a) {
   toast(`${n} preço(s) ${a === 'desf' ? 'restaurado(s)' : 'ajustado(s) no rascunho'}`);
 }
 
-function paginaGrade(p) { grade.pag = p; desenharGrade(); document.getElementById('gr-chips')?.scrollIntoView({ block: 'start' }); }
+function paginaGrade(p) { grade.pag = p; desenharGrade(); document.getElementById('gr-q')?.scrollIntoView({ block: 'start' }); }
 function ordenarGrade(k) { grade.dir = grade.ordem === k ? -grade.dir : 1; grade.ordem = k; desenharGrade(); }
 
 // ── Barra do rascunho ─────────────────────────────────────────
 function resumoRasc(cx) {
-  const r = rasc(cx.alvo), s = { n: 0, m0: 0, m1: 0, k: 0, ab: 0, novos: 0, sai: 0, sobe: 0, desce: 0 };
+  const r = rasc(cx.alvo), s = { n: 0, m0: 0, m1: 0, k: 0, ab: 0, dm: 0, novos: 0, sai: 0, sobe: 0, desce: 0 };
   Object.entries(r).forEach(([k, v]) => {
     const e = ESTADO.exames[k];
     if (!e) return;
@@ -511,6 +558,8 @@ function resumoRasc(cx) {
     const o = cx.salvo(k), a = o != null ? calcular(e, o, cx.tab) : null, b = v != null ? calcular(e, v, cx.tab) : null;
     if (o == null) s.novos++; else if (v == null) s.sai++; else if (v > o) s.sobe++; else s.desce++;
     if (b?.status === 'r') s.ab++;
+    const ref = cx.tabela ? cx.ref.valor(k) : null;
+    if (b && !precoSimbolico(v) && acimaDescMax(ref && 1 - v / ref, b.descMax)) s.dm++;
     if (a?.margem != null && b?.margem != null) { s.m0 += a.margem; s.m1 += b.margem; s.k++; }
   });
   return s;
@@ -524,7 +573,7 @@ function desenharBarraRasc() {
   if (!s.n) { bar.innerHTML = ''; return; }
   const partes = [s.sobe && `${s.sobe} sobem`, s.desce && `${s.desce} descem`, s.novos && `${s.novos} ${cx.lab ? 'novos' : 'entram'}`, s.sai && `${s.sai} ${cx.lab ? 'removidos' : 'saem'}`].filter(Boolean).join(' · ');
   bar.innerHTML = `<i class="fa-solid fa-pen-to-square"></i><div><b>${s.n} alteração(ões) no seu rascunho</b>
-      <div class="s">${partes}${s.k ? ` · margem média dos alterados ${pct(s.m0 / s.k)} → <b>${pct(s.m1 / s.k)}</b>` : ''}${s.ab ? ` · <span style="color:var(--red)">${s.ab} abaixo do ${cx.pisoNome}</span>` : ''}</div></div>
+      <div class="s">${partes}${s.k ? ` · margem média dos alterados ${pct(s.m0 / s.k)} → <b>${pct(s.m1 / s.k)}</b>` : ''}${s.ab ? ` · <span style="color:var(--red)">${s.ab} abaixo do ${cx.pisoNome}</span>` : ''}${s.dm ? ` · <span style="color:var(--red)">${s.dm} acima do desconto máximo</span>` : ''}</div></div>
     <div class="acoes"><button class="btn" onclick="descartarRasc()"><i class="fa-solid fa-trash-can"></i>Descartar</button>
       <button class="btn pri" onclick="abrirEnvioProposta()"><i class="fa-solid fa-paper-plane"></i>Revisar e enviar</button></div>`;
 }

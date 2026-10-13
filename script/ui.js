@@ -17,7 +17,7 @@ function toast(texto, tipo = 'ok') {
 
 // ── Gaveta lateral ────────────────────────────────────────────
 // abrirGaveta({ sobre, titulo, meta, corpo, rodape })
-function abrirGaveta({ sobre = '', titulo = '', meta = '', corpo = '', rodape = '' }) {
+function abrirGaveta({ sobre = '', titulo = '', meta = '', corpo = '', rodape = '', larga = false }) {
   fecharPop();
   document.getElementById('g-sobre').textContent = sobre;
   document.getElementById('g-titulo').textContent = titulo;
@@ -25,6 +25,7 @@ function abrirGaveta({ sobre = '', titulo = '', meta = '', corpo = '', rodape = 
   const c = document.getElementById('g-corpo');
   c.innerHTML = corpo; c.scrollTop = 0;
   document.getElementById('g-rodape').innerHTML = rodape;
+  document.getElementById('gaveta').classList.toggle('larga', larga);
   document.getElementById('gaveta').classList.add('open');
   document.getElementById('gaveta-fundo').classList.add('open');
 }
@@ -38,19 +39,20 @@ function fecharGaveta() {
 // ── Confirmação ───────────────────────────────────────────────
 // confirmar({ titulo, texto, botao, perigo }) → Promise<boolean>
 // icone/tom (opcionais) trocam o ícone e a cor do círculo: tom 'pausa' (âmbar) ou 'play' (verde)
-function confirmar({ titulo = 'Confirmar', texto = '', botao = 'Confirmar', perigo = false, icone = '', tom = '' } = {}) {
+// Esc ou clique fora resolvem null (dispensou sem escolher); o botão de cancelar resolve false
+function confirmar({ titulo = 'Confirmar', texto = '', botao = 'Confirmar', perigo = false, icone = '', tom = '', cancelar = 'Cancelar' } = {}) {
   return new Promise(resolve => {
     const m = document.getElementById('modal');
     m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true">
         <div class="modal-ic ${perigo ? 'perigo' : tom}"><i class="fa-solid ${icone || (perigo ? 'fa-triangle-exclamation' : 'fa-circle-question')}"></i></div>
         <h3>${esc(titulo)}</h3><p>${texto}</p>
-        <div class="modal-acoes"><button class="btn" data-r="0">Cancelar</button><button class="btn ${perigo ? 'perigo' : 'pri'}" data-r="1">${esc(botao)}</button></div>
+        <div class="modal-acoes"><button class="btn" data-r="0">${esc(cancelar)}</button><button class="btn ${perigo ? 'perigo' : 'pri'}" data-r="1">${esc(botao)}</button></div>
       </div>`;
     m.classList.add('open');
     const fim = r => { m.classList.remove('open'); document.removeEventListener('keydown', tecla); resolve(r); };
-    const tecla = e => { if (e.key === 'Escape') fim(false); if (e.key === 'Enter') fim(true); };
+    const tecla = e => { if (e.key === 'Escape') fim(null); if (e.key === 'Enter') fim(true); };
     m.querySelectorAll('[data-r]').forEach(b => b.onclick = () => fim(b.dataset.r === '1'));
-    m.onclick = e => { if (e.target === m) fim(false); };
+    m.onclick = e => { if (e.target === m) fim(null); };
     document.addEventListener('keydown', tecla);
     m.querySelector('[data-r="1"]').focus();
   });
