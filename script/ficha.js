@@ -425,7 +425,7 @@ async function excluirExame() {
 let _dx = null;
 function abrirDadosExame(id) {
   const e = id ? ESTADO.exames[id] : null;
-  _dx = { id: id || null, setorId: e?.setorId || '', origem: e?.origem || 'interno', ativo: e ? e.ativo !== false : true, negociado: false, auditar: false, fora: false, checks: { site: false, unilab: false, revisado: false } };
+  _dx = { id: id || null, setorId: e?.setorId || '', origem: e?.origem || origemLembrada(), ativo: e ? e.ativo !== false : true, negociado: false, auditar: false, fora: false, checks: { site: false, unilab: false, revisado: false } };
   const novo = !id;
   // Exame novo: instrução cadastrada junto (catálogo de instruções)
   const comIns = !id && pode('instrucoes', 'editar');
@@ -438,12 +438,12 @@ function abrirDadosExame(id) {
         ${campo('dx-preco', 'Preço praticado', e?.precoPraticado ?? '', { pre: 'R$', passo: '0.01', desab: !!id, dica: id ? 'altere na ficha' : '', aoMudar: novo ? 'previaDadosExame()' : '' })}
         ${novo ? campo('dx-custo', 'Custo do teste', '', { pre: 'R$', passo: '0.01', ph: '0,00', dica: 'manual', aoMudar: 'previaDadosExame()' }) : ''}
       </div>
-      ${novo ? '<div class="hint" id="dx-calc" style="margin-top:-6px"></div>' : ''}
+      ${novo ? '<div class="dx-prev" id="dx-calc"></div>' : ''}
       ${campo('dx-desc', 'Nome do exame', e?.descricao || '', { tipo: 'text', ph: 'Ex.: Glicose' })}
       <div class="field"><label>Setor</label><div id="pop-dxsetor" class="block"></div></div>
       <div class="field"><label>Origem</label><div class="opt-cards" id="dx-origem">
         ${[['interno', 'Interno', 'Executado no LAMIC', 'fa-microscope'], ['apoio', 'Apoio', 'Enviado a laboratório de apoio', 'fa-truck-medical']].map(([v, t, d, ic]) =>
-          `<button type="button" class="oc ${_dx.origem === v ? 'on' : ''}" data-v="${v}" onclick="_dx.origem='${v}';marcarOc('dx-origem', this);atualizarControlesDx()"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${t}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`).join('')}</div></div>
+          `<button type="button" class="oc ${_dx.origem === v ? 'on' : ''}" data-v="${v}" onclick="_dx.origem='${v}';lembrarOrigem();marcarOc('dx-origem', this);atualizarControlesDx()"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${t}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`).join('')}</div></div>
       <div class="fgrid sem-pad" style="grid-template-columns:2fr 1fr">
         ${campo('dx-mat', 'Material', e?.material || '', { tipo: 'text', ph: 'Ex.: Soro' })}
         ${campo('dx-dias', 'Prazo (dias)', (id ? diasPrazo(id) : null) ?? '', { passo: '1', ph: 'Ex.: 2', dica: '0 = 24 Horas' })}
@@ -454,7 +454,14 @@ function abrirDadosExame(id) {
         <span class="hint" id="dx-cat-hint">Vai para o catálogo de instruções. Opcional.</span></div>` : ''}
       ${novo ? '<div class="sec-t"><i class="fa-solid fa-sliders"></i>Controles</div>' : ''}
       <div class="casc">
-        ${novo ? `<div class="casc-r" id="dx-neg-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">marcação manual (o vínculo com a tabela do apoio é feito na ficha)</div></div></div>${chave(false, '_dx.negociado=!_dx.negociado;this.classList.toggle(\'on\')')}</div>
+        ${novo ? `<div class="casc-r" id="dx-neg-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">cadastra o item na tabela do apoio, com o custo informado, e vincula o exame</div></div></div>${chave(false, '_dx.negociado=!_dx.negociado;this.classList.toggle(\'on\');atualizarControlesDx()')}</div>
+        <div id="dx-neg-campos" class="dx-neg" style="display:none">
+          <div class="fgrid sem-pad" style="grid-template-columns:1fr 2fr">
+            ${campo('dx-ap-cod', 'Mnemônico no apoio', '', { tipo: 'text', ph: 'Código no apoio' })}
+            ${campo('dx-ap-desc', 'Nome no apoio', '', { tipo: 'text', ph: 'Descrição na tabela do apoio' })}
+          </div>
+          <div class="hint" id="dx-neg-hint"></div>
+        </div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-magnifying-glass-dollar" style="color:var(--amber)"></i><div>Valor precisa ser auditado<div class="s">controle interno</div></div></div>${chave(false, '_dx.auditar=!_dx.auditar;this.classList.toggle(\'on\')')}</div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-plug-circle-xmark"></i><div>Fora do sistema do laboratório<div class="s">mnemônico não existe no catálogo</div></div></div>${chave(false, '_dx.fora=!_dx.fora;this.classList.toggle(\'on\')')}</div>` : ''}
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-eye"></i><div>Exame ativo<div class="s">inativo sai das listas e das tabelas</div></div></div>${chave(_dx.ativo, '_dx.ativo=!_dx.ativo;this.classList.toggle(\'on\')')}</div></div>
@@ -481,6 +488,20 @@ function abrirDadosExame(id) {
 function atualizarControlesDx() {
   const r = document.getElementById('dx-neg-r');
   if (r) r.style.display = _dx.origem === 'apoio' ? '' : 'none';
+  // negociado: item manual na tabela do apoio (mnemônico e nome sugeridos a partir do exame)
+  const cp = document.getElementById('dx-neg-campos');
+  if (cp) {
+    const mostra = _dx.origem === 'apoio' && _dx.negociado, setor = ESTADO.setores[_dx.setorId], apoio = setor?.categoria === 'apoio';
+    cp.style.display = mostra ? '' : 'none';
+    if (mostra) {
+      const cod = document.getElementById('dx-ap-cod'), nome = document.getElementById('dx-ap-desc');
+      if (!cod.value) cod.value = valorCampo('dx-mn').trim();
+      if (!nome.value) nome.value = valorCampo('dx-desc').trim();
+      document.getElementById('dx-neg-hint').innerHTML = apoio
+        ? `<i class="fa-solid fa-circle-info"></i> O "Custo do teste" informado acima entra na tabela de <b>${esc(setor.nome)}</b> como item manual.`
+        : '<i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)"></i> Escolha no campo Setor o laboratório de apoio que recebe este item.';
+    }
+  }
   previaDadosExame();
 }
 function previaDadosExame() {
@@ -489,8 +510,44 @@ function previaDadosExame() {
   const custo = numCampo('dx-custo'), preco = numCampo('dx-preco');
   if (!(custo >= 0)) { el.innerHTML = ''; return; }
   const c = calcular({ setorId: _dx.setorId || null, origem: _dx.origem, custoTeste: custo, precoPraticado: preco > 0 ? preco : null });
-  el.innerHTML = `<i class="fa-solid fa-calculator"></i> Custo total ${fmt(c.custo)} (com custos fixos do setor) · sugerido ${fmt(c.sugerido)}`
-    + (c.margem != null ? ` · margem <b style="color:${STATUS[c.status].cor}">${pct(c.margem)}</b>` : '');
+  const cor = c.margem != null ? STATUS[c.status].cor : 'var(--text-muted)';
+  const bloco = (ic, rot, v, s, estilo = '') => `<div class="dp" ${estilo}><span class="dp-l"><i class="fa-solid ${ic}"></i>${rot}</span><b class="dp-v">${v}</b><span class="dp-s">${s}</span></div>`;
+  el.innerHTML = bloco('fa-calculator', 'Custo total', fmt(c.custo), 'com custos fixos do setor')
+    + bloco('fa-tag', 'Preço sugerido', c.sugerido != null ? fmt(c.sugerido) : '—', preco > 0 && c.sugerido != null ? `praticado ${preco >= c.sugerido ? 'acima' : 'abaixo'} do sugerido` : 'pela margem alvo')
+    + bloco('fa-chart-simple', 'Margem', c.margem != null ? pct(c.margem) : '—', c.margem != null ? `lucro ${fmt(c.lucro)}` : 'informe o preço', `style="--c:${cor}"`)
+    + `<div class="dp-acts"><div class="dp-top"><span class="dp-l"><i class="fa-solid fa-wand-magic-sparkles"></i>Precificar</span>
+          <span class="dp-arr" title="Arredonda para cima o preço dos botões Piso e Alvo"><span class="dp-arr-l">Arredondar</span>${ARRED_DX.map(a => `<button type="button" class="${a === arredDx() ? 'on' : ''}" onclick="definirArredDx(${a})">R$ ${a},00</button>`).join('')}</span></div>
+        ${btnPrecificarDx('fa-shield-halved', 'Piso', arredondarDx(c.minimo), c.min, preco)}${btnPrecificarDx('fa-bullseye', 'Alvo', arredondarDx(c.sugerido), c.alvo, preco)}</div>`;
+}
+// Arredondamento (para cima) dos preços de piso e alvo: múltiplos de R$ 1, 5 ou 10; a escolha fica lembrada neste navegador
+const ARRED_DX = [1, 5, 10];
+function arredDx() {
+  let a = 1;
+  try { a = +localStorage.getItem('prec-arred-exame'); } catch (e) {}
+  return ARRED_DX.includes(a) ? a : 1;
+}
+const arredondarDx = (v, a = arredDx()) => v == null ? null : Math.ceil(v / a - 1e-9) * a;
+function definirArredDx(a) {
+  const antes = arredDx(), preco = numCampo('dx-preco'), custo = numCampo('dx-custo'), el = document.getElementById('dx-preco');
+  try { localStorage.setItem('prec-arred-exame', a); } catch (e) {}
+  // preço que veio de um dos botões acompanha o novo arredondamento
+  if (el && preco > 0 && custo >= 0) {
+    const c = calcular({ setorId: _dx.setorId || null, origem: _dx.origem, custoTeste: custo, precoPraticado: null });
+    const base = [c.sugerido, c.minimo].find(v => v != null && arredondarDx(v, antes) === preco);
+    if (base != null) el.value = arredondarDx(base, a);
+  }
+  previaDadosExame();
+}
+// Botão que preenche o preço praticado com o valor que dá a margem mínima (piso) ou a margem alvo
+function btnPrecificarDx(ic, rot, valor, margem, preco) {
+  if (valor == null) return '';
+  return `<button type="button" class="btn sm ${preco === valor ? 'pri' : ''}" onclick="precificarDx(${valor})" title="Preenche o preço praticado: margem de ${pct(margem)}"><i class="fa-solid ${ic}"></i>${rot} · ${fmt(valor)} <span class="dp-m">${pct(margem)}</span></button>`;
+}
+function precificarDx(valor) {
+  const el = document.getElementById('dx-preco');
+  if (!el) return;
+  el.value = valor;
+  previaDadosExame();
 }
 
 // Checklist de publicação (compacto) no cadastro do exame: Site · Unilab · Revisado
@@ -553,10 +610,25 @@ async function gravarDadosExame() {
     const preco = numCampo('dx-preco');
     const custo = numCampo('dx-custo');
     if (!isNaN(custo) && custo < 0) return toast('Custo do teste inválido', 'erro');
+    // valor negociado: o custo vira item manual da tabela do apoio e o exame já nasce vinculado a ele
+    let itemApoio = null;
+    if (_dx.origem === 'apoio' && _dx.negociado) {
+      const setor = ESTADO.setores[_dx.setorId];
+      if (setor?.categoria !== 'apoio') return toast('Valor negociado: escolha o setor do laboratório de apoio', 'erro');
+      if (!(custo >= 0)) return toast('Valor negociado: informe o custo do teste', 'erro');
+      const cod = valorCampo('dx-ap-cod').trim() || mn, k = chaveItemApoio(cod, '');
+      if (ESTADO.apoios[_dx.setorId]?.precos?.[k]) return toast(`O item ${cod} já existe na tabela de ${setor.nome}: desmarque "negociado" e vincule pela ficha`, 'erro');
+      itemApoio = { k, item: { codigo: cod, material: '', descricao: valorCampo('dx-ap-desc').trim() || desc, preco: Math.round(custo * 100) / 100, vigencia: hojeISO(), manual: true, desde: Date.now(), criadoPor: usuarioAtual().nome } };
+      dados.vinculoApoio = { apoioId: _dx.setorId, chave: k };
+    }
     Object.assign(dados, { mn, precoPraticado: preco > 0 ? preco : null, criadoEm: DB.agora(),
       custoTeste: custo >= 0 ? Math.round(custo * 100) / 100 : null, custoOrigem: custo >= 0 ? 'manual' : null,
       negociado: _dx.origem === 'apoio' && _dx.negociado ? true : null, auditar: _dx.auditar || null, foraDoSistema: _dx.fora || null });
     await DB.gravar(`${CAMINHOS.exames}/${id}`, dados);
+    if (itemApoio) {
+      await DB.gravar(`${CAMINHOS.apoios}/${_dx.setorId}/precos/${itemApoio.k}`, itemApoio.item);
+      registrar('apoios', `${ESTADO.setores[_dx.setorId].nome}: item ${itemApoio.item.codigo} cadastrado manualmente (${fmt(itemApoio.item.preco)}) no cadastro do exame ${mn}`);
+    }
     await gravarCatalogoNovoExame(id, mn, desc);
   } else {
     // prazo em dias substitui o texto antigo, no exame e no catálogo de instruções
@@ -576,4 +648,13 @@ async function gravarDadosExame() {
   ESTADO.exames[id] = { ...(ESTADO.exames[id] || {}), ...dados, ...(dados.atualizadoEm ? { atualizadoEm: Date.now() } : {}) };
   toast(_dx.id ? 'Dados salvos' : 'Exame cadastrado');
   abrirFicha(id);
+}
+
+// Origem escolhida ao cadastrar um exame: fica lembrada neste navegador para os próximos cadastros
+function origemLembrada() {
+  try { return localStorage.getItem('prec-origem-exame') === 'apoio' ? 'apoio' : 'interno'; } catch (e) { return 'interno'; }
+}
+function lembrarOrigem() {
+  if (_dx.id) return;                               // só no cadastro de exame novo
+  try { localStorage.setItem('prec-origem-exame', _dx.origem); } catch (e) {}
 }

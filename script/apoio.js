@@ -308,6 +308,8 @@ async function analisarApoio() {
     // desde = quando o item entrou na tabela: sugestões rejeitadas só voltam com item mais novo que a rejeição
     const antes = ESTADO.apoios[apo.sel]?.precos || {}, agora = Date.now();
     Object.entries(itens).forEach(([k, it]) => { if (!antes[k]) it.desde = agora; else if (antes[k].desde) it.desde = antes[k].desde; });
+    // itens cadastrados à mão (valor negociado no cadastro do exame) continuam na tabela se o arquivo não os trouxer
+    Object.entries(antes).forEach(([k, it]) => { if (it.manual && !itens[k]) itens[k] = { ...it }; });
     const vinc = classificarVinculos(apo.sel, itens);
     // impacto: exames que ficarão vinculados (já vinculados + automáticos)
     const imp = { sobem: 0, descem: 0, caem: [], var: [] }, min = parametro('margemMinima');

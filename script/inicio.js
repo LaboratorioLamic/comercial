@@ -33,17 +33,69 @@ function resumoProposta(p) {
   return { n: p.n || Object.keys(p.itens || {}).length, sobe, desce, media: nv ? soma / nv : null, abaixo, pisoNome: cx?.pisoNome || 'piso' };
 }
 
+// Exames marcados no controle interno que também entram no sino
+const SINO_EXAMES = {
+  aud:  { nome: 'A auditar', icone: 'fa-magnifying-glass-dollar', cor: 'var(--amber)', f: e => !!e.auditar, vazio: 'Nenhum exame marcado para auditoria.' },
+  sist: { nome: 'Fora do sistema', icone: 'fa-plug-circle-xmark', cor: 'var(--gray)', f: e => !!e.foraDoSistema, vazio: 'Nenhum exame marcado como fora do sistema.' }
+};
+const sinoExames = k => Object.entries(ESTADO.exames || {}).filter(([, e]) => e.ativo !== false && SINO_EXAMES[k].f(e))
+  .map(([id, e]) => ({ id, ...e })).sort((a, b) => (b.atualizadoEm || 0) - (a.atualizadoEm || 0));
+// Abas do sino conforme o acesso: propostas (tabelas) e controles dos exames
+function sinoAbas() {
+  const abas = [];
+  if (pode('tabelas')) abas.push({ k: 'prop', nome: 'Propostas', icone: 'fa-stamp', n: sinoPendentes().length });
+  if (pode('exames')) Object.entries(SINO_EXAMES).forEach(([k, x]) => abas.push({ k, nome: x.nome, icone: x.icone, n: sinoExames(k).length }));
+  return abas;
+}
+const sinoTotal = () => sinoAbas().reduce((s, a) => s + a.n, 0);
+let _sinoAba = '';
+const SINO_MAX = 60;
+
 function sinoPainel() {
+  const abas = sinoAbas(), total = abas.reduce((s, a) => s + a.n, 0);
+  if (!abas.find(a => a.k === _sinoAba)) _sinoAba = (abas.find(a => a.n) || abas[0])?.k || '';
+  return `
+    <div class="sino-h"><span class="sino-ic"><i class="fa-solid fa-bell"></i></span>
+      <div><b>Notificações</b><span>${total ? abas.filter(a => a.n).map(a => `${num(a.n, 0)} ${a.nome.toLowerCase()}`).join(' · ') : 'Nada pendente'}</span></div>
+      <button class="pop-x" onclick="fecharSino()" title="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
+    ${abas.length > 1 ? `<div class="sino-abas">${abas.map(a => `<button class="${a.k === _sinoAba ? 'on' : ''}" onclick="_sinoAba='${a.k}';document.getElementById('sino-pan').innerHTML=sinoPainel()"><i class="fa-solid ${a.icone}"></i>${a.nome}${a.n ? `<b>${a.n > 99 ? '99+' : a.n}</b>` : ''}</button>`).join('')}</div>` : ''}
+    ${_sinoAba === 'prop' ? sinoPainelPropostas() : _sinoAba ? sinoPainelExames(_sinoAba) : ''}`;
+}
+
+function sinoPainelExames(k) {
+  const x = SINO_EXAMES[k], ls = sinoExames(k);
+  return `<div class="sino-l">${ls.slice(0, SINO_MAX).map((e, i) => {
+      const c = calcular(e), setor = ESTADO.setores[e.setorId];
+      return `<button class="sino-it" style="animation-delay:${Math.min(i, 8) * 35}ms" onclick="fecharSino();abrirFicha('${e.id}')">
+        <span class="sino-ex" style="--c:${x.cor}"><i class="fa-solid ${x.icone}"></i></span>
+        <span class="sino-c">
+          <span class="sino-t"><b class="mn">${esc(e.mn)}</b>${e.atualizadoEm ? `<em title="${dataHora(e.atualizadoEm)}">${haQuanto(e.atualizadoEm)}</em>` : ''}</span>
+          <span class="sino-s">${esc(e.descricao)}</span>
+          <span class="sino-m">
+            ${setor ? `<span><i class="fa-solid ${setor.icone}" style="color:${setor.cor}"></i>${esc(setor.nome)}</span>` : ''}
+            ${e.precoPraticado ? `<span title="Preço praticado">${fmt(e.precoPraticado)}</span>` : '<span class="bad">sem preço</span>'}
+            ${c.semCusto ? '<span class="bad">sem custo</span>' : c.margem != null ? `<span title="Margem" style="color:${STATUS[c.status].cor}">margem ${pct(c.margem)}</span>` : ''}
+            ${e.atualizadoPor ? `<span title="Última alteração"><i class="fa-solid fa-user"></i>${esc(e.atualizadoPor)}</span>` : ''}
+          </span>
+        </span>
+        <i class="fa-solid fa-chevron-right sino-go"></i></button>`; }).join('')
+      || `<div class="sino-vazio"><i class="fa-solid fa-circle-check"></i><b>Tudo em dia</b><span>${x.vazio}</span></div>`}</div>
+    <div class="sino-f"><span>${ls.length > SINO_MAX ? `Mostrando ${SINO_MAX} de ${num(ls.length, 0)}` : 'Clique para abrir a ficha'}</span>
+      <button onclick="sinoVerExames('${k}')">Ver na lista <i class="fa-solid fa-arrow-right"></i></button></div>`;
+}
+// Abre a tela de exames já com o filtro "Controle interno" correspondente
+function sinoVerExames(k) {
+  fecharSino();
+  (POPS['pop-exctrl'] ??= {}).valor = k;
+  irPara('exames');
+}
+
+function sinoPainelPropostas() {
   const todas = sinoPendentes(), minhas = todas.filter(propostaMinha).length;
   if (!minhas || minhas === todas.length) _sinoFiltro = '';
   const ls = todas.filter(p => !_sinoFiltro || (_sinoFiltro === 'minhas') === propostaMinha(p));
-  const precos = todas.reduce((s, p) => s + (p.n || Object.keys(p.itens || {}).length), 0);
-  const antiga = todas.length ? Math.min(...todas.map(p => p.em || Date.now())) : null;
   const chip = (f, nome, n) => `<button class="chip ${_sinoFiltro === f ? 'on' : ''}" onclick="_sinoFiltro='${f}';document.getElementById('sino-pan').innerHTML=sinoPainel()">${nome} <b>${n}</b></button>`;
   return `
-    <div class="sino-h"><span class="sino-ic"><i class="fa-solid fa-stamp"></i></span>
-      <div><b>Propostas pendentes</b><span>${todas.length ? `${num(precos, 0)} preço(s) aguardando · mais antiga ${haQuanto(antiga)}` : 'Nada aguardando aprovação'}</span></div>
-      <button class="pop-x" onclick="fecharSino()" title="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
     ${_sinoFiltro || (minhas && minhas < todas.length) ? `<div class="chips sino-chips">${chip('', 'Todas', todas.length)}${chip('minhas', 'Minhas', minhas)}${chip('outros', 'De outros', todas.length - minhas)}</div>` : ''}
     <div class="sino-l">${ls.map((p, i) => {
       const a = alvoInfo(p.alvo), r = resumoProposta(p), velha = Date.now() - (p.em || 0) > 3 * 864e5;
@@ -67,14 +119,14 @@ function sinoPainel() {
 }
 
 const sinoHtml = n => `<div class="sino ${_sinoAberto ? 'open' : ''}" id="sino">
-    <button class="sino-btn ${n ? 'tem' : ''}" onclick="event.stopPropagation();alternarSino()" title="Propostas pendentes" aria-haspopup="true" aria-expanded="${_sinoAberto}">
+    <button class="sino-btn ${n ? 'tem' : ''}" onclick="event.stopPropagation();alternarSino()" title="Notificações" aria-haspopup="true" aria-expanded="${_sinoAberto}">
       <i class="fa-solid fa-bell"></i>${n ? `<span class="sino-n">${n > 99 ? '99+' : n}</span>` : ''}</button>
     <div class="sino-pan" id="sino-pan" onclick="event.stopPropagation()">${_sinoAberto ? sinoPainel() : ''}</div></div>`;
 
 // Sino na barra do topo: redesenha a cada mudança nos dados
 function atualizarSino() {
   const el = document.getElementById('tb-sino');
-  if (el) el.innerHTML = usuarioAtual() && pode('tabelas') ? sinoHtml(sinoPendentes().length) : '';
+  if (el) el.innerHTML = usuarioAtual() && (pode('tabelas') || pode('exames')) ? sinoHtml(sinoTotal()) : '';
 }
 
 function alternarSino() {
