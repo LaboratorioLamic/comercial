@@ -25,12 +25,24 @@ const fmtOuFora = (v, lab) => v != null ? fmt(v) : `<span class="muted">${lab ? 
 // ── Quadro da proposta (envio e avaliação) ────────────────────
 // Linha: valor de antes, valor proposto e o cálculo dele no perfil da tabela.
 // Desconto só onde há referência (tabelas: Particular; laboratórios/conveniados: tabela base).
+// Valor da Particular em proposta pendente (a mais recente que inclui o exame): { id, para } | null
+function partPendente(k) {
+  let r = null;
+  Object.entries(ESTADO.propostas || {}).forEach(([id, p]) => {
+    const it = p.status === 'pendente' && p.alvo === 'particular' ? p.itens?.[k] : null;
+    if (it && it.para != null && (!r || (p.em || 0) > r.em)) r = { id, para: it.para, em: p.em || 0 };
+  });
+  return r;
+}
+
+// Onde a referência é a Particular, o desconto já considera o valor dela que aguarda aprovação (pend)
 function linhaProposta(cx, k, de, para) {
   const e = ESTADO.exames[k], c = cx && e && para != null ? calcular(e, para, cx.tab) : null;
   const c0 = cx && e && de != null ? calcular(e, de, cx.tab) : null;
-  const ref = cx && !cx.base ? cx.ref?.valor(k) ?? null : null;
+  const refPub = cx && !cx.base ? cx.ref?.valor(k) ?? null : null;
+  const pend = cx && (cx.tabela || (cx.conv && !cx.tab)) ? partPendente(k) : null, ref = pend ? pend.para : refPub;
   const desc = ref && para != null && !precoSimbolico(ref) && !precoSimbolico(para) ? 1 - para / ref : null;
-  return { k, e, mn: e?.mn, de, para, c, c0, ref, desc, descRef: cx?.tabela ? c?.descRef ?? null : null, descMax: cx?.tabela ? c?.descMax ?? null : null };
+  return { k, e, mn: e?.mn, de, para, c, c0, ref, refPub, pend, desc, descRef: cx?.tabela ? c?.descRef ?? null : null, descMax: cx?.tabela ? c?.descMax ?? null : null };
 }
 
 const ppVar = x => {
@@ -38,7 +50,7 @@ const ppVar = x => {
   return d ? `<small class="${d > 0 ? 'delta-dn' : 'delta-up'}">${d > 0 ? '+' : ''}${pct(d)}</small>` : '';
 };
 const ppDesc = x => x.desc == null ? '<span class="muted">—</span>'
-  : `<b class="${acimaDescMax(x.desc, x.descMax) || x.desc < -0.0005 ? 'r' : x.descRef != null && x.desc > x.descRef + 0.0005 ? 'a' : ''}"${acimaDescMax(x.desc, x.descMax) ? ` title="Acima do desconto máximo (${pct(x.descMax, 0)})"` : ''}>${pct(x.desc)}</b>${x.descRef != null ? `<small>ref. ${pct(x.descRef, 0)}</small>` : ''}`;
+  : `<b class="${acimaDescMax(x.desc, x.descMax) || x.desc < -0.0005 ? 'r' : x.descRef != null && x.desc > x.descRef + 0.0005 ? 'a' : ''}"${acimaDescMax(x.desc, x.descMax) ? ` title="Acima do desconto máximo (${pct(x.descMax, 0)})"` : ''}>${pct(x.desc)}</b>${x.descRef != null ? `<small>ref. ${pct(x.descRef, 0)}</small>` : ''}${x.pend ? `<small style="color:var(--amber)" title="Particular com proposta pendente: desconto sobre ${fmt(x.pend.para)} (publicado hoje: ${x.refPub != null ? fmt(x.refPub) : '—'})"><i class="fa-solid fa-hourglass-half"></i> Part. ${fmt(x.pend.para)}</small>` : ''}`;
 const ppMrg = x => {
   if (x.c?.semCusto && pode('exames', 'editar')) return `<button type="button" class="gx-sc" title="Exame sem custo: clique para informar" onclick="ppCusto(this)"><i class="fa-solid fa-plus"></i>custo</button>`;
   if (x.c?.margem == null) return `<span class="muted">${x.c?.semCusto ? 'sem custo' : '—'}</span>`;
@@ -95,11 +107,13 @@ function htmlQuadroProposta(cx, ls, o) {
   const lab = cx?.lab, comDesc = cx && !cx.base && !!cx.ref;
   const n = { e: 0, s: 0, up: 0, dn: 0 };
   ls.forEach(x => { if (x.de == null) n.e++; else if (x.para == null) n.s++; else if (x.para > x.de) n.up++; else if (x.para < x.de) n.dn++; });
+  const pend = ls.filter(x => x.pend), idPend = pend[0]?.pend.id;
   const partes = [n.e && `${n.e} ${lab ? 'novos' : 'entram'}`, n.up && `${n.up} sobem`, n.dn && `${n.dn} descem`, n.s && `${n.s} ${lab ? 'removidos' : 'saem'}`].filter(Boolean).join(' · ');
   return `<div class="pp-q">
     <div class="pp-qh"><span class="tc-ic" style="--c:${cx?.cor || 'var(--gray)'}"><i class="fa-solid ${cx?.icone || 'fa-table-list'}"></i></span>
       <div><b>${esc(o.nome || cx?.nome || '(removida)')}</b><small>${ls.length} preço(s)${partes ? ' · ' + partes : ''}</small></div></div>
     ${cx ? `<div class="pp-kpis" id="pp-kpis">${htmlKpisProposta(cx, ls)}</div>` : ''}
+    ${pend.length ? `<div class="alert a" style="margin:10px 12px"><i class="fa-solid fa-hourglass-half"></i><div><b>${pend.length} exame(s) com valor da Particular aguardando aprovação.</b> O desconto deles já considera o valor proposto da Particular; se ela for rejeitada, volta a valer o publicado. <a href="#" onclick="abrirProposta('${idPend}');return false">Abrir a proposta da Particular</a></div></div>` : ''}
     <div class="tbl-wrap"><table class="pp-tab"><thead><tr><th>Exame</th><th class="num">${o.colDe}</th><th class="num">${o.colPara}</th>${comDesc ? '<th class="num">Desconto</th>' : ''}<th class="num">Margem</th></tr></thead>
       <tbody>${ls.map(x => `<tr data-k="${esc(x.k)}">
         <td class="pp-ex"><span class="mn">${esc(x.mn ?? '—')}</span>${o.marca?.(x) || ''}<small title="${esc(x.e?.descricao || '')}">${esc(x.e?.descricao || 'exame excluído')}</small></td>
@@ -246,6 +260,28 @@ function abrirProposta(id) {
       ${pendente && aprova ? `<button class="btn perigo-txt" onclick="decidirProposta('${id}','rejeitada')"><i class="fa-solid fa-circle-xmark"></i>Rejeitar</button>
         <button class="btn pri" id="pp-aprovar" ${cx ? '' : 'disabled'} onclick="decidirProposta('${id}','aprovada')"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : `<button class="btn" onclick="fecharGaveta()">Fechar</button>`}`
   });
+}
+
+// Dados mudaram com a proposta aberta (Particular, custos, outra proposta…): recalcula sem perder
+// os valores revisados nem a observação. Com um campo em edição, só os números das linhas.
+function atualizarPropostaAberta() {
+  const corpo = document.getElementById('g-corpo');
+  if (!_propId || !document.getElementById('pp-abaixo') || !ESTADO.propostas[_propId]) return;
+  const foco = document.activeElement;
+  if (foco && corpo?.contains(foco) && /INPUT|TEXTAREA/.test(foco.tagName)) {
+    document.querySelectorAll('#g-corpo .pp-tab tr input').forEach(revisarItem);
+    return;
+  }
+  const rev = { ..._propRev }, txt = valorCampo('pp-motivo'), topo = corpo?.scrollTop || 0;
+  abrirProposta(_propId);
+  const campo = document.getElementById('pp-motivo');
+  if (campo) campo.value = txt;
+  Object.entries(rev).forEach(([k, val]) => {
+    const inp = [...document.querySelectorAll('#g-corpo .pp-tab tr')].find(tr => tr.dataset.k === k)?.querySelector('input');
+    if (inp) { inp.value = val != null ? val.toFixed(2) : ''; revisarItem(inp); }
+  });
+  const novo = document.getElementById('g-corpo');
+  if (novo) novo.scrollTop = topo;
 }
 
 function revisarItem(inp) {

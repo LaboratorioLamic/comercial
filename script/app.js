@@ -37,7 +37,7 @@ async function iniciar() {
     aplicarPermissoes();
     if (!podeVerTela(telaAtual)) return irPara('inicio');
     // Gaveta aberta: redesenha quando ela fechar
-    if (document.getElementById('gaveta').classList.contains('open')) { _renderAdiado = true; return; }
+    if (document.getElementById('gaveta').classList.contains('open')) { _renderAdiado = true; atualizarPropostaAberta(); return; }
     // Digitando em um campo da tela: redesenha só quando sair dele
     if (campoEmEdicao()) { _renderAdiado = true; return; }
     renderTela();
