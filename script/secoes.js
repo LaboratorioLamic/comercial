@@ -169,15 +169,19 @@ const ITENS_PDF_INS = {
 };
 const ipdf = Object.fromEntries(Object.keys(ITENS_PDF_INS).map(k => [k, true]));
 
-// Conteúdo atual do editor (inclui o que ainda não foi salvo)
+// Exame do PDF: null = o que está aberto no editor; id = o que está salvo no catálogo (aba da ficha)
+let _pdfId = null;
+// Conteúdo atual do editor (inclui o que ainda não foi salvo) ou o salvo no catálogo
 function conteudoPdfInstrucao() {
-  const r = ESTADO.catalogo[_iEd.id] || {}, dias = parseInt(valorCampo('in-dias'), 10);
-  return { mn: r.mn || ESTADO.exames[_iEd.id]?.mn || _iEd.id, nome: valorCampo('in-nome').trim() || r.nome || '', material: valorCampo('in-mat').trim(),
-    prazo: (isNaN(dias) ? prazoDe(r) : prazoTexto(Math.max(0, dias))).replace(/\bdias\b(?!\s+[uú]teis)/i, 'dias úteis').replace(/\bdia\b(?!\s+[uú]til)/i, 'dia útil'),
-    secoes: limparSecoes(_iEd.sec), anexos: _iEd.anexos.filter(a => urlValida(a.url)).map(a => ({ nome: String(a.nome || '').trim() || 'Anexo', url: a.url.trim() })) };
+  const id = _pdfId || _iEd.id, r = ESTADO.catalogo[id] || {}, dias = _pdfId ? NaN : parseInt(valorCampo('in-dias'), 10);
+  const anexos = _pdfId ? anexosDe(r) : _iEd.anexos;
+  return { mn: r.mn || ESTADO.exames[id]?.mn || id, nome: (_pdfId ? '' : valorCampo('in-nome').trim()) || r.nome || '', material: _pdfId ? String(r.material || '').trim() : valorCampo('in-mat').trim(),
+    prazo: (isNaN(dias) ? prazoDe(r) || '' : prazoTexto(Math.max(0, dias))).replace(/\bdias\b(?!\s+[uú]teis)/i, 'dias úteis').replace(/\bdia\b(?!\s+[uú]til)/i, 'dia útil'),
+    secoes: _pdfId ? secoesDe(r) : limparSecoes(_iEd.sec), anexos: anexos.filter(a => urlValida(a.url)).map(a => ({ nome: String(a.nome || '').trim() || 'Anexo', url: a.url.trim() })) };
 }
 
-function abrirPdfInstrucao() {
+function abrirPdfInstrucao(id = null) {
+  _pdfId = id;
   const c = conteudoPdfInstrucao();
   const tem = k => k === 'mn' ? true : k === 'anexos' ? c.anexos.length : k in SECOES ? c.secoes[k] : c[k];
   const linha = ([k, it]) => `<div class="casc-r ${tem(k) ? '' : 'vazia'}"><div class="lft"><i class="fa-solid ${it.icone}" ${it.cor ? `style="color:${it.cor}"` : ''}></i><div>${it.nome}${tem(k) ? '' : '<div class="s">sem informação</div>'}</div></div>
@@ -188,7 +192,7 @@ function abrirPdfInstrucao() {
         <button class="icon-btn" title="Fechar" onclick="fecharJanela()"><i class="fa-solid fa-xmark"></i></button></div>
       <div class="jan-b"><div class="sec-t"><i class="fa-solid fa-sliders"></i>O que entra no PDF</div>
         <div class="casc">${Object.entries(ITENS_PDF_INS).map(linha).join('')}</div>
-        <div class="hint" style="margin-top:8px"><i class="fa-solid fa-circle-info"></i> Sai com a logo, o nome do exame e o conteúdo que está na tela, mesmo antes de salvar.</div></div>
+        <div class="hint" style="margin-top:8px"><i class="fa-solid fa-circle-info"></i> Sai com a logo, o nome do exame e ${id ? 'o conteúdo salvo no catálogo' : 'o conteúdo que está na tela, mesmo antes de salvar'}.</div></div>
       <div class="modal-acoes"><button class="btn" onclick="fecharJanela()">Cancelar</button>
         <button class="btn perigo" id="ipdf-gerar" onclick="gerarPdfInstrucao()"><i class="fa-solid fa-file-pdf"></i>Gerar PDF</button></div></div>`;
   m.classList.add('open');

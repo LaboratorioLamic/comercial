@@ -339,5 +339,6 @@ async function desenharCatalogoFicha(id) {
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-file-lines"></i><div class="sc-chips">${Object.keys(secoesDe(r)).map(k => `<span class="sc-chip" style="--c:${SECOES[k].cor}" title="${esc(secoesDe(r)[k].slice(0, 300))}"><i class="fa-solid ${SECOES[k].icone}"></i>${SECOES[k].nome}</span>`).join('') || '<span class="muted">sem instrução</span>'}</div></div></div>
       ${anexosDe(r).length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-paperclip"></i><div class="anx-links">${anexosDe(r).map(linkAnexo).join('')}</div></div></div>` : ''}
       <div class="casc-r"><div class="lft">${Object.entries(CHECKS).map(([k, c]) => `<span class="badge-s ${r[k] ? 'ok' : 'off'}"><i class="fa-solid ${r[k] ? 'fa-check' : c.icone}"></i>${c.nome}</span>`).join(' ')}</div>
-        <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></div></div>`;
+        <span class="fx-ins-ac"><button class="btn sm bt-pdf" title="Gerar PDF do exame" onclick="abrirPdfInstrucao('${id}')"><i class="fa-solid fa-file-pdf"></i></button>
+          <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></span></div></div>`;
 }
