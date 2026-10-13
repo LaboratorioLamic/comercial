@@ -196,6 +196,25 @@ button.tcard:hover, .tcard.clicavel:hover { border-color: var(--cyan); box-shado
 .set-abas { margin-bottom: 16px; }
 .set-abas button { padding: 7px 14px; font-size: 12.5px; }
 .lista-ex { max-height: 320px; overflow-y: auto; }
+.ia-mats { margin-top: -6px; max-height: 190px; overflow-y: auto; }
+.ia-mats[hidden] { display: none; }
+/* Apoios: histórico da tabela, um bloco por lote */
+.ah-l { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 18px; }
+.ah { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-card); }
+.ah summary { display: flex; align-items: center; gap: 12px; padding: 11px 14px; cursor: pointer; list-style: none; }
+.ah summary::-webkit-details-marker { display: none; }
+.ah summary:hover { background: var(--bg-soft); }
+.ah[open] summary { border-bottom: 1px solid var(--border); background: var(--bg-soft); }
+.ah-t { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ah-t b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ah-t small { font-size: 11.5px; color: var(--text-muted); }
+.ah-r { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ah-chev { font-size: 10px; color: var(--text-muted); transition: transform .2s; }
+.ah[open] .ah-chev { transform: rotate(180deg); }
+.ah .tbl-wrap { max-height: 420px; overflow-y: auto; }
+.seg button b { font-family: "DM Mono", monospace; font-weight: 500; opacity: .75; }
+.lista-ex.alta { max-height: max(320px, calc(100vh - 430px)); }
+.chip b { font-family: "DM Mono", monospace; font-size: 11px; font-weight: 500; opacity: .75; }
 .lista-ex .lin-ex { padding: 7px 12px; }
 .lista-ex .lin-ex .s { max-width: 330px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lista-ex-cab { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--text-muted); margin: 0 0 8px 12px; }
@@ -345,6 +364,40 @@ td.hier-bad { color: var(--red); font-weight: 600; background: var(--red-bg); }
 .anx-r .pre i { font-size: 11px; }
 a.icon-btn { text-decoration: none; }
 .anx-ac { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* ── Instrução em campos por categoria (secoes.js) ── */
+/* botões fora do <label>: dentro dele, o hover do rótulo acende o primeiro botão */
+.sc-top { display: flex; align-items: center; gap: 7px; }
+.sc-ac { margin-left: auto; display: flex; gap: 6px; }
+.sc-ac .btn i { color: inherit; }
+.sc-ac .btn.on { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
+.sc-ext { margin-bottom: 10px; padding: 10px; border: 1px dashed var(--cyan); border-radius: var(--radius); background: var(--cyan-light); display: flex; flex-direction: column; gap: 6px; }
+.sc-ext .txt-grande { background: var(--bg-card); }
+.sc-ext .anx-ac { margin-top: 2px; }
+.sc-lista { display: flex; flex-direction: column; gap: 8px; }
+.sc-f { border: 1px solid var(--border); border-left: 3px solid var(--c); border-radius: var(--radius); background: var(--bg-card); transition: var(--t); }
+.sc-f:focus-within { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 14%, transparent); }
+.sc-h { display: flex; align-items: center; gap: 9px; padding: 8px 8px 0 10px; }
+.sc-h b { flex: 1; font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.sc-ic { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--c); background: color-mix(in srgb, var(--c) 13%, transparent); }
+.sc-cp { width: 28px; height: 28px; border: 0; border-radius: 7px; background: none; color: var(--text-muted); font-size: 12.5px; transition: var(--t); }
+.sc-cp:hover { color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); }
+.sc-f textarea { display: block; width: 100%; border: 0; outline: none; background: none; resize: none; padding: 6px 12px 10px 45px; color: var(--text-primary); font-family: inherit; font-size: 13px; line-height: 1.5; min-height: 34px; }
+.sc-f textarea::placeholder { color: var(--text-muted); opacity: .6; }
+.sc-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.sc-chip { display: inline-flex; gap: 6px; align-items: center; font-size: 11.5px; font-weight: 500; padding: 3px 8px; border-radius: 6px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); }
+.sc-chip i { font-size: 10px; }
+.btn.bt-pdf { width: 38px; padding: 0; justify-content: center; background: var(--red); border-color: var(--red); color: #fff; font-size: 15px; }
+.btn.bt-pdf:hover:not(:disabled) { filter: brightness(.92); color: #fff; }
+.modal-card.jan { max-width: 440px; padding: 0; text-align: left; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+.jan-h { display: flex; gap: 12px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.jan-h > div { flex: 1; min-width: 0; }
+.jan-h h3 { margin: 0; }
+.jan-h small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jan-h .sc-ic { width: 36px; height: 36px; font-size: 16px; }
+.jan-b { padding: 16px 18px; overflow-y: auto; }
+.jan .modal-acoes { margin: 0; padding: 14px 18px; border-top: 1px solid var(--border); justify-content: flex-end; }
+.jan .casc-r.vazia .lft { opacity: .5; }
 .anx-links { display: flex; gap: 6px; flex-wrap: wrap; }
 .anx-links a { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 6px; background: var(--cyan-light); color: var(--cyan); text-decoration: none; transition: var(--t); }
 .anx-links a:hover { background: var(--cyan); color: #fff; }
@@ -484,6 +537,14 @@ tr.vlin.vsel td { background: var(--cyan-light); }
 .dx-neg { padding: 12px 14px; border-bottom: 1px solid var(--border); background: var(--bg-soft); display: flex; flex-direction: column; gap: 8px; }
 
 /* ── Tabelas de preço: janela "Gerenciar exames" ── */
+.pp-just { display: flex; gap: 12px; align-items: flex-start; margin: 14px 0; padding: 14px 16px; border: 1px solid var(--cyan); border-left-width: 4px; border-radius: 12px; background: var(--cyan-light); }
+.pp-just > i { margin-top: 2px; font-size: 16px; color: var(--cyan); }
+.pp-just span { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--cyan); }
+.pp-just p { margin: 4px 0 0; font-size: 14px; line-height: 1.45; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pp-lock { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px dashed var(--amber); border-radius: 9px; background: var(--amber-bg); color: var(--amber); font-family: "DM Mono", monospace; font-size: 12.5px; white-space: nowrap; transition: var(--t); }
+.pp-lock:hover { border-style: solid; }
+.pp-lock i { font-size: 10px; }
+.gx-lock { display: flex; justify-content: flex-end; }
 .fx-conf { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg-soft); text-align: left; font-size: 12.5px; }
 .fx-conf > span { display: flex; justify-content: space-between; gap: 12px; }
 .fx-conf i { font-style: normal; font-family: "DM Mono", monospace; color: var(--text-secondary); white-space: nowrap; }
@@ -616,7 +677,13 @@ tr.vlin.vsel td { background: var(--cyan-light); }
 .pp-tab small { display: block; font-size: 10.5px; font-weight: 400; color: var(--text-muted); line-height: 1.35; }
 .pp-tab small.delta-up { color: var(--red); } .pp-tab small.delta-dn { color: var(--green); }
 .pp-ex { max-width: 230px; }
+.pp-ex.lk { cursor: pointer; }
+.pp-ex.lk:hover .mn { text-decoration: underline; }
 .pp-ex small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-set { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 10.5px; color: var(--text-secondary); opacity: .8; }
+.pp-set span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-set span::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.pp-set i { font-size: 10px; }
 .pp-v b { font-family: "DM Mono", monospace; font-size: 13px; font-weight: 500; }
 .pp-q b.g { color: var(--green); } .pp-q b.a { color: var(--amber); } .pp-q b.r { color: var(--red); }
 .pp-var:empty { display: none; }

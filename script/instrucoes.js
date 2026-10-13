@@ -7,6 +7,7 @@
 //   A Mnemônico · B Material Biológico · C Nome do Exame · D Prazo (dias) · E Prazo (texto)
 //   H Site · I Unilab · J Revisado · K Mnemônico (espelho) · L Instrução
 //   (A–E e H–L são tabelas independentes: o vínculo é pelo mnemônico)
+// A instrução é editada em campos por categoria (Jejum, Orientações…): ver secoes.js
 
 const CHECKS = {
   site:     { nome: 'Site',     icone: 'fa-globe',       acao: 'editar' },
@@ -40,6 +41,13 @@ function extrairAnexos(texto) {
   if (anexos.length) t = t.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trimEnd().replace(/(^|\n)[ \t]*(?:🔗[ \t]*)?anexos?[ \t]*:?[ \t]*$/i, '').trim();
   return { texto: t, anexos };
 }
+// O mesmo, campo a campo → { secoes, anexos }
+function extrairAnexosSecoes(secoes) {
+  const s = {};
+  let anexos = [];
+  Object.entries(secoes || {}).forEach(([k, t]) => { const x = extrairAnexos(t); s[k] = x.texto; anexos = juntarAnexos(anexos, x.anexos); });
+  return { secoes: limparSecoes(s), anexos };
+}
 const juntarAnexos = (atuais, novos) => [...atuais, ...novos.filter(n => !atuais.some(a => a.url === n.url))];
 
 // ── Importação ────────────────────────────────────────────────
@@ -57,7 +65,7 @@ function analisarCatalogo(texto) {
     const mn2 = String(l[10] || '').trim();
     if (mn2 && normalizar(mn2) !== 'mnemonico') {
       const r = reg(mn2), x = extrairAnexos(String(l[11] || '').trim());   // links do texto viram anexos
-      Object.assign(r, { instrucao: x.texto || null, anexos: x.anexos.length ? x.anexos : null, site: verdadeiro(l[7]), unilab: verdadeiro(l[8]), revisado: verdadeiro(l[9]) });
+      Object.assign(r, { ...dadosInstrucao(x.texto), anexos: x.anexos.length ? x.anexos : null, site: verdadeiro(l[7]), unilab: verdadeiro(l[8]), revisado: verdadeiro(l[9]) });
     }
   });
   const ls = Object.values(cat);
@@ -96,12 +104,15 @@ async function renderInstrucoes() {
   const cat = catalogoAba(), n = cat.length, nInat = lista(ESTADO.catalogo).filter(insInativo).length;
   const qtd = k => cat.filter(r => r[k]).length;
   const comLink = pode('instrucoes', 'editar') ? cat.filter(r => temLinkNoTexto(r.instrucao)).length : 0;
+  const aMigrar = pode('instrucoes', 'editar') ? pendentesMigracao().length : 0;
   const barra = (rot, v, ic, cor) => `<div class="prog"><div class="prog-l"><i class="fa-solid ${ic}" style="color:${cor}"></i>${rot}<b>${num(v, 0)} / ${num(n, 0)}</b><span>${n ? pct(v / n, 0) : '—'}</span></div><div class="barra"><div style="width:${n ? v / n * 100 : 0}%;background:${cor}"></div></div></div>`;
   el.innerHTML = `
     <div class="h-row"><div><h2>Instruções</h2><p>Catálogo do exame (nome, material, prazo) e instruções de coleta com checklist de publicação</p></div>
       ${pode('instrucoes', 'importar') ? `<button class="btn" onclick="ins.imp.passo=1;ins.imp.erro='';renderInstrucoes()"><i class="fa-solid fa-file-import"></i>Importar planilha</button>` : ''}</div>
     ${ins.imp.passo ? `<div class="card" style="margin-bottom:14px" id="ins-imp">${htmlImportCatalogo()}</div>` : ''}
-    ${comLink ? `<div class="alert a" style="align-items:center"><i class="fa-solid fa-paperclip"></i><div style="flex:1"><b>${comLink} instrução(ões) com link escrito no texto.</b> O site dos apoiados (L2L) só mostra os links cadastrados no campo Anexos.</div>
+    ${aMigrar ? `<div class="alert x" style="align-items:center"><i class="fa-solid fa-table-list"></i><div style="flex:1"><b>${num(aMigrar, 0)} instrução(ões) ainda em texto único.</b> A migração separa cada uma nos campos (Jejum, Orientações, Conservação…) pelos títulos do texto.</div>
+      <button class="btn sm" onclick="migrarSecoes()"><i class="fa-solid fa-wand-magic-sparkles"></i>Migrar para campos</button></div>` : ''}
+    ${comLink && !aMigrar ? `<div class="alert a" style="align-items:center"><i class="fa-solid fa-paperclip"></i><div style="flex:1"><b>${comLink} instrução(ões) com link escrito no texto.</b> O site dos apoiados (L2L) só mostra os links cadastrados no campo Anexos.</div>
       <button class="btn sm" onclick="converterLinksEmAnexos()"><i class="fa-solid fa-wand-magic-sparkles"></i>Converter em anexos</button></div>` : ''}
     <div class="subnav" data-grupo="insst">
       <button data-p="ativos" class="${ins.inativos ? '' : 'on'}"><i class="fa-solid fa-play"></i>Ativos<span class="n-sub neutro">${num(Object.keys(ESTADO.catalogo).length - nInat, 0)}</span></button>
@@ -208,7 +219,7 @@ async function abrirInstrucao(id, voltarFicha = null) {
   await garantirCatalogo();
   const r = ESTADO.catalogo[id] || { mn: ESTADO.exames[id]?.mn || id };
   const editar = pode('instrucoes', 'editar');
-  _iEd = { id, voltar: voltarFicha, checks: { site: !!r.site, unilab: !!r.unilab, revisado: !!r.revisado }, anexos: anexosDe(r).map(a => ({ nome: a.nome || '', url: a.url || '' })) };
+  _iEd = { id, voltar: voltarFicha, sec: secoesDe(r), checks: { site: !!r.site, unilab: !!r.unilab, revisado: !!r.revisado }, anexos: anexosDe(r).map(a => ({ nome: a.nome || '', url: a.url || '' })) };
   const quem = k => r[k] && r[`${k}Por`] ? `${esc(r[`${k}Por`])} · ${dataHora(r[`${k}Em`])}` : r[k] ? 'importado da planilha' : 'pendente';
   abrirGaveta({
     sobre: r.mn, titulo: r.nome || 'Instrução do exame',
@@ -219,17 +230,18 @@ async function abrirInstrucao(id, voltarFicha = null) {
         ${campo('in-mat', 'Material biológico', r.material || '', { tipo: 'text', desab: !editar })}
         ${campo('in-dias', 'Prazo (dias)', diasPrazo(id) ?? '', { passo: '1', desab: !editar, dica: '0 = 24 Horas' })}
       </div>
-      <div class="field"><label><i class="fa-solid fa-file-lines"></i>Instrução</label>
-        <textarea id="in-txt" class="txt-grande" ${editar ? '' : 'disabled'} placeholder="Jejum, preparo, coleta, conservação…" oninput="atualizarExtrairAnexos()">${esc(r.instrucao || '')}</textarea></div>
+      ${htmlSecoesIns(editar)}
       <div class="field"><label><i class="fa-solid fa-paperclip"></i>Anexos</label><div id="in-anexos"></div>
         <span class="hint">Links (Drive, PDF, formulário) que aparecem clicáveis para os laboratórios apoiados no L2L.</span></div>
       <div class="sec-t"><i class="fa-solid fa-list-check"></i>Publicação</div>
       <div class="casc">${Object.entries(CHECKS).map(([k, c]) => `<div class="casc-r"><div class="lft"><i class="fa-solid ${c.icone}"></i><div>${c.nome === 'Revisado' ? 'Revisado' : 'Publicado no ' + c.nome}<div class="s">${quem(k)}</div></div></div>${chave(_iEd.checks[k], `_iEd.checks['${k}']=!_iEd.checks['${k}'];this.classList.toggle('on')`, !pode('instrucoes', c.acao))}</div>`).join('')}</div>
     </div>`,
-    rodape: `${voltarFicha ? `<button class="btn" style="margin-right:auto" onclick="abrirFicha('${voltarFicha}','instrucoes')"><i class="fa-solid fa-arrow-left"></i>Ficha do exame</button>` : ''}
-      <button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
+    rodape: `<button class="btn bt-pdf" title="Gerar PDF do exame" onclick="abrirPdfInstrucao()"><i class="fa-solid fa-file-pdf"></i></button>
+      ${voltarFicha ? `<button class="btn" onclick="abrirFicha('${voltarFicha}','instrucoes')"><i class="fa-solid fa-arrow-left"></i>Ficha do exame</button>` : ''}
+      <span style="margin-right:auto"></span><button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
       ${editar || pode('instrucoes', 'aprovar') ? `<button class="btn pri" onclick="gravarInstrucao()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>` : ''}`
   });
+  desenharSecoesIns();
   desenharAnexosIns();
 }
 
@@ -256,13 +268,14 @@ function adicionarAnexoIns() {
 // O botão de converter só aparece enquanto o texto tem <a href="…">
 function atualizarExtrairAnexos() {
   const b = document.getElementById('in-extrair');
-  if (b) b.style.display = temLinkNoTexto(valorCampo('in-txt')) ? '' : 'none';
+  if (b) b.style.display = Object.values(_iEd.sec).some(temLinkNoTexto) ? '' : 'none';
 }
 function extrairAnexosDoTexto() {
-  const txt = document.getElementById('in-txt'), x = extrairAnexos(txt.value);
+  const x = extrairAnexosSecoes(_iEd.sec);
   if (!x.anexos.length) return toast('Nenhum link válido no texto', 'aviso');
-  txt.value = x.texto;
+  _iEd.sec = x.secoes;
   _iEd.anexos = juntarAnexos(_iEd.anexos.filter(a => a.nome || a.url), x.anexos);
+  desenharSecoesIns();
   desenharAnexosIns();
   toast(`${x.anexos.length} link(s) do texto viraram anexos`);
 }
@@ -276,15 +289,15 @@ async function converterLinksEmAnexos() {
   const upd = {}, u = usuarioAtual();
   let n = 0;
   alvo.forEach(r => {
-    const x = extrairAnexos(r.instrucao);
+    const x = extrairAnexosSecoes(secoesDe(r));
     if (!x.anexos.length) return;
     const anexos = juntarAnexos(anexosDe(r), x.anexos);
-    Object.assign(upd, { [`${r.id}/instrucao`]: x.texto || null, [`${r.id}/anexos`]: anexos, [`${r.id}/atualizadoEm`]: DB.agora(), [`${r.id}/atualizadoPor`]: u.nome });
+    Object.assign(upd, { [`${r.id}/secoes`]: Object.keys(x.secoes).length ? x.secoes : null, [`${r.id}/instrucao`]: juntarSecoes(x.secoes) || null, [`${r.id}/anexos`]: anexos, [`${r.id}/atualizadoEm`]: DB.agora(), [`${r.id}/atualizadoPor`]: u.nome });
     n += x.anexos.length;
   });
   if (!n) return toast('Nenhum link válido encontrado', 'aviso');
   await DB.mesclar('catalogo', upd);
-  registrar('catalogo', `Links do texto convertidos em anexos: ${n} em ${Object.keys(upd).length / 4} instruções`);
+  registrar('catalogo', `Links do texto convertidos em anexos: ${n} em ${Object.keys(upd).length / 5} instruções`);
   toast(`${n} anexo(s) criados`);
 }
 
@@ -295,11 +308,11 @@ async function gravarInstrucao() {
     const ruim = anexos.find(a => !urlValida(a.url));
     if (ruim) return toast(`Anexo ${ruim.nome || 'sem nome'}: o link precisa começar com http:// ou https://`, 'erro');
     anexos.forEach(a => { a.nome ||= 'Anexo'; });
-    const dias = parseInt(valorCampo('in-dias'), 10);
+    const dias = parseInt(valorCampo('in-dias'), 10), sec = limparSecoes(_iEd.sec);
     Object.assign(dados, { nome: valorCampo('in-nome').trim() || null, material: valorCampo('in-mat').trim() || null, prazoDias: isNaN(dias) ? null : Math.max(0, dias),
-      prazo: isNaN(dias) ? (r.prazo ?? null) : null, instrucao: valorCampo('in-txt').trim() || null, anexos: anexos.length ? anexos : null });
+      prazo: isNaN(dias) ? (r.prazo ?? null) : null, secoes: Object.keys(sec).length ? sec : null, instrucao: juntarSecoes(sec) || null, anexos: anexos.length ? anexos : null });
     // texto mudou → volta a precisar de revisão
-    if ((dados.instrucao || '') !== (r.instrucao || '') && r.revisado && _iEd.checks.revisado) _iEd.checks.revisado = false;
+    if (!mesmasSecoes(sec, secoesDe(r)) && r.revisado && _iEd.checks.revisado) _iEd.checks.revisado = false;
   }
   Object.entries(_iEd.checks).forEach(([k, v]) => {
     if (!pode('instrucoes', CHECKS[k].acao) || !!r[k] === v) return;
@@ -323,7 +336,7 @@ async function desenharCatalogoFicha(id) {
   el.innerHTML = !r ? `<div class="muted" style="font-size:12.5px"><i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)"></i> Exame fora do catálogo de instruções. ${pode('instrucoes', 'editar') ? `<a href="#" onclick="abrirInstrucao('${id}','${id}');return false">Cadastrar</a>` : ''}</div>`
     : `<div class="casc">
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-vial"></i><div>${esc(r.material || '—')}<div class="s">${esc(r.nome || '')}</div></div></div><span class="tag"><i class="fa-solid fa-clock"></i>${esc(prazoDe(r) || '—')}</span></div>
-      <div class="casc-r"><div class="lft"><i class="fa-solid fa-file-lines"></i><div class="ins-prev">${r.instrucao ? esc(r.instrucao.slice(0, 220)) + (r.instrucao.length > 220 ? '…' : '') : '<span class="muted">sem instrução</span>'}</div></div></div>
+      <div class="casc-r"><div class="lft"><i class="fa-solid fa-file-lines"></i><div class="sc-chips">${Object.keys(secoesDe(r)).map(k => `<span class="sc-chip" style="--c:${SECOES[k].cor}" title="${esc(secoesDe(r)[k].slice(0, 300))}"><i class="fa-solid ${SECOES[k].icone}"></i>${SECOES[k].nome}</span>`).join('') || '<span class="muted">sem instrução</span>'}</div></div></div>
       ${anexosDe(r).length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-paperclip"></i><div class="anx-links">${anexosDe(r).map(linkAnexo).join('')}</div></div></div>` : ''}
       <div class="casc-r"><div class="lft">${Object.entries(CHECKS).map(([k, c]) => `<span class="badge-s ${r[k] ? 'ok' : 'off'}"><i class="fa-solid ${r[k] ? 'fa-check' : c.icone}"></i>${c.nome}</span>`).join(' ')}</div>
         <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></div></div>`;

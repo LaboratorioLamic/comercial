@@ -19,7 +19,8 @@ const CTRL_EXAME = {
 };
 const iconesExame = e =>
   (e.auditar ? ' <i class="fa-solid fa-magnifying-glass-dollar flag" style="color:var(--amber)" title="Valor a auditar"></i>' : '') +
-  (e.origem === 'apoio' && negociadoExame(e) ?' <i class="fa-solid fa-handshake flag" style="color:var(--green)" title="Apoio com negociação"></i>' : '') +
+  (e.origem !== 'apoio' ? '' : negociadoExame(e) ? ' <i class="fa-solid fa-handshake flag" style="color:var(--green)" title="Apoio com negociação"></i>'
+    : ' <i class="fa-solid fa-handshake-slash flag" style="color:var(--red)" title="Apoio sem valor negociado"></i>') +
   (e.foraDoSistema ? ' <i class="fa-solid fa-plug-circle-xmark flag" style="color:var(--text-muted)" title="Fora do sistema"></i>' : '');
 
 function opcoesSetorPop(rotuloTodos, extras = [], contar = null) {

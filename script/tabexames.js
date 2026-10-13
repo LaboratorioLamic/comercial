@@ -63,6 +63,7 @@ async function abrirGerirExames(alvo) {
   fecharPop();
   await carregarRascunho(alvo);
   if (gxPart(cx)) await carregarRascunho('particular');
+  limparRascTravado(cx);
   Object.assign(gx, { alvo, q: '', sug: [], hi: 0, fix: new Set(Object.keys(rasc(alvo))) });
   let m = document.getElementById('gx');
   if (!m) {
@@ -216,6 +217,7 @@ function gxCabecalho(cx, todos = gxItens(cx, false)) {
 function desenharGerirExames() {
   const cx = gxCtx(), el = document.getElementById('gx-lista');
   if (!cx || !el) return;
+  limparRascTravado(cx);
   const todos = gxItens(cx, false);
   gxCabecalho(cx, todos);
   todos.forEach(x => { if (x.ed) gx.fix.add(x.k); });
@@ -260,9 +262,9 @@ function htmlLinhaGx(cx, e) {
     <div class="gx-v gx-dyn">${cx.base ? margemB : margem}${mAlvo != null ? `<small title="Margem de referência">ref. ${pct(mAlvo, 0)}</small>` : ''}</div>
     <div class="gx-v gx-dyn">${cx.base ? custo : desconto}${ref && !cx.lab && !cx.base ? `<small title="Desconto de referência">ref. ${pct(x.descRef, 0)}</small>` : ''}</div>
     ${part}
-    <div class="price-in ${ed ? 'on' : ''}"><span>R$</span><input type="number" step="0.01" min="0" data-c="v" value="${preco != null ? preco.toFixed(2) : ''}" placeholder="—"
-      oninput="gxEditar(this)" onkeydown="gxTecla(event)" onfocus="this.select()"></div>
-    <div class="gx-a gx-dyn">${ed ? `<button title="Desfazer alteração" onclick="gxAcao(this,'desf')"><i class="fa-solid fa-rotate-left"></i></button>` : ''}${cx.base ? '' : preco == null
+    ${x.pend ? `<div class="gx-lock">${htmlTravaProposta(x.pend, cx.lab)}</div>` : `<div class="price-in ${ed ? 'on' : ''}"><span>R$</span><input type="number" step="0.01" min="0" data-c="v" value="${preco != null ? preco.toFixed(2) : ''}" placeholder="—"
+      oninput="gxEditar(this)" onkeydown="gxTecla(event)" onfocus="this.select()"></div>`}
+    <div class="gx-a gx-dyn">${ed ? `<button title="Desfazer alteração" onclick="gxAcao(this,'desf')"><i class="fa-solid fa-rotate-left"></i></button>` : ''}${cx.base || x.pend ? '' : preco == null
       ? `<button class="add" title="${cx.lab ? 'Adicionar valor diferenciado' : 'Adicionar à tabela'}" onclick="gxAcao(this,'add')"><i class="fa-solid fa-plus"></i></button>`
       : `<button class="rem" title="${cx.lab ? 'Remover valor diferenciado' : 'Retirar da tabela'}" onclick="gxAcao(this,'rem')"><i class="fa-solid fa-xmark"></i></button>`}</div></div>`;
 }
@@ -315,6 +317,9 @@ function gxIrParticular() {
 function gxAcao(btn, a) {
   const cx = gxCtx(), k = btn.closest('.gx-l').dataset.k, e = ESTADO.exames[k];
   if (!e) return;
+  // valor já em proposta pendente: só desfazer; o resto leva à proposta
+  const pend = propPendente(cx.alvo, k);
+  if (pend && a !== 'desf' && a !== 'desfp') return abrirProposta(pend.id);
   if (a === 'desfp') definirRasc(ctxAlvo('particular'), k, undefined);
   else if (a === 'desf') definirRasc(cx, k, undefined);
   else if (a === 'rem') definirRasc(cx, k, null);

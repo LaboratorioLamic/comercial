@@ -100,14 +100,30 @@ async function carregarRascunho(alvo) {
   return Object.keys(v).length > 0;
 }
 
+// Exame já em proposta pendente do alvo: { id, para } | null (exceto: proposta a ignorar)
+function propPendente(alvo, k, exceto) {
+  for (const [id, p] of Object.entries(ESTADO.propostas || {}))
+    if (p.status === 'pendente' && p.alvo === alvo && id !== exceto && p.itens?.[k]) return { id, para: p.itens[k].para ?? null };
+  return null;
+}
+// Valor travado: mostra o que está proposto e abre a proposta
+const htmlTravaProposta = (pend, lab) => `<button type="button" class="pp-lock" title="Em proposta aguardando aprovação: clique para abrir (a alteração é feita na própria proposta)" onclick="event.stopPropagation();abrirProposta('${pend.id}')"><i class="fa-solid fa-hourglass-half"></i>${pend.para != null ? fmt(pend.para) : lab ? 'remover' : 'retirar'}</button>`;
+
 // v: número · null (retirar da tabela) · undefined (desfazer)
+// Devolve false sem alterar quando o exame já está em proposta pendente (só desfazer é aceito)
 function definirRasc(cx, k, v) {
+  if (v !== undefined && propPendente(cx.alvo, k)) return false;
   const r = rasc(cx.alvo), s = cx.salvo(k);
   if (v === undefined || (v == null && s == null) || (v != null && s != null && Math.abs(v - s) < 0.005)) delete r[k];
   else r[k] = v == null ? null : Math.round(v * 100) / 100;
   (_rascPend[cx.alvo] ??= new Set()).add(k);
   clearTimeout(_rascTimer[cx.alvo]);
   _rascTimer[cx.alvo] = setTimeout(() => gravarRasc(cx.alvo), 500);
+}
+// Tira do rascunho o que já está em proposta pendente (rascunho antigo ou proposta enviada por outra pessoa)
+function limparRascTravado(cx) {
+  if (!cx || !usuarioAtual()) return;
+  Object.keys(rasc(cx.alvo)).forEach(k => { if (propPendente(cx.alvo, k)) definirRasc(cx, k, undefined); });
 }
 function gravarRasc(alvo) {
   const ks = _rascPend[alvo];
@@ -294,7 +310,7 @@ function linhaGrade(cx, e) {
   const ref = cx.ref?.valor(k) ?? null;
   // desconto sobre a referência (negativo = preço acima dela); descRef = desconto de referência da tabela
   const c = calcular(e, preco, cx.tab);
-  return { e, k, preco, c, ed: editado(cx, k), salvo: cx.salvo(k), ref, sist: cx.sistema(k), hier,
+  return { e, k, preco, c, ed: editado(cx, k), salvo: cx.salvo(k), ref, sist: cx.sistema(k), hier, pend: propPendente(cx.alvo, k),
     desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.lab || cx.base ? 0 : c.descRef, descMax: cx.tabela && !precoSimbolico(preco) ? c.descMax : null };
 }
 
@@ -352,6 +368,7 @@ function linhasGradeBase(cx) {
 }
 
 function desenharGrade() {
+  limparRascTravado(ctxAtual());
   const cx = ctxAtual(), body = document.getElementById('gr-body');
   if (!cx || !body) return;
   const todas = linhasGradeBase(cx), fls = filtrosDe(cx);
@@ -404,7 +421,7 @@ function htmlLinhaGrade(cx, x, edit) {
   const desc = ref && preco != null ? 1 - preco / ref : null, dmax = acimaDescMax(desc, x.descMax);
   const divg = sist != null && preco != null && Math.abs(sist - preco) > 0.004;
   const b = (a, ic, t, off) => `<button title="${t}" ${off ? 'disabled' : ''} onclick="acaoLinha(this,'${a}')"><i class="fa-solid ${ic}"></i></button>`;
-  const acoes = !edit ? '' : (cx.base ? b('sug', 'fa-wand-magic-sparkles', `Preço sugerido (alvo ${pct(c.alvo)})`, !c.sugerido)
+  const acoes = !edit ? '' : x.pend ? (ed ? b('desf', 'fa-rotate-left', 'Tirar do rascunho') : '') : (cx.base ? b('sug', 'fa-wand-magic-sparkles', `Preço sugerido (alvo ${pct(c.alvo)})`, !c.sugerido)
       : b('ref', cx.lab ? 'fa-equals' : 'fa-percent', cx.lab ? `Usar valor da ${esc(cx.ref?.nome || 'tabela')}` : `Particular − ${pct(c.descRef, 0)}`, ref == null))
     + (cx.base ? '' : b('msug', 'fa-bullseye', c.margemSug != null ? `Sugestão de margem (${pct(c.margemSug, 0)})` : 'Sugestão de margem: defina o percentual em Configurar', c.margemSug == null || c.semCusto))
     + b('piso', 'fa-arrow-up', `Levar ao ${cx.pisoNome} (${pct(c.min, 0)})`, !c.minimo)
@@ -420,8 +437,8 @@ function htmlLinhaGrade(cx, x, edit) {
     <td class="num">${celulaCusto(c)}</td>
     ${cx.base ? `<td class="num muted">${c.sugerido ? fmt(c.sugerido) : '—'}</td>` : `<td class="num muted">${ref != null ? fmt(ref) : '—'}</td><td class="num col-opt ${dmax ? '' : 'muted'}" ${dmax ? `style="color:var(--red)" title="Acima do desconto máximo da tabela (${pct(x.descMax, 0)})"` : ''}>${desc != null ? pct(desc) : '—'}${dmax ? ' <i class="fa-solid fa-ban"></i>' : ''}</td>`}
     ${cx.lab ? '' : `<td class="num col-opt ${divg ? 'aviso' : 'muted'}">${sist != null ? fmt(sist) : '—'}${divg ? ' <i class="fa-solid fa-code-compare" title="Diferente do preço na tabela"></i>' : ''}</td>`}
-    <td class="num"><div class="price-in ${ed ? 'on' : ''}"><span>R$</span><input type="number" step="0.01" min="0" value="${preco != null ? preco.toFixed(2) : ''}" placeholder="—" ${edit ? '' : 'disabled'}
-      oninput="editarPreco(this)" onchange="desenharChipsDepois()" onkeydown="teclaGrade(event)" onfocus="this.select()"></div><div class="delta">${delta}</div></td>
+    <td class="num">${x.pend ? htmlTravaProposta(x.pend, cx.lab) : `<div class="price-in ${ed ? 'on' : ''}"><span>R$</span><input type="number" step="0.01" min="0" value="${preco != null ? preco.toFixed(2) : ''}" placeholder="—" ${edit ? '' : 'disabled'}
+      oninput="editarPreco(this)" onchange="desenharChipsDepois()" onkeydown="teclaGrade(event)" onfocus="this.select()"></div><div class="delta">${delta}</div>`}</td>
     <td class="num" style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">${c.margem != null ? pct(c.margem) : '—'}</td>
     <td>${tag}${x.hier.length ? ` <i class="fa-solid fa-stairs flag hier-flag" title="Quebra a hierarquia: ${esc(x.hier.map(textoQuebra).join(' · '))}"></i>` : ''}</td>
     <td class="acts">${acoes}</td></tr>`;
@@ -539,7 +556,7 @@ function acaoLote(a) {
     if (a === 'piso' && x.c.status !== 'r') return;
     const v = valorAcao(cx, x, a, p);
     if (v === undefined) return;
-    definirRasc(cx, k, v); n++;
+    if (definirRasc(cx, k, v) !== false) n++;
   });
   desenharGrade();
   toast(`${n} preço(s) ${a === 'desf' ? 'restaurado(s)' : 'ajustado(s) no rascunho'}`);
@@ -592,7 +609,7 @@ function criarPopAdicionarExame(cx) {
   criarPop('pop-gradd', {
     rotulo: 'Adicionar', titulo: 'Adicionar exame com valor diferenciado', icone: 'fa-plus', busca: 'Mnemônico ou nome…', padrao: '',
     opcoes: () => [{ valor: '', rotulo: 'Escolha o exame', icone: 'fa-plus' },
-      ...examesVisiveis().filter(e => e.ativo !== false && precoAtual(cx, e.id) == null)
+      ...examesVisiveis().filter(e => e.ativo !== false && precoAtual(cx, e.id) == null && !propPendente(cx.alvo, e.id))
         .sort((a, b) => a.mn.localeCompare(b.mn))
         .map(e => ({ valor: e.id, rotulo: `${e.mn} · ${e.descricao}`, icone: 'fa-flask-vial', desc: cx.ref?.valor(e.id) != null ? `${cx.ref.nome} ${fmt(cx.ref.valor(e.id))}` : 'sem preço na tabela de referência' }))],
     aoMudar: k => {

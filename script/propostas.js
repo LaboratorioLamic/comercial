@@ -51,6 +51,8 @@ const ppVar = x => {
 };
 const ppDesc = x => x.desc == null ? '<span class="muted">—</span>'
   : `<b class="${acimaDescMax(x.desc, x.descMax) || x.desc < -0.0005 ? 'r' : x.descRef != null && x.desc > x.descRef + 0.0005 ? 'a' : ''}"${acimaDescMax(x.desc, x.descMax) ? ` title="Acima do desconto máximo (${pct(x.descMax, 0)})"` : ''}>${pct(x.desc)}</b>${x.descRef != null ? `<small>ref. ${pct(x.descRef, 0)}</small>` : ''}${x.pend ? `<small style="color:var(--amber)" title="Particular com proposta pendente: desconto sobre ${fmt(x.pend.para)} (publicado hoje: ${x.refPub != null ? fmt(x.refPub) : '—'})"><i class="fa-solid fa-hourglass-half"></i> Part. ${fmt(x.pend.para)}</small>` : ''}`;
+// Margem do valor de hoje, sob ele (vermelha abaixo do piso)
+const ppMrg0 = x => x.c0?.margem == null ? '' : `<small${x.c0.status === 'r' ? ' style="color:var(--red)"' : ''} title="Margem do valor de hoje · lucro ${fmt(x.c0.lucro)}">margem ${pct(x.c0.margem)}</small>`;
 const ppMrg = x => {
   if (x.c?.semCusto && pode('exames', 'editar')) return `<button type="button" class="gx-sc" title="Exame sem custo: clique para informar" onclick="ppCusto(this)"><i class="fa-solid fa-plus"></i>custo</button>`;
   if (x.c?.margem == null) return `<span class="muted">${x.c?.semCusto ? 'sem custo' : '—'}</span>`;
@@ -61,10 +63,39 @@ const ppMrg = x => {
 // "Sem custo": abre a ficha do exame na aba de custos; ao fechá-la, a proposta volta como estava
 // (justificativa, observação e valores revisados).
 let _ppVolta = null;
-function ppCusto(btn) {
-  const k = btn.closest('tr').dataset.k, envio = !!document.getElementById('pp-just');
+function ppCusto(btn) { ppFicha(btn, 'custos'); }
+// A gaveta é uma só: para a ficha abrir por cima, uma cópia inerte da proposta fica no lugar,
+// escurecida, enquanto a gaveta de verdade desliza com a ficha.
+function ppFantasma() {
+  ppTirarFantasma();
+  const g = document.getElementById('gaveta'), f = g.cloneNode(true), topo = document.getElementById('g-corpo').scrollTop;
+  const vals = [...g.querySelectorAll('input, textarea')].map(i => i.value);
+  f.querySelectorAll('input, textarea').forEach((i, n) => { i.value = vals[n]; });
+  f.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
+  f.id = 'gaveta-fantasma';
+  f.classList.add('fantasma');
+  f.setAttribute('aria-hidden', 'true');
+  g.before(f);
+  f.querySelector('.dr-b').scrollTop = topo;
+  ppSemTransicao(() => g.classList.remove('open'));
+}
+const ppTirarFantasma = () => document.getElementById('gaveta-fantasma')?.remove();
+// Muda a gaveta de estado sem animar
+function ppSemTransicao(f) {
+  const g = document.getElementById('gaveta');
+  g.style.transition = 'none';
+  f();
+  void g.offsetWidth;
+  g.style.transition = '';
+}
+
+// Clique no exame: abre a ficha dele, com a mesma volta
+function ppFicha(el, aba) {
+  const k = el.closest('tr').dataset.k, envio = !!document.getElementById('pp-just');
   const volta = { envio, id: _propId, txt: valorCampo(envio ? 'pp-just' : 'pp-motivo'), rev: { ..._propRev } };
-  abrirFicha(k, 'custos');
+  if (!ESTADO.exames[k]) return;
+  ppFantasma();
+  abrirFicha(k, aba);
   _ppVolta = volta;
 }
 const _ppFecharGaveta = fecharGaveta;
@@ -72,10 +103,17 @@ fecharGaveta = function () {
   const v = _ppVolta;
   _ppVolta = null;
   _ppFecharGaveta();
-  if (!v) return;
+  if (!v) return ppTirarFantasma();
+  // a ficha desliza para fora e a cópia da proposta segue à vista, com o fundo escuro
+  document.getElementById('gaveta-fundo').classList.add('open');
   // espera o custo gravado chegar ao estado antes de recalcular
   setTimeout(async () => {
+    const g = document.getElementById('gaveta');
+    g.style.transition = 'none';
     if (v.envio) await abrirEnvioProposta(); else abrirProposta(v.id);
+    void g.offsetWidth;
+    g.style.transition = '';
+    ppTirarFantasma();
     const campo = document.getElementById(v.envio ? 'pp-just' : 'pp-motivo');
     if (campo) campo.value = v.txt;
     Object.entries(v.rev).forEach(([k, val]) => {
@@ -103,6 +141,14 @@ function htmlKpisProposta(cx, ls) {
 }
 
 // Quadro da tabela: cabeçalho, indicadores e itens. o: { nome, colDe, colPara, celPara(x), marca(x) }
+// Setor do exame e, nos de apoio, se o valor é negociado: linha discreta sob a descrição
+function ppSetor(e) {
+  const s = ESTADO.setores[e?.setorId];
+  const neg = !e || (e.origem !== 'apoio' && s?.categoria !== 'apoio') ? '' : negociadoExame(e) ? '<i class="fa-solid fa-handshake" style="color:var(--green)" title="Apoio com negociação"></i>'
+    : '<i class="fa-solid fa-handshake-slash" style="color:var(--red)" title="Apoio sem valor negociado"></i>';
+  return s || neg ? `<div class="pp-set">${s ? `<span style="--c:${esc(s.cor || 'var(--gray)')}">${esc(s.nome)}</span>` : ''}${neg}</div>` : '';
+}
+
 function htmlQuadroProposta(cx, ls, o) {
   const lab = cx?.lab, comDesc = cx && !cx.base && !!cx.ref;
   const n = { e: 0, s: 0, up: 0, dn: 0 };
@@ -116,8 +162,8 @@ function htmlQuadroProposta(cx, ls, o) {
     ${pend.length ? `<div class="alert a" style="margin:10px 12px"><i class="fa-solid fa-hourglass-half"></i><div><b>${pend.length} exame(s) com valor da Particular aguardando aprovação.</b> O desconto deles já considera o valor proposto da Particular; se ela for rejeitada, volta a valer o publicado. <a href="#" onclick="abrirProposta('${idPend}');return false">Abrir a proposta da Particular</a></div></div>` : ''}
     <div class="tbl-wrap"><table class="pp-tab"><thead><tr><th>Exame</th><th class="num">${o.colDe}</th><th class="num">${o.colPara}</th>${comDesc ? '<th class="num">Desconto</th>' : ''}<th class="num">Margem</th></tr></thead>
       <tbody>${ls.map(x => `<tr data-k="${esc(x.k)}">
-        <td class="pp-ex"><span class="mn">${esc(x.mn ?? '—')}</span>${o.marca?.(x) || ''}<small title="${esc(x.e?.descricao || '')}">${esc(x.e?.descricao || 'exame excluído')}</small></td>
-        <td class="num">${fmtOuFora(x.de, lab)}</td>
+        <td class="pp-ex ${x.e && !o.semFicha ? 'lk' : ''}" ${x.e && !o.semFicha ? 'title="Abrir a ficha do exame" onclick="ppFicha(this)"' : ''}><span class="mn">${esc(x.mn ?? '—')}</span>${o.marca?.(x) || ''}<small title="${esc(x.e?.descricao || '')}">${esc(x.e?.descricao || 'exame excluído')}</small>${ppSetor(x.e)}</td>
+        <td class="num">${fmtOuFora(x.de, lab)}${ppMrg0(x)}</td>
         <td class="num pp-para">${o.celPara(x)}</td>
         ${comDesc ? `<td class="num pp-v pp-desc">${ppDesc(x)}</td>` : ''}
         <td class="num pp-v pp-mrg">${ppMrg(x)}</td></tr>`).join('')}</tbody></table></div></div>`;
@@ -126,9 +172,10 @@ function htmlQuadroProposta(cx, ls, o) {
 // ── Envio ─────────────────────────────────────────────────────
 async function abrirEnvioProposta() {
   const cx = ctxAtual();
+  limparRascTravado(cx);
   await gravarRasc(cx.alvo);
   const r = rasc(cx.alvo), s = resumoRasc(cx), aprova = pode('tabelas', 'aprovar');
-  const itens = Object.entries(r).filter(([k]) => ESTADO.exames[k]).map(([k, v]) => linhaProposta(cx, k, cx.salvo(k) ?? null, v ?? null))
+  const itens = Object.entries(r).filter(([k]) => ESTADO.exames[k] && !propPendente(cx.alvo, k)).map(([k, v]) => linhaProposta(cx, k, cx.salvo(k) ?? null, v ?? null))
     .sort((a, b) => a.mn.localeCompare(b.mn));
   abrirGaveta({
     larga: true, sobre: 'Enviar proposta', titulo: cx.nome,
@@ -152,7 +199,7 @@ async function enviarProposta(publicar) {
   const itens = {};
   Object.entries(r).forEach(([k, v]) => {
     const e = ESTADO.exames[k];
-    if (e) itens[k] = { mn: e.mn, de: cx.salvo(k) ?? null, para: v ?? null };
+    if (e && !propPendente(cx.alvo, k)) itens[k] = { mn: e.mn, de: cx.salvo(k) ?? null, para: v ?? null };
   });
   const n = Object.keys(itens).length;
   if (!n) return toast('Nada para enviar', 'erro');
@@ -226,7 +273,7 @@ function abrirProposta(id) {
   const cx = ctxAlvo(p.alvo), st = ST_PROPOSTA[p.status] || ST_PROPOSTA.pendente, u = usuarioAtual();
   const pendente = p.status === 'pendente', aprova = pode('tabelas', 'aprovar'), autor = p.autorId === u.id;
   const revisa = pendente && aprova && !!cx;
-  _propRev = {}; _propId = id;
+  _propRev = {}; _propId = id; _propEd = null;
   const nRev = Object.values(p.itens || {}).filter(it => it.revisado).length;
   let conflitos = 0, abaixo = 0;
   const itens = Object.entries(p.itens || {}).map(([k, it]) => {
@@ -239,14 +286,14 @@ function abrirProposta(id) {
   }).sort((a, b) => String(a.mn).localeCompare(String(b.mn)));
   abrirGaveta({
     larga: true, sobre: `Proposta · ${dataHora(p.em)}`, titulo: p.alvoNome || cx?.nome || 'Proposta',
-    meta: `<span class="badge-s ${st.cls}"><i class="fa-solid ${st.icone}"></i>${st.nome}</span><span class="tag"><i class="fa-solid fa-user"></i>${esc(p.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${itens.length} preço(s)</span>`,
+    meta: `<span class="badge-s ${st.cls}"><i class="fa-solid ${st.icone}"></i>${st.nome}</span><span class="tag"><i class="fa-solid fa-user"></i>${esc(p.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${itens.length} preço(s)</span>${p.editadaEm ? `<span class="tag" title="Editada por ${esc(p.editadaPor || '')} em ${dataHora(p.editadaEm)}"><i class="fa-solid fa-pen"></i>editada</span>` : ''}`,
     corpo: `
       ${!cx ? '<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>A tabela desta proposta foi excluída.</div></div>' : ''}
       ${p.decisao ? `<div class="alert ${p.status === 'aprovada' ? 'x' : 'a'}"><i class="fa-solid ${st.icone}"></i><div><b>${st.nome}</b> por ${esc(p.decisao.por)} em ${dataHora(p.decisao.em)}${p.decisao.motivo ? `<br>${esc(p.decisao.motivo)}` : ''}</div></div>` : ''}
       ${conflitos ? `<div class="alert a"><i class="fa-solid fa-triangle-exclamation"></i><div>${conflitos} preço(s) mudaram desde o envio (coluna "Hoje"). Ao aprovar, vale o valor proposto.</div></div>` : ''}
       <div id="pp-abaixo">${abaixo ? `<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>${abaixo} preço(s) abaixo do ${cx?.pisoNome || 'piso'}.</div></div>` : ''}</div>
       ${nRev ? `<div class="alert x"><i class="fa-solid fa-pen"></i><div>${nRev} valor(es) revisado(s) na aprovação (riscado = valor proposto).</div></div>` : ''}
-      ${p.justificativa ? `<div class="sec-t"><i class="fa-solid fa-quote-left"></i>Justificativa</div><div class="ins-prev">${esc(p.justificativa)}</div>` : ''}
+      ${p.justificativa ? `<div class="pp-just"><i class="fa-solid fa-quote-left"></i><div><span>Justificativa · ${esc(p.autor)}</span><p>${esc(p.justificativa)}</p></div></div>` : ''}
       ${revisa ? '<div class="hint" style="margin:14px 0 0"><i class="fa-solid fa-pen"></i> Ajuste o valor proposto, se precisar: ao aprovar, vale o valor revisado.</div>' : ''}
       ${htmlQuadroProposta(cx, itens, {
         nome: p.alvoNome, colDe: pendente ? 'Hoje' : 'Antes', colPara: p.status === 'aprovada' ? 'Publicado' : 'Proposto',
@@ -255,7 +302,7 @@ function abrirProposta(id) {
           : `${x.it.revisado ? `<s class="muted">${fmtOuFora(x.it.proposto, cx?.lab)}</s> ` : ''}<b>${fmtOuFora(x.para, cx?.lab)}</b>${ppVar(x)}`
       })}
       ${pendente && aprova ? `<div class="just"><label for="pp-motivo">Observação da decisão <span class="muted">(obrigatória para rejeitar)</span></label><textarea id="pp-motivo"></textarea></div>` : ''}`,
-    rodape: `${!pendente && autor && cx ? `<button class="btn" style="margin-right:auto" onclick="reabrirProposta('${id}')" title="Carrega os preços no seu rascunho"><i class="fa-solid fa-pen"></i>Editar de novo</button>` : '<span style="margin-right:auto"></span>'}
+    rodape: `${!pendente && autor && cx ? `<button class="btn" style="margin-right:auto" onclick="reabrirProposta('${id}')" title="Carrega os preços no seu rascunho"><i class="fa-solid fa-pen"></i>Editar de novo</button>` : pendente && cx && (autor || aprova) && pode('tabelas', 'editar') ? `<button class="btn" style="margin-right:auto" onclick="editarProposta('${id}')" title="Retificar valores, incluir ou tirar exames e alterar a justificativa"><i class="fa-solid fa-pen"></i>Editar</button>` : '<span style="margin-right:auto"></span>'}
       ${pendente && autor ? `<button class="btn perigo-txt" onclick="decidirProposta('${id}','cancelada')"><i class="fa-solid fa-ban"></i>Cancelar</button>` : ''}
       ${pendente && aprova ? `<button class="btn perigo-txt" onclick="decidirProposta('${id}','rejeitada')"><i class="fa-solid fa-circle-xmark"></i>Rejeitar</button>
         <button class="btn pri" id="pp-aprovar" ${cx ? '' : 'disabled'} onclick="decidirProposta('${id}','aprovada')"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : `<button class="btn" onclick="fecharGaveta()">Fechar</button>`}`
@@ -266,6 +313,11 @@ function abrirProposta(id) {
 // os valores revisados nem a observação. Com um campo em edição, só os números das linhas.
 function atualizarPropostaAberta() {
   const corpo = document.getElementById('g-corpo');
+  if (_propEd && document.getElementById('pe-q')) {
+    if (ESTADO.propostas[_propEd.id]?.status !== 'pendente') { const id = _propEd.id; _propEd = null; toast('A proposta foi decidida por outra pessoa', 'erro'); return abrirProposta(id); }
+    if (!corpo.contains(document.activeElement)) desenharEdicaoProposta();
+    return;
+  }
   if (!_propId || !document.getElementById('pp-abaixo') || !ESTADO.propostas[_propId]) return;
   const foco = document.activeElement;
   if (foco && corpo?.contains(foco) && /INPUT|TEXTAREA/.test(foco.tagName)) {
@@ -282,6 +334,123 @@ function atualizarPropostaAberta() {
   });
   const novo = document.getElementById('g-corpo');
   if (novo) novo.scrollTop = topo;
+}
+
+// ── Edição da proposta pendente ───────────────────────────────
+// Autor (ou quem aprova) retifica valores, inclui ou tira exames e altera a justificativa.
+// _propEd: { id, itens: cópia editável, just }
+let _propEd = null, _peSug = [];
+
+function editarProposta(id) {
+  const p = ESTADO.propostas[id];
+  if (!p || p.status !== 'pendente') return toast('Proposta já decidida', 'erro');
+  _propEd = { id, just: p.justificativa || '', itens: JSON.parse(JSON.stringify(p.itens || {})) };
+  desenharEdicaoProposta();
+}
+
+const peLinhas = cx => Object.entries(_propEd.itens).map(([k, it]) => Object.assign(linhaProposta(cx, k, cx.salvo(k) ?? null, it.para ?? null), { it, mn: it.mn }))
+  .sort((a, b) => String(a.mn).localeCompare(String(b.mn)));
+
+function desenharEdicaoProposta(focoK) {
+  const p = ESTADO.propostas[_propEd.id], cx = p && ctxAlvo(p.alvo);
+  if (!cx) return;
+  const aberta = !!document.getElementById('pe-q'), topo = aberta ? document.getElementById('g-corpo').scrollTop : 0, ls = peLinhas(cx);
+  abrirGaveta({
+    larga: true, sobre: `Editar proposta · ${dataHora(p.em)}`, titulo: p.alvoNome || cx.nome,
+    meta: `<span class="tag"><i class="fa-solid fa-user"></i>${esc(p.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${ls.length} preço(s)</span>`,
+    corpo: `
+      <div class="hint"><i class="fa-solid fa-pen"></i> Retifique os valores, inclua ou tire exames e ajuste a justificativa. Nada muda na proposta até salvar.</div>
+      <div class="gx-busca" style="margin:12px 0"><div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="pe-q" placeholder="Adicionar exame: mnemônico ou nome…" autocomplete="off"
+          oninput="peBuscar(this.value)" onfocus="peBuscar(this.value)" onkeydown="peTecla(event)" onblur="setTimeout(peFecharSug, 150)"></div>
+        <div class="gx-sug" id="pe-sug"></div></div>
+      ${htmlQuadroProposta(cx, ls, {
+        nome: p.alvoNome, colDe: 'Hoje', colPara: 'Proposto',
+        semFicha: true, // a ficha tomaria a gaveta e a edição em curso se perderia
+        marca: () => ` <button type="button" class="gx-sc" style="color:var(--red)" title="Tirar o exame da proposta" onclick="peRemover(this)"><i class="fa-solid fa-xmark"></i>tirar</button>`,
+        celPara: x => `<div class="price-in on"><span>R$</span><input type="number" step="0.01" min="0" value="${x.para != null ? x.para.toFixed(2) : ''}" placeholder="${cx.base ? '' : cx.lab ? 'remover' : 'retirar'}" oninput="peEditar(this)" onfocus="this.select()"></div><div class="pp-var">${ppVar(x)}</div>`
+      })}
+      <div class="just"><label for="pe-just">Justificativa <span class="muted">(opcional)</span></label>
+        <textarea id="pe-just" placeholder="Motivo do reajuste, negociação, concorrência…" oninput="_propEd.just=this.value">${esc(_propEd.just)}</textarea></div>`,
+    rodape: `<button class="btn" style="margin-right:auto" onclick="abrirProposta('${_propEd.id}')">Voltar sem salvar</button>
+      <button class="btn pri" onclick="salvarEdicaoProposta()"><i class="fa-solid fa-floppy-disk"></i>Salvar alterações</button>`
+  });
+  document.getElementById('g-corpo').scrollTop = topo;
+  if (focoK) {
+    const tr = [...document.querySelectorAll('#g-corpo .pp-tab tr')].find(t => t.dataset.k === focoK);
+    tr?.scrollIntoView({ block: 'center' });
+    tr?.querySelector('input')?.focus();
+  }
+}
+
+function peEditar(inp) {
+  const p = ESTADO.propostas[_propEd.id], cx = ctxAlvo(p.alvo), tr = inp.closest('tr'), k = tr.dataset.k, txt = inp.value.trim();
+  const v = txt === '' ? null : Math.round(parseFloat(txt) * 100) / 100;
+  if (v != null && (isNaN(v) || v < 0)) return;
+  _propEd.itens[k].para = v;
+  const x = linhaProposta(cx, k, cx.salvo(k) ?? null, v);
+  tr.querySelector('.pp-var').innerHTML = ppVar(x);
+  const tdDesc = tr.querySelector('.pp-desc');
+  if (tdDesc) tdDesc.innerHTML = ppDesc(x);
+  tr.querySelector('.pp-mrg').innerHTML = ppMrg(x);
+  document.getElementById('pp-kpis').innerHTML = htmlKpisProposta(cx, peLinhas(cx));
+}
+function peRemover(btn) {
+  delete _propEd.itens[btn.closest('tr').dataset.k];
+  desenharEdicaoProposta();
+}
+
+// Busca para incluir exame: mnemônico que começa com o texto vem primeiro
+function peBuscar(q) {
+  const p = ESTADO.propostas[_propEd.id], cx = ctxAlvo(p.alvo), el = document.getElementById('pe-sug');
+  if (!q.trim()) return peFecharSug();
+  const ini = normalizar(q.trim()), pri = e => normalizar(e.mn).startsWith(ini) ? 0 : 1;
+  const vis = examesVisiveis().filter(e => e.ativo !== false && !(e.id in _propEd.itens) && contem(e.mn + ' ' + e.descricao, q))
+    .sort((a, b) => pri(a) - pri(b) || String(a.mn).localeCompare(String(b.mn), 'pt-BR')).slice(0, 8);
+  _peSug = vis.map(e => e.id);
+  el.innerHTML = !vis.length ? `<div class="gx-sug-v"><i class="fa-solid fa-magnifying-glass"></i>Nenhum exame para incluir com <b>${esc(q)}</b></div>`
+    : vis.map((e, i) => {
+      const outra = propPendente(p.alvo, e.id, _propEd.id), s = cx.salvo(e.id);
+      return `<button type="button" class="${i ? '' : 'hi'}" ${outra ? 'disabled' : ''} onmousedown="event.preventDefault();peAdicionar(_peSug[${i}])">
+        <b>${esc(e.mn)}</b><span title="${esc(e.descricao)}">${esc(e.descricao)}</span><small class="${outra ? '' : s != null ? 'g' : ''}"><i class="fa-solid ${outra ? 'fa-hourglass-half' : s != null ? 'fa-table-list' : 'fa-circle-plus'}"></i>${outra ? 'em outra proposta' : s != null ? `hoje ${fmt(s)}` : cx.base ? 'sem preço' : cx.lab ? 'sem valor' : 'fora da tabela'}</small></button>`;
+    }).join('');
+  el.classList.add('open');
+}
+function peFecharSug() { _peSug = []; document.getElementById('pe-sug')?.classList.remove('open'); }
+function peTecla(ev) {
+  if (ev.key === 'Escape' && _peSug.length) { ev.stopPropagation(); return peFecharSug(); }
+  if (ev.key !== 'Enter' || !_peSug.length) return;
+  ev.preventDefault();
+  peAdicionar(_peSug[0]);
+}
+// Exame novo entra com o valor de sempre: referência (com o desconto da tabela) > praticado > piso
+function peAdicionar(k) {
+  const p = ESTADO.propostas[_propEd.id], cx = ctxAlvo(p.alvo), e = ESTADO.exames[k];
+  if (!e || k in _propEd.itens) return;
+  if (propPendente(p.alvo, k, _propEd.id)) return toast(`${e.mn} já está em outra proposta pendente`, 'erro');
+  const x = linhaGrade(cx, { ...e, id: k });
+  const para = cx.base ? e.precoPraticado ?? x.c.sugerido ?? null : valorAcao(cx, x, 'ref') ?? e.precoPraticado ?? x.c.minimo ?? null;
+  _propEd.itens[k] = { mn: e.mn, de: cx.salvo(k) ?? null, para };
+  desenharEdicaoProposta(k);
+}
+
+async function salvarEdicaoProposta() {
+  const id = _propEd.id, p = ESTADO.propostas[id], cx = p && ctxAlvo(p.alvo), u = usuarioAtual();
+  if (!p || p.status !== 'pendente') return toast('Proposta já decidida', 'erro');
+  if (!cx) return toast('Tabela da proposta não existe mais', 'erro');
+  const itens = _propEd.itens, n = Object.keys(itens).length;
+  if (!n) return toast('Proposta sem exames: para desistir, cancele a proposta', 'erro');
+  // sem valor = retirar da tabela; só faz sentido para exame que está nela
+  const ruim = Object.values(itens).find(it => it.para == null ? cx.base || cx.salvo(Object.keys(itens).find(k => itens[k] === it)) == null : !(it.para > 0));
+  if (ruim) return toast(`${ruim.mn}: informe um valor válido`, 'erro');
+  const dados = { itens, n, justificativa: _propEd.just.trim() || null, editadaEm: DB.agora(), editadaPor: u.nome };
+  await DB.mesclar(`propostas/${id}`, dados);
+  Object.assign(p, dados, { editadaEm: Date.now() });
+  registrar('tabelas', `${p.alvoNome}: proposta editada (${n} preço(s))`, { proposta: id });
+  _propEd = null;
+  abrirProposta(id);
+  if (document.getElementById('gr-body')) desenharGrade();
+  if (typeof gxAberta === 'function' && gxAberta()) desenharGerirExames();
+  toast('Proposta atualizada');
 }
 
 function revisarItem(inp) {

@@ -58,7 +58,8 @@ function abrirSetor(id) {
   _icoBusca = '';
   _sEd = s ? { id, ...JSON.parse(JSON.stringify(s)) } : { id: null, nome: '', categoria: 'interno', icone: 'fa-vial', cor: '#00a8cc', etapas: { coleta: true, triagem: true }, margemAlvo: null };
   _sEd.etapas = { coleta: true, triagem: true, ..._sEd.etapas };
-  Object.assign(_sEd, { aba: 'dados', sel: new Set(), qSem: '', qDo: '' });
+  Object.assign(_sEd, { aba: 'dados', sub: 'do', sel: new Set(), selT: new Set(), orig: '', qSem: '', qT: '', qDo: '' });
+  delete POPS['pop-set-orig'];
   abrirGaveta({
     sobre: id ? 'Editar setor' : 'Novo setor', titulo: id ? s.nome : 'Cadastrar setor',
     corpo: `<div class="seg set-abas" id="set-abas"></div><div id="set-ed"></div>`,
@@ -110,55 +111,83 @@ function desenharEditorSetor() {
   desenharIcones();
 }
 
-// ── Aba Exames: exames do setor e vínculo de exames sem setor ──
+// ── Aba Exames, em sub-abas: do setor · vincular (exames sem setor) · transferir (de outro setor) ──
 const examesSemSetor = () => lista(ESTADO.exames).filter(e => !ESTADO.setores[e.setorId]).sort((a, b) => a.mn.localeCompare(b.mn));
-const linhaExameSetor = (e, extra) => `<div class="casc-r lin-ex"><div class="lft">${extra.antes || ''}<div><span class="mn">${esc(e.mn)}</span>${e.ativo === false ? ' <span class="badge-s off">inativo</span>' : ''}<div class="s">${esc(e.descricao || '')}</div></div></div>${extra.depois || ''}</div>`;
+const examesOutrosSetores = () => lista(ESTADO.exames).filter(e => ESTADO.setores[e.setorId] && e.setorId !== _sEd.id).sort((a, b) => a.mn.localeCompare(b.mn));
+const linhaExameSetor = (e, extra) => `<div class="casc-r lin-ex"><div class="lft">${extra.antes || ''}<div><span class="mn">${esc(e.mn)}</span>${e.ativo === false ? ' <span class="badge-s off">inativo</span>' : ''}<div class="s">${esc(e.descricao || '')}</div>${extra.abaixo || ''}</div></div>${extra.depois || ''}</div>`;
+
+// Listas de marcar das sub-abas "vincular" e "transferir": de onde vêm os exames e o que guarda a seleção e a busca
+const FONTES_SETOR = {
+  vinc:   { sel: 'sel',  q: 'qSem', exames: examesSemSetor, vazio: 'Todos os exames já têm setor', vazioBusca: 'Nenhum exame sem setor com essa busca',
+            dica: 'Marque os exames que pertencem a este setor', botao: 'Vincular ao setor', icone: 'fa-link', acao: 'vincularExamesSetor()' },
+  transf: { sel: 'selT', q: 'qT', exames: () => examesOutrosSetores().filter(e => !_sEd.orig || e.setorId === _sEd.orig), vazio: 'Nenhum exame em outro setor', vazioBusca: 'Nenhum exame com essa busca',
+            dica: 'Marque os exames que passam a ser deste setor', botao: 'Transferir para este setor', icone: 'fa-right-left', acao: 'transferirExamesSetor()' }
+};
+const fonteSetor = () => FONTES_SETOR[_sEd.sub];
+const filtradosFonteSetor = () => { const f = fonteSetor(); return f.exames().filter(e => contem(e.mn + ' ' + e.descricao, _sEd[f.q])); };
 
 function desenharExamesSetor() {
   const el = document.getElementById('set-ed');
   if (!_sEd.id) { el.innerHTML = vazio('fa-floppy-disk', '<b>Salve o setor primeiro</b><br>Depois volte a esta aba para vincular os exames.'); return; }
-  const editar = pode('exames', 'editar'), nSem = examesSemSetor().length;
-  el.innerHTML = `
-    ${editar ? `<div class="sec-t"><i class="fa-solid fa-link"></i>Vincular exames sem setor <span class="badge-s warn">${nSem}</span></div>
-    <div class="pop-search" style="margin:0 0 8px"><i class="fa-solid fa-magnifying-glass"></i><input placeholder="Buscar mnemônico ou nome…" value="${esc(_sEd.qSem)}" oninput="_sEd.qSem=this.value;desenharListaSemSetor()"></div>
+  const editar = pode('exames', 'editar');
+  if (!editar) _sEd.sub = 'do';
+  const nDo = lista(ESTADO.exames).filter(e => e.setorId === _sEd.id).length;
+  const subs = [['do', 'Do setor', 'fa-flask-vial', nDo], ...(editar ? [['vinc', 'Vincular', 'fa-link', examesSemSetor().length], ['transf', 'Transferir', 'fa-right-left', null]] : [])];
+  const abas = subs.length > 1 ? `<div class="chips sem-pad" style="margin-bottom:12px">${subs.map(([k, t, ic, n]) => `<button type="button" class="chip ${_sEd.sub === k ? 'on' : ''}" onclick="_sEd.sub='${k}';desenharExamesSetor()"><i class="fa-solid ${ic}"></i>${t}${n != null ? ` <b>${n}</b>` : ''}</button>`).join('')}</div>` : '';
+  if (_sEd.sub === 'do') {
+    el.innerHTML = `${abas}<div class="pop-search" style="margin:0 0 8px"><i class="fa-solid fa-magnifying-glass"></i><input placeholder="Buscar no setor…" value="${esc(_sEd.qDo)}" oninput="_sEd.qDo=this.value;desenharListaDoSetor()"></div>
+      <div class="casc lista-ex alta" id="set-do"></div>`;
+    return desenharListaDoSetor();
+  }
+  const f = fonteSetor(), transf = _sEd.sub === 'transf';
+  el.innerHTML = `${abas}
+    ${transf ? `<div class="alert x" style="margin:0 0 10px"><i class="fa-solid fa-right-left"></i><div>Traz para <b>${esc(ESTADO.setores[_sEd.id]?.nome || 'este setor')}</b> exames que hoje estão em outro setor. A origem (interno ou apoio) e a margem alvo passam a ser as deste setor.</div></div>
+    <div id="pop-set-orig" class="block" style="margin-bottom:8px"></div>` : ''}
+    <div class="pop-search" style="margin:0 0 8px"><i class="fa-solid fa-magnifying-glass"></i><input placeholder="Buscar mnemônico ou nome…" value="${esc(_sEd[f.q])}" oninput="_sEd[fonteSetor().q]=this.value;desenharListaMarcarSetor()"></div>
     <div class="lista-ex-cab" id="set-sem-cab"></div>
-    <div class="casc lista-ex" id="set-sem"></div>
-    <div class="vinc-bar" id="set-vinc"></div>` : ''}
-    <div class="sec-t" style="margin-top:18px"><i class="fa-solid fa-flask-vial"></i>Exames do setor</div>
-    <div class="pop-search" style="margin:0 0 8px"><i class="fa-solid fa-magnifying-glass"></i><input placeholder="Buscar no setor…" value="${esc(_sEd.qDo)}" oninput="_sEd.qDo=this.value;desenharListaDoSetor()"></div>
-    <div class="casc lista-ex" id="set-do"></div>`;
-  if (editar) desenharListaSemSetor();
-  desenharListaDoSetor();
+    <div class="casc lista-ex alta" id="set-sem"></div>
+    <div class="vinc-bar" id="set-vinc"></div>`;
+  if (transf) {
+    const outros = examesOutrosSetores();
+    criarPop('pop-set-orig', {
+      rotulo: 'Setor de origem', titulo: 'Transferir de qual setor', icone: 'fa-layer-group', busca: 'Buscar setor…', limpavel: true,
+      opcoes: () => opcoesSetorPop('Todos os outros setores', [], id => outros.filter(e => !id || e.setorId === id).length).filter(o => o.valor !== _sEd.id),
+      aoMudar: v => { _sEd.orig = v; desenharListaMarcarSetor(); }
+    });
+  }
+  desenharListaMarcarSetor();
 }
 
-function desenharListaSemSetor() {
-  const ls = examesSemSetor().filter(e => contem(e.mn + ' ' + e.descricao, _sEd.qSem));
-  const vis = ls.slice(0, 300), todos = ls.length > 0 && ls.every(e => _sEd.sel.has(e.id));
-  document.getElementById('set-sem-cab').innerHTML = ls.length ? `<button class="cb ${todos ? 'on' : ''}" onclick="selTodosSemSetor(${!todos})"><i class="fa-solid fa-check"></i></button>
-    <span>${todos ? 'Desmarcar' : 'Marcar'} ${_sEd.qSem ? 'os filtrados' : 'todos'} (${ls.length})</span>` : '';
-  document.getElementById('set-sem').innerHTML = vis.map(e => linhaExameSetor(e, {
-      antes: `<button class="cb ${_sEd.sel.has(e.id) ? 'on' : ''}" data-id="${esc(e.id)}" onclick="marcarSemSetor(this)"><i class="fa-solid fa-check"></i></button>`
-    })).join('')
+function desenharListaMarcarSetor() {
+  const f = fonteSetor(), sel = _sEd[f.sel], q = _sEd[f.q], ls = filtradosFonteSetor();
+  const vis = ls.slice(0, 300), todos = ls.length > 0 && ls.every(e => sel.has(e.id));
+  document.getElementById('set-sem-cab').innerHTML = ls.length ? `<button class="cb ${todos ? 'on' : ''}" onclick="selTodosSetor(${!todos})"><i class="fa-solid fa-check"></i></button>
+    <span>${todos ? 'Desmarcar' : 'Marcar'} ${q ? 'os filtrados' : 'todos'} (${ls.length})</span>` : '';
+  document.getElementById('set-sem').innerHTML = vis.map(e => { const st = _sEd.sub === 'transf' ? ESTADO.setores[e.setorId] : null; return linhaExameSetor(e, {
+      antes: `<button class="cb ${sel.has(e.id) ? 'on' : ''}" data-id="${esc(e.id)}" onclick="marcarExameSetor(this)"><i class="fa-solid fa-check"></i></button>`,
+      abaixo: st ? `<div class="s"><i class="fa-solid ${st.icone}" style="color:${st.cor}"></i> ${esc(st.nome)}</div>` : ''
+    }); }).join('')
     + (ls.length > vis.length ? `<div class="casc-r muted" style="font-size:12px">+ ${ls.length - vis.length} exames: use a busca para encontrar</div>` : '')
-    || `<div class="casc-r muted">${_sEd.qSem ? 'Nenhum exame sem setor com essa busca' : 'Todos os exames já têm setor'}</div>`;
+    || `<div class="casc-r muted">${q ? f.vazioBusca : f.vazio}</div>`;
   desenharBarraVinculo();
 }
 
-function marcarSemSetor(btn) {
-  const id = btn.dataset.id;
-  _sEd.sel.has(id) ? _sEd.sel.delete(id) : _sEd.sel.add(id);
-  btn.classList.toggle('on', _sEd.sel.has(id));
+function marcarExameSetor(btn) {
+  const id = btn.dataset.id, sel = _sEd[fonteSetor().sel];
+  sel.has(id) ? sel.delete(id) : sel.add(id);
+  btn.classList.toggle('on', sel.has(id));
   desenharBarraVinculo();
 }
-function selTodosSemSetor(on) {
-  examesSemSetor().filter(e => contem(e.mn + ' ' + e.descricao, _sEd.qSem)).forEach(e => on ? _sEd.sel.add(e.id) : _sEd.sel.delete(e.id));
-  desenharListaSemSetor();
+function selTodosSetor(on) {
+  const sel = _sEd[fonteSetor().sel];
+  filtradosFonteSetor().forEach(e => on ? sel.add(e.id) : sel.delete(e.id));
+  desenharListaMarcarSetor();
 }
 
 function desenharBarraVinculo() {
-  const n = _sEd.sel.size, el = document.getElementById('set-vinc');
-  el.innerHTML = n ? `<span><b>${n}</b> exame(s) marcado(s)</span><button class="btn sm" onclick="_sEd.sel.clear();desenharListaSemSetor()">Limpar</button>
-    <button class="btn sm pri" onclick="vincularExamesSetor()"><i class="fa-solid fa-link"></i>Vincular ao setor</button>` : '<span class="hint">Marque os exames que pertencem a este setor</span>';
+  const f = fonteSetor(), n = _sEd[f.sel].size, el = document.getElementById('set-vinc');
+  el.innerHTML = n ? `<span><b>${n}</b> exame(s) marcado(s)</span><button class="btn sm" onclick="_sEd[fonteSetor().sel].clear();desenharListaMarcarSetor()">Limpar</button>
+    <button class="btn sm pri" onclick="${f.acao}"><i class="fa-solid ${f.icone}"></i>${f.botao}</button>` : `<span class="hint">${f.dica}</span>`;
 }
 
 function desenharListaDoSetor() {
@@ -179,7 +208,8 @@ async function mudarSetorExames(ids, setorId) {
     const dados = { setorId: setorId || null, atualizadoEm: agora, atualizadoPor: u.nome };
     if (s) dados.origem = s.categoria === 'apoio' ? 'apoio' : 'interno';
     Object.entries(dados).forEach(([k, v]) => { upd[`${CAMINHOS.exames}/${id}/${k}`] = v; });
-    upd[`historicoExames/${id}/${DB.novaChave('historicoExames')}`] = { descricao: s ? `Vinculado ao setor ${s.nome}` : `Desvinculado do setor ${ESTADO.setores[ESTADO.exames[id]?.setorId]?.nome || ''}`, usuario: u.nome, usuarioId: u.id, em: agora };
+    const de = ESTADO.setores[ESTADO.exames[id]?.setorId];
+    upd[`historicoExames/${id}/${DB.novaChave('historicoExames')}`] = { descricao: s && de ? `Transferido do setor ${de.nome} para ${s.nome}` : s ? `Vinculado ao setor ${s.nome}` : `Desvinculado do setor ${ESTADO.setores[ESTADO.exames[id]?.setorId]?.nome || ''}`, usuario: u.nome, usuarioId: u.id, em: agora };
     ESTADO.exames[id] = { ...ESTADO.exames[id], ...dados, atualizadoEm: Date.now() };
   });
   await DB.mesclar('/', upd);
@@ -193,6 +223,21 @@ async function vincularExamesSetor() {
   _sEd.sel.clear();
   desenharEditorSetor();
   toast(`${ids.length} exame(s) vinculados a ${s.nome}`);
+}
+
+// Transferência: exames de outros setores passam para este
+async function transferirExamesSetor() {
+  const ids = [..._sEd.selT].filter(id => ESTADO.exames[id] && ESTADO.exames[id].setorId !== _sEd.id), s = ESTADO.setores[_sEd.id];
+  if (!ids.length) return;
+  const origens = [...new Set(ids.map(id => ESTADO.setores[ESTADO.exames[id].setorId]?.nome).filter(Boolean))];
+  const ok = await confirmar({ titulo: `Transferir ${ids.length} exame(s) para ${s.nome}?`, icone: 'fa-right-left', botao: 'Transferir',
+    texto: `Saem de <b>${esc(origens.slice(0, 3).join(', '))}${origens.length > 3 ? ` e mais ${origens.length - 3}` : ''}</b>. A origem (interno ou apoio) e a margem alvo passam a ser as de ${esc(s.nome)}.` });
+  if (!ok) return;
+  await mudarSetorExames(ids, _sEd.id);
+  registrar('setores', `${ids.length} exame(s) transferidos para o setor ${s.nome}`, { exames: ids.map(id => ESTADO.exames[id].mn), de: origens });
+  _sEd.selT.clear();
+  desenharEditorSetor();
+  toast(`${ids.length} exame(s) transferidos para ${s.nome}`);
 }
 
 async function desvincularExameSetor(id) {
@@ -222,7 +267,8 @@ async function gravarSetor() {
   if (!nome) { document.getElementById('se-nome').focus(); return toast('Informe o nome do setor', 'erro'); }
   if (lista(ESTADO.setores).some(s => normalizar(s.nome) === normalizar(nome) && s.id !== _sEd.id)) return toast('Já existe um setor com esse nome', 'erro');
   if (_sEd.margemAlvo != null && (_sEd.margemAlvo <= 0 || _sEd.margemAlvo + parametro('imposto') >= 1)) return toast('Margem alvo inválida', 'erro');
-  const { id, ...dados } = { ..._sEd, nome };
+  // só os dados do setor: o estado da gaveta (abas, seleções, buscas) não vai para o banco
+  const { id, aba, sub, sel, selT, orig, qSem, qT, qDo, ...dados } = { ..._sEd, nome };
   if (dados.categoria !== 'apoio' || !MODELOS_APOIO[dados.modeloImportacao]) dados.modeloImportacao = dados.categoria === 'apoio' ? '' : null;
   const antes = id ? ESTADO.setores[id] : null;
   const chaveId = id || DB.novaChave(CAMINHOS.setores);

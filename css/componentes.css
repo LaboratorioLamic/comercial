@@ -245,6 +245,10 @@ td.desc { width: 100%; max-width: 0; min-width: 110px; }
 }
 .drawer.open { transform: none; }
 .drawer.larga { width: 760px; }
+/* Cópia inerte da gaveta, sob a ficha aberta por cima dela */
+.drawer.fantasma { z-index: 69; pointer-events: none; transition: none; }
+.drawer.fantasma::after { content: ""; position: absolute; inset: 0; background: rgba(14, 22, 40, .3); animation: aparecer .25s ease; }
+@keyframes aparecer { from { opacity: 0; } }
 .dr-h { padding: 18px 22px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
 .dr-h .mn { font-size: 13px; }
 .dr-h h3 { font-size: 16px; font-weight: 600; margin-top: 4px; line-height: 1.3; }
@@ -284,10 +288,30 @@ td.desc { width: 100%; max-width: 0; min-width: 110px; }
 .gitem .n { font-weight: 600; font-size: 13px; }
 .gitem .s { font-size: 11.5px; color: var(--text-muted); }
 .gitem .po-ic { width: 34px; height: 34px; }
-.perm th, .perm td { text-align: center; }
-.perm td:first-child, .perm th:first-child { text-align: left; }
-.perm td:first-child i { width: 18px; color: var(--text-muted); margin-right: 8px; }
-.perm .na { color: var(--border); font-size: 11px; }
+/* Permissões: grade de módulos, cada um com popover de múltipla escolha */
+#gperm:has(.pop-wrap.open) { overflow: visible; }
+.pm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; padding: 16px 18px; }
+.pm-c.pop-wrap { display: block; }
+.pm-b {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px 11px; width: 100%; height: 100%; padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); color: var(--text-primary); text-align: left; transition: var(--t);
+}
+.pm-b:not(:disabled):hover { border-color: var(--border-hover); }
+.pm-b:disabled { cursor: default; }
+.pm-c.open .pm-b { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-light); }
+.pm-ic { width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--bg-soft); color: var(--text-muted); }
+.pm-ic.on { background: var(--cyan-light); color: var(--cyan); }
+.pm-t { display: flex; flex-direction: column; min-width: 0; }
+.pm-t b { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-t small { font-size: 11.5px; color: var(--text-muted); }
+.pm-chev { font-size: 10px; color: var(--text-muted); transition: transform .2s; }
+.pm-c.open .pm-chev { transform: rotate(180deg); color: var(--cyan); }
+.pm-as { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; align-content: flex-start; min-height: 50px; }
+.pm-as span { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px dashed var(--border); border-radius: 20px; font-size: 11px; color: var(--text-muted); opacity: .65; }
+.pm-as span i { font-size: 9.5px; }
+.pm-as span.on { border: 1px solid transparent; background: var(--cyan-light); color: var(--cyan); font-weight: 600; opacity: 1; }
+.pm-ck { width: 20px; height: 20px; border: 1.5px solid var(--border); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: transparent; flex-shrink: 0; transition: var(--t); }
+.pop-opt.sel .pm-ck { background: var(--cyan); border-color: var(--cyan); color: #fff; }
 .wz-f { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 
 @media (max-width: 640px) {

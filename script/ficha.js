@@ -21,7 +21,7 @@ const ABAS_FICHA = [
 function abrirFicha(id, aba = 'valores') {
   const e = ESTADO.exames[id];
   if (!e) return;
-  _fxId = id; _fxFonte = null; _fxAba = aba; _fxTab = {}; _fxRasc = {};
+  _fxId = id; _fxFonte = null; _fxNovoItem = false; _fxAba = aba; _fxTab = {}; _fxRasc = {};
   _fxOrig = JSON.parse(JSON.stringify(e));
   _fx = JSON.parse(JSON.stringify(e));
   _fx.extras = extrasExame(_fx).map(x => ({ ...x }));
@@ -64,6 +64,9 @@ function abrirFicha(id, aba = 'valores') {
   atualizarFicha();
   carregarHistoricoExame(id);
   if (pode('instrucoes')) desenharCatalogoFicha(id);
+  // preço praticado já em proposta pendente: travado (a proposta aparece no aviso acima, com o link)
+  const pp = propPendente('particular', id), ip = document.getElementById('fx-preco');
+  if (pp && ip) { ip.disabled = true; ip.title = 'Em proposta aguardando aprovação: altere na proposta'; }
   carregarRascFicha(id);
 }
 
@@ -76,7 +79,7 @@ async function carregarRascFicha(id) {
   await Promise.all(alvos.map(a => carregarRascunho(a)));
   // ficha trocada, fechada ou já editada enquanto carregava: não mexe
   if (_fxId !== id || !document.getElementById('fx-rodape') || mudancasPrecoFicha().length) return;
-  alvos.forEach(a => { if (id in rasc(a)) _fxRasc[a] = rasc(a)[id]; });
+  alvos.forEach(a => { if (id in rasc(a) && !propPendente(a, id)) _fxRasc[a] = rasc(a)[id]; });
   const n = Object.keys(_fxRasc).length;
   if (!n) return;
   Object.entries(_fxRasc).forEach(([a, v]) => {
@@ -116,11 +119,11 @@ function desenharTabelasFicha(id) {
   const labs = [...lista(ESTADO.laboratorios, porNome), ...lista(ESTADO.conveniados, porNome)].filter(l => l.precos?.[id] != null);
   const ts = tabelasLista(false), edit = pode('tabelas', 'editar');
   el.innerHTML = `<div class="casc fx-tabs">${ts.map(t => {
-      const p = precoTabFicha(t.id);
+      const p = precoTabFicha(t.id), pend = propPendente(t.id, id);
       return `<div class="casc-r ${t.ativa === false ? 'skip' : ''}" data-t="${t.id}"><div class="lft"><i class="fa-solid ${t.icone}" style="color:${t.cor}"></i><div>${esc(t.nome)}
           <div class="s" id="fxt-s-${t.id}"></div></div></div>
-        <div class="fx-tv"><div class="fx-tv-l"><div class="price-in" id="fxt-pi-${t.id}"><span>R$</span><input type="number" step="0.01" min="0" data-t="${t.id}" value="${p != null ? Number(p).toFixed(2) : ''}" placeholder="—" ${edit ? '' : 'disabled'} oninput="editarTabFicha(this)" onfocus="this.select()"></div>
-          ${edit ? `<div class="acts"><button title="Margem alvo: ${pct(margemAlvoTab(t), 0)}${t.margemSugerida != null ? ' (sugestão de margem da tabela)' : ' (alvo do setor/geral: tabela sem sugestão de margem)'}" ${calcular(e, null, t).semCusto ? 'disabled' : ''} onclick="margemTabFicha('${t.id}')"><i class="fa-solid fa-bullseye"></i></button><button title="Particular − ${pct(calcular(e, null, t).descRef, 0)} (desconto de referência)" onclick="refTabFicha('${t.id}')"><i class="fa-solid fa-percent"></i></button><button title="Retirar da tabela" onclick="definirTabFicha('${t.id}', null, true)"><i class="fa-solid fa-xmark"></i></button></div>` : ''}</div>
+        <div class="fx-tv"><div class="fx-tv-l"><div class="price-in" id="fxt-pi-${t.id}"><span>R$</span><input type="number" step="0.01" min="0" data-t="${t.id}" value="${p != null ? Number(p).toFixed(2) : ''}" placeholder="—" ${edit && !pend ? '' : 'disabled'} oninput="editarTabFicha(this)" onfocus="this.select()"></div>
+          ${pend ? htmlTravaProposta(pend) : edit ? `<div class="acts"><button title="Margem alvo: ${pct(margemAlvoTab(t), 0)}${t.margemSugerida != null ? ' (sugestão de margem da tabela)' : ' (alvo do setor/geral: tabela sem sugestão de margem)'}" ${calcular(e, null, t).semCusto ? 'disabled' : ''} onclick="margemTabFicha('${t.id}')"><i class="fa-solid fa-bullseye"></i></button><button title="Particular − ${pct(calcular(e, null, t).descRef, 0)} (desconto de referência)" onclick="refTabFicha('${t.id}')"><i class="fa-solid fa-percent"></i></button><button title="Retirar da tabela" onclick="definirTabFicha('${t.id}', null, true)"><i class="fa-solid fa-xmark"></i></button></div>` : ''}</div>
           <div class="delta" id="fxt-d-${t.id}"></div></div></div>`;
     }).join('')}
     ${labs.length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-building-user"></i><div>Valores diferenciados<div class="s">${labs.map(l => `${esc(l.nome)} ${fmt(l.precos[id])}`).join(' · ')}</div></div></div></div>` : ''}
@@ -130,6 +133,7 @@ function desenharTabelasFicha(id) {
 
 // v: número · null (retirar) · forcarCampo: reescreve o campo
 function definirTabFicha(id, v, forcarCampo) {
+  if (propPendente(id, _fxId)) return;
   const s = ESTADO.tabelas[id]?.precos?.[_fxId] ?? null;
   if ((v == null && s == null) || (v != null && s != null && Math.abs(v - s) < 0.005)) delete _fxTab[id];
   else _fxTab[id] = v == null ? null : Math.round(v * 100) / 100;
@@ -283,6 +287,7 @@ function atualizarFicha() {
 }
 
 function usarSugerido(v) {
+  if (propPendente('particular', _fxId)) return toast('Preço em proposta aguardando aprovação: altere na proposta', 'erro');
   _fx.precoPraticado = v;
   document.getElementById('fx-preco').value = v;
   atualizarFicha();
@@ -303,9 +308,9 @@ const apoioDoExame = e => ESTADO.setores[e.setorId]?.categoria === 'apoio' ? e.s
 
 function desenharCustoTeste() {
   const e = _fx, editar = pode('exames', 'editar') || pode('custos', 'editar'), fonte = _fxFonte || fonteCusto(e);
-  const apoioId = apoioDoExame(e), temTabela = apoioId && Object.keys(ESTADO.apoios[apoioId]?.precos || {}).length;
+  const apoioId = apoioDoExame(e), temTabela = apoioId && Object.values(ESTADO.apoios[apoioId]?.precos || {}).some(p => !p.inativo);
   const fontes = [['manual', 'Manual', 'fa-pen'], ['reagente', 'Reagente', 'fa-vials']];
-  if (e.origem === 'apoio' || e.vinculoApoio) fontes.push(['apoio', 'Tabela do apoio', 'fa-truck-medical']);
+  if (e.origem === 'apoio' || e.vinculoApoio || apoioId) fontes.push(['apoio', 'Tabela do apoio', 'fa-truck-medical']);
   let corpo = '';
   if (fonte === 'manual') {
     corpo = `<div class="casc-r"><div class="lft"><i class="fa-solid fa-pen"></i><div>${e.origem === 'apoio' ? 'Valor pago ao apoio' : 'Custo por teste'}<div class="s">${e.origem === 'apoio' ? 'preço não negociado: informado pela equipe' : 'informado manualmente'}</div></div></div>
@@ -321,6 +326,18 @@ function desenharCustoTeste() {
     corpo = !temTabela ? `<div class="casc-r muted"><div class="lft"><i class="fa-solid fa-circle-info"></i><div>Este apoio ainda não tem tabela importada<div class="s">use custo manual por enquanto</div></div></div></div>`
       : `<div class="casc-r"><div class="lft"><i class="fa-solid fa-link"></i><div>${p ? `<span class="mn">${esc(p.codigo)}</span> <span class="tag">${esc(p.material || '')}</span>` : 'Sem vínculo'}<div class="s">${p ? esc(p.descricao) : 'escolha o item da tabela do apoio'}</div></div></div><div id="pop-fxapoio" style="min-width:200px"></div></div>
         ${p ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Preço negociado · vigência ${dataBR(p.vigencia)}<div class="s">${p.agendado ? `novo preço ${fmt(p.agendado.preco)} a partir de ${dataBR(p.agendado.vigencia)}` : 'atualiza a cada importação da tabela'}</div></div></div><span class="v">${fmt(p.valor)}</span></div>` : ''}`;
+    // valor negociado fora da tabela importada: cadastra o item à mão na tabela do apoio e vincula, como no cadastro do exame
+    const apoio = ESTADO.setores[apoioId];
+    if (editar && apoio?.categoria === 'apoio') corpo += !_fxNovoItem
+      ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-plus"></i><div>Item fora da tabela<div class="s">valor negociado: cadastra o item em ${esc(apoio.nome)} e vincula o exame</div></div></div><button type="button" class="btn sm" onclick="_fxNovoItem=true;desenharCustoTeste()"><i class="fa-solid fa-plus"></i>Novo item</button></div>`
+      : `<div class="casc-r" style="display:block"><div class="lft" style="margin-bottom:10px"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Novo item em ${esc(apoio.nome)}<div class="s">entra na tabela do apoio como item manual e o exame fica vinculado a ele</div></div></div>
+          <div class="form-col" style="gap:8px">
+            <div style="display:flex;gap:8px"><div class="inp" style="flex:1"><input class="txt" id="fx-ap-cod" placeholder="Código no apoio" value="${esc(e.mn || '')}"></div>
+              <div class="price-in"><span>R$</span><input id="fx-ap-preco" type="number" step="0.01" min="0" placeholder="0,00" value="${e.custoTeste != null ? Number(e.custoTeste).toFixed(2) : ''}" onfocus="this.select()"></div></div>
+            <div class="inp"><input class="txt" id="fx-ap-desc" placeholder="Nome do exame no apoio" value="${esc(e.descricao || '')}"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn sm" onclick="_fxNovoItem=false;desenharCustoTeste()">Cancelar</button>
+              <button type="button" class="btn sm pri" onclick="criarItemApoioFicha()"><i class="fa-solid fa-link"></i>Cadastrar e vincular</button></div>
+          </div></div>`;
   }
   document.getElementById('fx-custo').innerHTML = `
     <div class="seg" style="margin-bottom:8px">${fontes.map(([v, t, ic]) => `<button class="${fonte === v ? 'on' : ''}" ${editar ? '' : 'disabled'} onclick="trocarFonteCusto('${v}')"><i class="fa-solid ${ic}"></i>${t}</button>`).join('')}</div>
@@ -333,12 +350,35 @@ function desenharCustoTeste() {
   });
   if (fonte === 'apoio' && temTabela) criarPop('pop-fxapoio', {
     rotulo: 'Item do apoio', titulo: 'Tabela do apoio', icone: 'fa-magnifying-glass', busca: 'Código ou nome…', padrao: '',
-    opcoes: () => lista(ESTADO.apoios[apoioId].precos, (a, b) => String(a.codigo).localeCompare(b.codigo))
+    opcoes: () => lista(ESTADO.apoios[apoioId].precos, (a, b) => String(a.codigo).localeCompare(b.codigo)).filter(p => !p.inativo)
       .map(p => ({ valor: p.id, rotulo: `${p.codigo} · ${p.descricao}`, icone: 'fa-flask', desc: `${p.material || ''} · ${fmt(p.preco)}` })),
     aoMudar: v => { _fx.vinculoApoio = v ? { apoioId, chave: v } : null; desenharCustoTeste(); desenharControles(); atualizarFicha(); }
   });
   if (POPS['pop-fxreag'] && fonte === 'reagente') { POPS['pop-fxreag'].valor = e.reagenteId || ''; desenharBotaoPop('pop-fxreag'); }
   if (POPS['pop-fxapoio'] && fonte === 'apoio' && temTabela) { POPS['pop-fxapoio'].valor = e.vinculoApoio?.chave || ''; desenharBotaoPop('pop-fxapoio'); }
+}
+
+// Cadastra o item na tabela do apoio (manual) e já grava o vínculo no exame
+let _fxNovoItem = false;
+async function criarItemApoioFicha() {
+  const e = _fx, apoioId = apoioDoExame(e), apoio = ESTADO.setores[apoioId];
+  if (apoio?.categoria !== 'apoio') return toast('O setor do exame não é um laboratório de apoio', 'erro');
+  const cod = valorCampo('fx-ap-cod').trim(), preco = numCampo('fx-ap-preco');
+  if (!cod) return toast('Informe o código do item no apoio', 'erro');
+  if (!(preco >= 0)) return toast('Informe o valor negociado', 'erro');
+  const k = chaveItemApoio(cod, '');
+  if (ESTADO.apoios[apoioId]?.precos?.[k]) return toast(`O item ${cod} já existe na tabela de ${apoio.nome}: escolha-o em "Item do apoio"`, 'erro');
+  const item = { codigo: cod, material: '', descricao: valorCampo('fx-ap-desc').trim() || e.descricao || '', preco: Math.round(preco * 100) / 100, vigencia: hojeISO(), manual: true, desde: Date.now(), criadoPor: usuarioAtual().nome };
+  await DB.mesclar('/', { [`${CAMINHOS.apoios}/${apoioId}/precos/${k}`]: item, ...loteHistoricoApoio('manual', { [k]: itemHistorico(item, 'criado', { para: item.preco, vigPara: item.vigencia }) }, {}, apoioId) });
+  // já vale na ficha, sem esperar o dado voltar do banco
+  ESTADO.apoios[apoioId] = { ...ESTADO.apoios[apoioId], precos: { ...ESTADO.apoios[apoioId]?.precos, [k]: item } };
+  registrar('apoios', `${apoio.nome}: item ${cod} cadastrado manualmente (${fmt(item.preco)}) pela ficha do exame ${e.mn}`);
+  _fx.vinculoApoio = { apoioId, chave: k };
+  _fx.reagenteId = null;
+  _fxFonte = 'apoio'; _fxNovoItem = false;
+  desenharCustoTeste(); desenharControles(); atualizarFicha();
+  await salvarFicha('dados');
+  toast(`${e.mn}: item ${cod} cadastrado em ${apoio.nome} e vinculado`);
 }
 
 function trocarFonteCusto(f) {
@@ -350,7 +390,7 @@ function trocarFonteCusto(f) {
   desenharCustoTeste(); desenharControles(); atualizarFicha();
   // modo escolhido sem item ainda: mostra o seletor correspondente
   if (f === 'reagente' && !_fx.reagenteId) setTimeout(() => POPS['pop-fxreag'] && abrirPop('pop-fxreag'), 50);
-  if (f === 'apoio' && !_fx.vinculoApoio) setTimeout(() => POPS['pop-fxapoio'] && abrirPop('pop-fxapoio'), 50);
+  if (f === 'apoio' && !_fx.vinculoApoio) setTimeout(() => document.getElementById('pop-fxapoio') && POPS['pop-fxapoio'] && abrirPop('pop-fxapoio'), 50);
 }
 let _fxFonte = null;
 
@@ -656,7 +696,9 @@ async function gravarCatalogoNovoExame(id, mn, nome) {
   const marcou = Object.keys(CHECKS).some(k => _dx.checks[k] !== !!r[k]);
   if (!instrucao && !material && isNaN(dias) && !r.mn && !marcou) return;
   const u = usuarioAtual(), dados = { mn, cadastro: true, nome: r.nome || nome, material: material ?? r.material ?? null, prazo: isNaN(dias) ? (r.prazo ?? null) : null,
-    prazoDias: isNaN(dias) ? (r.prazoDias ?? null) : Math.max(0, dias), instrucao: instrucao ?? r.instrucao ?? null, atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+    prazoDias: isNaN(dias) ? (r.prazoDias ?? null) : Math.max(0, dias), instrucao: r.instrucao ?? null, atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+  // texto digitado vai para os campos por categoria (secoes.js)
+  if (instrucao && instrucao !== (r.instrucao || '')) Object.assign(dados, dadosInstrucao(instrucao));
   // texto diferente do revisado → volta a precisar de revisão
   if (r.revisado && (dados.instrucao || '') !== (r.instrucao || '')) Object.assign(dados, { revisado: false, revisadoPor: null, revisadoEm: null });
   // checklist de publicação marcado no cadastro (quem marcou e quando)

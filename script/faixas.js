@@ -111,8 +111,8 @@ function dadosRegras() {
 function abrirConfigParticular() {
   _ptTol = ESTADO.particular?.tolerancia || null;
   iniciarRegras(ESTADO.particular, { piso: null, margemSugerida: null }, {
-    piso: { rotulo: 'Margem mínima', opcional: true, ph: String(+(parametro('margemMinima') * 100).toFixed(1)), dica: `abaixo disso o exame fica vermelho · vazio = parâmetro geral (${pct(parametro('margemMinima'))})` },
-    margemSugerida: { rotulo: 'Margem alvo', ph: String(+(parametro('margemAlvo') * 100).toFixed(1)), dica: `base do preço sugerido · vazio = parâmetro geral (${pct(parametro('margemAlvo'))}) · setor com alvo próprio continua valendo` }
+    piso: { rotulo: 'Margem mínima', opcional: true, ph: String(+(parametro('margemMinima') * 100).toFixed(1)), dica: `abaixo disso o exame fica vermelho · vazio = padrão (${pct(parametro('margemMinima'))})` },
+    margemSugerida: { rotulo: 'Margem alvo', ph: String(+(parametro('margemAlvo') * 100).toFixed(1)), dica: `base do preço sugerido · vazio = padrão (${pct(parametro('margemAlvo'))}) · setor com alvo próprio continua valendo` }
   });
   _rgRedesenhar = desenharConfigParticular;
   abrirGaveta({

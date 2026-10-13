@@ -202,7 +202,7 @@ const VST = {
 };
 
 // ── Tela (Custos → Laboratórios de apoio) ─────────────────────
-const apo = { sel: null, passo: 0, arquivo: null, analise: null, erro: '', comFortes: false, filtro: '', pag: 1, cache: null, troca: {}, trocaEx: {}, marc: {} };
+const apo = { aba: 'vinc', itF: 'ativos', itQ: '', itPag: 1, sel: null, passo: 0, arquivo: null, analise: null, erro: '', comFortes: false, filtro: '', pag: 1, cache: null, troca: {}, trocaEx: {}, marc: {} };
 aoAtualizar(ch => { if (ch === 'exames' || ch === 'apoios' || ch === 'setores') apo.cache = null; });
 
 function htmlApoios() {
@@ -219,7 +219,7 @@ function htmlApoios() {
     if (!custoTesteExame({ id, ...e })) c.sem++;
   });
   return `<div class="cards">${apoios.map(a => {
-      const t = ESTADO.apoios[a.id] || {}, nItens = Object.keys(t.precos || {}).length;
+      const t = ESTADO.apoios[a.id] || {}, nItens = Object.values(t.precos || {}).filter(it => !it.inativo).length;
       const c = cont[a.id], modelo = modeloDoApoio(a);
       return `<button class="card tcard ${a.id === apo.sel ? 'on' : ''}" onclick="apo.sel='${a.id}';apo.passo=0;apo.cache=null;apo.pag=1;apo.troca={};apo.trocaEx={};apo.marc={};renderCustos()">
         <div class="tc-h"><span class="tc-ic" style="--c:${a.cor}"><i class="fa-solid ${a.icone}"></i></span><div><div class="tc-n">${esc(a.nome)}</div>
@@ -232,12 +232,18 @@ function htmlApoios() {
 function htmlApoioDetalhe() {
   const a = ESTADO.setores[apo.sel], modelo = modeloDoApoio(a), t = ESTADO.apoios[apo.sel] || {};
   const podeImp = pode('custos', 'importar');
-  const cab = `<div class="sec-card-h"><span class="tc-ic" style="--c:${a.cor}"><i class="fa-solid ${a.icone}"></i></span>
+  let cab = `<div class="sec-card-h"><span class="tc-ic" style="--c:${a.cor}"><i class="fa-solid ${a.icone}"></i></span>
     <div><h3>${esc(a.nome)}</h3><div class="sub">${modelo ? MODELOS_APOIO[modelo].nome + (MODELOS_APOIO[modelo].negociada ? ' · preços negociados' : '') : 'Sem modelo de importação: custos informados manualmente na ficha de cada exame'}</div></div>
     <div class="rt">${t.importadoEm ? `<span class="muted" style="font-size:12px">importada em ${dataHora(t.importadoEm)} por ${esc(t.importadoPor || '—')}</span>` : ''}
       ${modelo && podeImp && apo.passo === 0 ? `<button class="btn pri" onclick="apo.passo=1;apo.erro='';desenharApoioDet()"><i class="fa-solid fa-file-import"></i>${t.precos ? 'Importar nova tabela' : 'Importar tabela'}</button>` : ''}</div></div>`;
   if (apo.passo >= 1) return cab + htmlImportacaoApoio();
-  if (!modelo) return cab + vazio('fa-file-excel', `<b>Nenhum modelo de importação escolhido</b><br>Escolha o modelo no cadastro do setor. Se o apoio ainda não tem modelo, envie um arquivo de exemplo da tabela para criarmos.${pode('params', 'editar') ? `<br><button class="btn sm" style="margin-top:10px" onclick="abrirSetor('${apo.sel}')"><i class="fa-solid fa-pen"></i>Editar setor</button>` : ''}`);
+  const nAt = Object.values(t.precos || {}).filter(it => !it.inativo).length, nHist = Object.keys(t.historico || {}).length;
+  const abas = `<div style="padding:14px 18px 0"><div class="seg">${[['vinc', 'Vínculos', 'fa-link', null], ['itens', 'Itens da tabela', 'fa-list', nAt], ['hist', 'Histórico', 'fa-clock-rotate-left', nHist || null]]
+    .map(([k, tx, ic, n]) => `<button class="${apo.aba === k ? 'on' : ''}" onclick="apo.aba='${k}';desenharApoioDet()"><i class="fa-solid ${ic}"></i>${tx}${n != null ? ` <b>${n}</b>` : ''}</button>`).join('')}</div></div>`;
+  if (apo.aba === 'itens') return cab + abas + htmlItensApoio();
+  if (apo.aba === 'hist') return cab + abas + htmlHistoricoApoio();
+  cab += abas;
+  if (!modelo) return cab + vazio('fa-file-excel', `<b>Nenhum modelo de importação escolhido</b><br>Escolha o modelo no cadastro do setor. Se o apoio ainda não tem modelo, envie um arquivo de exemplo da tabela para criarmos. Enquanto isso, dá para cadastrar os itens à mão em "Itens da tabela".${pode('params', 'editar') ? `<br><button class="btn sm" style="margin-top:10px" onclick="abrirSetor('${apo.sel}')"><i class="fa-solid fa-pen"></i>Editar setor</button>` : ''}`);
   if (!t.precos) return cab + vazio('fa-file-import', `Importe a tabela (${esc(MODELOS_APOIO[modelo].exemplo)}) para vincular os exames e atualizar os custos.`);
   return cab + htmlVinculos();
 }
@@ -271,6 +277,7 @@ function htmlImportacaoApoio() {
         ${kp('fa-arrow-trend-up', 'var(--red)', 'Custos sobem', imp.sobem, imp.mediana != null ? `mediana ${imp.mediana > 0 ? '+' : ''}${pct(imp.mediana)}` : '')}
         ${kp('fa-arrow-trend-down', 'var(--green)', 'Custos descem', imp.descem)}
         ${kp('fa-circle-xmark', 'var(--red)', 'Caem abaixo do mínimo', imp.caem.length)}
+        ${an.saem || an.voltam ? kp('fa-ban', 'var(--gray)', 'Itens inativados', an.saem, `fora do arquivo${an.voltam ? ` · ${an.voltam} reativado(s)` : ''}`) : ''}
       </div>
       ${an.avisos.length ? `<div class="alert a"><i class="fa-solid fa-triangle-exclamation"></i><div>${an.avisos.length} linha(s) ignoradas: ${esc(an.avisos.slice(0, 5).join(' · '))}${an.avisos.length > 5 ? '…' : ''}</div></div>` : ''}
       ${imp.caem.length ? `<div class="sec-t"><i class="fa-solid fa-circle-xmark"></i>Exames que caem abaixo do mínimo</div>
@@ -282,6 +289,7 @@ function htmlImportacaoApoio() {
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-link" style="color:var(--green)"></i><div>Gravar a tabela e vincular os automáticos<div class="s">custos passam a vir da tabela e os exames ficam marcados como negociados</div></div></div><span class="badge-s ok">sempre</span></div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-sitemap" style="color:${ESTADO.setores[apo.sel].cor}"></i><div>Vincular apenas os ${an.vinc.length} exames do setor ${esc(ESTADO.setores[apo.sel].nome)}<div class="s">exames de outros setores e as tabelas dos outros apoios não são alterados</div></div></div><span class="badge-s ok">sempre</span></div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--cyan)"></i><div>Vincular também as ${cont.forte || 0} sugestões fortes<div class="s">descrição igual, mnemônico diferente (ex.: 17PG → 17-PG)</div></div></div>${chave(apo.comFortes, 'apo.comFortes=!apo.comFortes;this.classList.toggle(\'on\')')}</div>
+        <div class="casc-r"><div class="lft"><i class="fa-solid fa-ban"></i><div>Inativar os ${an.saem} itens que não estão no arquivo<div class="s">não são apagados: ficam em Itens da tabela → Inativos e voltam se reaparecerem · itens cadastrados à mão continuam ativos</div></div></div><span class="badge-s ok">sempre</span></div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-hand-pointer"></i><div>Sugestões fracas e "conferir"<div class="s">ficam para confirmação manual na lista de vínculos</div></div></div><span class="badge-s off">manual</span></div>
       </div>`;
     rodape = `<button class="btn" onclick="apo.passo=1;desenharApoioDet()"><i class="fa-solid fa-arrow-left"></i>Voltar</button><button class="btn pri" onclick="aplicarTabelaApoio()"><i class="fa-solid fa-check"></i>Aplicar tabela</button>`;
@@ -309,7 +317,9 @@ async function analisarApoio() {
     const antes = ESTADO.apoios[apo.sel]?.precos || {}, agora = Date.now();
     Object.entries(itens).forEach(([k, it]) => { if (!antes[k]) it.desde = agora; else if (antes[k].desde) it.desde = antes[k].desde; });
     // itens cadastrados à mão (valor negociado no cadastro do exame) continuam na tabela se o arquivo não os trouxer
-    Object.entries(antes).forEach(([k, it]) => { if (it.manual && !itens[k]) itens[k] = { ...it }; });
+    Object.entries(antes).forEach(([k, it]) => { if (it.manual && !it.inativo && !itens[k]) itens[k] = { ...it }; });
+    // importados que o arquivo não traz mais: ficam inativos
+    const saem = Object.entries(antes).filter(([k, it]) => !it.inativo && !itens[k]).length, voltam = Object.entries(antes).filter(([k, it]) => it.inativo && itens[k]).length;
     const vinc = classificarVinculos(apo.sel, itens);
     // impacto: exames que ficarão vinculados (já vinculados + automáticos)
     const imp = { sobem: 0, descem: 0, caem: [], var: [] }, min = parametro('margemMinima');
@@ -323,7 +333,7 @@ async function analisarApoio() {
     });
     imp.var.sort((a, b) => a - b);
     imp.mediana = imp.var.length ? imp.var[Math.floor(imp.var.length / 2)] : null;
-    apo.analise = { itens, avisos, vinc, impacto: imp, arquivo: apo.arquivo.name };
+    apo.analise = { itens, avisos, vinc, impacto: imp, arquivo: apo.arquivo.name, saem, voltam };
     apo.passo = 2; apo.comFortes = false;
   } catch (e) { console.error(e); apo.erro = e.message; }
   apo.analisando = false;
@@ -336,6 +346,9 @@ async function aplicarTabelaApoio() {
   if (!ok) return;
   // preços: guarda o preço anterior quando muda (vigência futura continua usando o anterior)
   const precos = {}, semVig = MODELOS_APOIO[modeloDoApoio(ESTADO.setores[id])]?.semVigencia;
+  // lote do histórico: o que mudou em relação à tabela anterior
+  const hist = {}, cnt = { novos: 0, alterados: 0, inativados: 0, reativados: 0 }, primeira = !Object.keys(antes).length, agoraMs = Date.now();
+  const reg = (k, it, tipo, m) => { cnt[tipo + 's']++; if (!(tipo === 'novo' && primeira)) hist[k] = itemHistorico(it, tipo, m); };
   Object.entries(an.itens).forEach(([k, it]) => {
     const old = antes[k];
     // modelo sem vigência no arquivo: preço igual mantém a data em que passou a valer
@@ -343,7 +356,17 @@ async function aplicarTabelaApoio() {
     precos[k] = { ...it };
     if (old && (old.preco !== it.preco || old.vigencia !== it.vigencia)) precos[k].anterior = { preco: old.preco, vigencia: old.vigencia || null };
     else if (old?.anterior && it.vigencia > hojeISO()) precos[k].anterior = old.anterior;
+    if (!old) reg(k, it, 'novo', { para: it.preco, vigPara: it.vigencia });
+    else if (old.inativo) reg(k, it, 'reativado', { de: old.preco, para: it.preco, vigDe: old.vigencia, vigPara: it.vigencia });
+    else if (old.preco !== it.preco || old.vigencia !== it.vigencia) reg(k, it, 'alterado', { de: old.preco, para: it.preco, vigDe: old.vigencia, vigPara: it.vigencia });
   });
+  // fora do arquivo: o item fica na tabela, inativo
+  Object.entries(antes).forEach(([k, old]) => {
+    if (precos[k]) return;
+    precos[k] = { ...old, inativo: true, inativoEm: old.inativoEm || agoraMs };
+    if (!old.inativo) reg(k, old, 'inativado', { de: old.preco, vigDe: old.vigencia });
+  });
+  const nAtivos = Object.keys(an.itens).length;
   const vigs = Object.values(an.itens).map(i => i.vigencia).filter(Boolean).sort();
   const upd = {
     [`${CAMINHOS.apoios}/${id}/precos`]: precos,
@@ -351,7 +374,8 @@ async function aplicarTabelaApoio() {
     [`${CAMINHOS.apoios}/${id}/importadoEm`]: DB.agora(),
     [`${CAMINHOS.apoios}/${id}/importadoPor`]: u.nome,
     [`${CAMINHOS.apoios}/${id}/arquivo`]: an.arquivo,
-    [`${CAMINHOS.apoios}/${id}/modelo`]: modeloDoApoio(ESTADO.setores[id])
+    [`${CAMINHOS.apoios}/${id}/modelo`]: modeloDoApoio(ESTADO.setores[id]),
+    ...loteHistoricoApoio('importacao', hist, { arquivo: an.arquivo, n: cnt, total: nAtivos, vigencia: vigs[Math.floor(vigs.length / 2)] || null, primeira: primeira || null })
   };
   let nv = 0;
   an.vinc.forEach(v => {
@@ -362,8 +386,8 @@ async function aplicarTabelaApoio() {
     }
   });
   await DB.mesclar('/', upd);
-  registrar('apoios', `Tabela ${ESTADO.setores[id].nome} importada: ${Object.keys(precos).length} itens, ${nv} novos vínculos`, { arquivo: an.arquivo });
-  apo.resultado = `${num(Object.keys(precos).length, 0)} itens gravados · ${nv} novos vínculos · ${an.vinc.filter(v => v.st === 'vinculado').length} vínculos existentes atualizados`;
+  registrar('apoios', `Tabela ${ESTADO.setores[id].nome} importada: ${nAtivos} itens ativos (${cnt.novos} novos, ${cnt.alterados} alterados, ${cnt.inativados} inativados, ${cnt.reativados} reativados), ${nv} novos vínculos`, { arquivo: an.arquivo });
+  apo.resultado = `${num(nAtivos, 0)} itens ativos · ${cnt.alterados} valor(es) alterado(s) · ${cnt.novos} novo(s) · ${cnt.inativados} inativado(s)${cnt.reativados ? ` · ${cnt.reativados} reativado(s)` : ''} · ${nv} novos vínculos · ${an.vinc.filter(v => v.st === 'vinculado').length} vínculos existentes atualizados`;
   apo.passo = 3; apo.cache = null;
   desenharApoioDet();
 }
@@ -376,7 +400,7 @@ function itensApoioSel() {
   const precos = ESTADO.apoios[apo.sel]?.precos;
   if (!precos) return {};
   let itens = _itensApoio.get(precos);
-  if (!itens) _itensApoio.set(precos, itens = Object.fromEntries(Object.entries(precos).map(([k, v]) => [k, { k, ...v }])));
+  if (!itens) _itensApoio.set(precos, itens = Object.fromEntries(Object.entries(precos).filter(([, v]) => !v.inativo).map(([k, v]) => [k, { k, ...v }])));
   return itens;
 }
 // Linha como está na tela: com o item e/ou o exame trocados à mão (valem até confirmar)
@@ -522,7 +546,7 @@ function popsVinculos() {
   let opEx, opIt;
   const exames = () => opEx ??= Object.entries(ESTADO.exames || {}).filter(([, e]) => e.setorId === apo.sel && !e.vinculoApoio)
     .sort((a, b) => a[1].mn.localeCompare(b[1].mn)).map(([id, e]) => ({ valor: id, rotulo: `${e.mn} · ${e.descricao}`, icone: 'fa-vial' }));
-  const itens = () => opIt ??= lista(ESTADO.apoios[apo.sel]?.precos, (a, b) => String(a.codigo).localeCompare(b.codigo))
+  const itens = () => opIt ??= lista(ESTADO.apoios[apo.sel]?.precos, (a, b) => String(a.codigo).localeCompare(b.codigo)).filter(p => !p.inativo)
     .map(p => ({ valor: p.id, rotulo: `${p.codigo} · ${p.descricao}`, icone: 'fa-flask', desc: [p.material, fmt(p.preco)].filter(Boolean).join(' · ') }));
   document.querySelectorAll('#apoio-det .pop-mini').forEach(el => {
     delete POPS[el.id];
@@ -569,4 +593,179 @@ async function restaurarRejeitados(exameId) {
   apo.cache = null;
   toast(`${e.mn}: sugestões rejeitadas voltaram`);
   desenharApoioDet();
+}
+
+// ── Itens da tabela: ativos / inativos, cadastro e edição à mão ──
+// Item fora do arquivo importado não é apagado: fica inativo (não custeia nem é sugerido) e volta se reaparecer.
+const ITENS_POR_PAG = 40;
+function itensApoioFiltrados() {
+  return lista(ESTADO.apoios[apo.sel]?.precos, (a, b) => String(a.codigo).localeCompare(String(b.codigo)))
+    .filter(it => (apo.itF === 'inativos') === !!it.inativo && contem(`${it.codigo} ${it.descricao} ${it.material || ''}`, apo.itQ));
+}
+function htmlItensApoio() {
+  const todos = Object.values(ESTADO.apoios[apo.sel]?.precos || {}), nI = todos.filter(it => it.inativo).length;
+  if (apo.itF === 'inativos' && !nI) apo.itF = 'ativos';
+  const chip = (f, t, ic, n) => `<button class="chip ${apo.itF === f ? 'on' : ''}" onclick="apo.itF='${f}';apo.itPag=1;desenharApoioDet()"><i class="fa-solid ${ic}"></i>${t} <b>${n}</b></button>`;
+  return `<div class="chips" style="padding-bottom:12px;align-items:center">
+      ${chip('ativos', 'Ativos', 'fa-circle-check', todos.length - nI)}${chip('inativos', 'Inativos', 'fa-ban', nI)}
+      <div class="pop-search" style="margin:0 0 0 auto;min-width:240px"><i class="fa-solid fa-magnifying-glass"></i><input placeholder="Código ou descrição…" value="${esc(apo.itQ)}" oninput="apo.itQ=this.value;apo.itPag=1;desenharItensApoio()"></div>
+      ${pode('custos', 'editar') ? `<button class="btn sm pri" onclick="abrirItemApoio()"><i class="fa-solid fa-plus"></i>Novo item</button>` : ''}
+    </div><div id="apo-itens">${htmlTabelaItensApoio()}</div>`;
+}
+const desenharItensApoio = () => { const el = document.getElementById('apo-itens'); if (el) el.innerHTML = htmlTabelaItensApoio(); };
+function paginaItensApoio(p) { apo.itPag = p; desenharItensApoio(); }
+
+function htmlTabelaItensApoio() {
+  const ls = itensApoioFiltrados(), editar = pode('custos', 'editar'), inat = apo.itF === 'inativos';
+  const n = Math.max(1, Math.ceil(ls.length / ITENS_POR_PAG)); if (apo.itPag > n) apo.itPag = n;
+  // exames vinculados a cada item
+  const vinc = {};
+  Object.values(ESTADO.exames || {}).forEach(e => { if (e.vinculoApoio?.apoioId === apo.sel) (vinc[e.vinculoApoio.chave] ??= []).push(e.mn); });
+  return `<div class="tbl-wrap"><table><thead><tr><th>Item do apoio</th><th>Descrição no apoio</th><th>Origem</th><th>Exames LAMIC</th><th class="num">Preço</th><th>Vigência</th><th></th></tr></thead><tbody>
+    ${ls.slice((apo.itPag - 1) * ITENS_POR_PAG, apo.itPag * ITENS_POR_PAG).map(it => {
+      const p = inat ? null : precoApoio(apo.sel, it.id), v = vinc[it.id] || [];
+      return `<tr data-k="${esc(it.id)}"><td><span class="mn">${esc(it.codigo)}</span> ${it.material ? `<span class="tag">${esc(it.material)}</span>` : ''}</td>
+        <td class="desc" title="${esc(it.descricao || '')}">${esc(it.descricao || '')}</td>
+        <td>${it.manual ? '<span class="badge-s base" title="Cadastrado à mão: continua na tabela mesmo fora do arquivo importado"><i class="fa-solid fa-hand"></i>manual</span>' : `<span class="badge-s off"><i class="fa-solid fa-file-import"></i>importado</span>`}${it.editadoEm && !it.manual ? ` <i class="fa-solid fa-pen muted" title="Editado à mão por ${esc(it.editadoPor || '—')} em ${dataHora(it.editadoEm)}: a próxima importação volta ao valor do arquivo"></i>` : ''}</td>
+        <td>${v.length ? `<span class="mn" title="${esc(v.join(', '))}">${esc(v.slice(0, 2).join(', '))}${v.length > 2 ? ` +${v.length - 2}` : ''}</span>` : '<span class="muted">—</span>'}</td>
+        <td class="num">${inat ? `<span class="muted">${fmt(it.preco)}</span>` : fmt(p.valor) + (p.agendado ? ` <i class="fa-solid fa-clock" style="color:var(--amber)" title="${fmt(p.agendado.preco)} a partir de ${dataBR(p.agendado.vigencia)}"></i>` : '')}</td>
+        <td>${inat ? `<span class="muted">inativo${it.inativoEm ? ` desde ${dataBR(new Date(it.inativoEm).toISOString().slice(0, 10))}` : ''}</span>` : it.vigencia ? dataBR(p.vigencia || it.vigencia) : '<span class="muted">—</span>'}</td>
+        <td class="acts">${editar ? `<button title="Editar item" onclick="abrirItemApoio(this.closest('tr').dataset.k)"><i class="fa-solid fa-pen"></i></button>
+          <button title="${inat ? 'Reativar item' : 'Inativar item'}" onclick="alternarItemApoio(this.closest('tr').dataset.k)"><i class="fa-solid ${inat ? 'fa-rotate-left' : 'fa-ban'}"></i></button>` : ''}</td></tr>`;
+    }).join('') || `<tr><td colspan="7">${vazio(inat ? 'fa-ban' : 'fa-list', apo.itQ ? 'Nenhum item com essa busca' : inat ? 'Nenhum item inativo' : 'Nenhum item na tabela')}</td></tr>`}
+    </tbody></table></div>
+    <div class="foot">${paginacao(ls.length, apo.itPag, ITENS_POR_PAG, 'paginaItensApoio')}</div>`;
+}
+
+// Lote do histórico da tabela: uma importação ou uma alteração à mão. itens: { chave: { codigo, material, descricao, tipo, de, para, vigDe, vigPara } }
+function loteHistoricoApoio(tipo, itens, extra = {}, apoioId = apo.sel) {
+  return { [`${CAMINHOS.apoios}/${apoioId}/historico/${DB.novaChave(`${CAMINHOS.apoios}/${apoioId}/historico`)}`]: { tipo, em: Date.now(), por: usuarioAtual().nome, ...extra, itens } };
+}
+const itemHistorico = (it, tipo, m = {}) => ({ codigo: it.codigo, material: it.material || '', descricao: it.descricao || '', tipo, de: m.de ?? null, para: m.para ?? null, vigDe: m.vigDe || null, vigPara: m.vigPara || null });
+
+let _iaK = null;
+function abrirItemApoio(k) {
+  const it = k ? ESTADO.apoios[apo.sel]?.precos?.[k] : null, a = ESTADO.setores[apo.sel];
+  _iaK = it ? k : null;
+  abrirGaveta({
+    sobre: it ? 'Editar item do apoio' : 'Novo item do apoio', titulo: it ? `${it.codigo}${it.material ? ` · ${it.material}` : ''}` : a.nome,
+    corpo: `<div class="form-col">
+      ${it && !it.manual ? '<div class="alert a" style="margin:0"><i class="fa-solid fa-file-import"></i><div>Item importado: a alteração vale até a próxima importação da tabela, que volta a usar o valor do arquivo.</div></div>'
+        : !it ? '<div class="alert x" style="margin:0"><i class="fa-solid fa-hand"></i><div>Item cadastrado à mão: continua na tabela mesmo quando o arquivo importado não o traz.</div></div>' : ''}
+      ${campo('ia-cod', 'Código no apoio', it?.codigo || '', { tipo: 'text', ph: 'Ex.: TSH', desab: !!it })}
+      ${campo('ia-mat', 'Material', it?.material || '', { tipo: 'text', ph: 'Opcional (ex.: S, LIQ)', desab: !!it, dica: it ? '' : 'diferencia itens de mesmo código' })}
+      ${it ? '' : '<div class="chips sem-pad ia-mats" id="ia-mats" hidden></div>'}
+      ${campo('ia-desc', 'Descrição no apoio', it?.descricao || '', { tipo: 'text' })}
+      ${campo('ia-preco', 'Preço', it ? Number(it.preco).toFixed(2) : '', { pre: 'R$', passo: '0.01', ph: '0,00' })}
+      ${campo('ia-vig', 'Vigência', it?.vigencia || hojeISO(), { tipo: 'date', dica: 'a partir de quando o preço vale · com data futura, o preço atual segue valendo até lá' })}
+    </div>`,
+    rodape: `<button class="btn" onclick="fecharGaveta()">Cancelar</button><button class="btn pri" onclick="gravarItemApoio()"><i class="fa-solid fa-floppy-disk"></i>Salvar item</button>`
+  });
+  const mat = document.getElementById('ia-mat');
+  if (!it && mat) {
+    mat.autocomplete = 'off';
+    ['focus', 'input', 'blur'].forEach(ev => mat.addEventListener(ev, () => setTimeout(desenharMateriaisApoio)));
+  }
+}
+
+// Materiais já usados nos itens deste apoio, do mais comum ao menos: aparecem sob o campo enquanto ele tem o foco
+function materiaisApoio() {
+  const n = {};
+  Object.values(ESTADO.apoios[apo.sel]?.precos || {}).forEach(it => { const m = (it.material || '').trim(); if (m) n[m] = (n[m] || 0) + 1; });
+  return Object.entries(n).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+function desenharMateriaisApoio() {
+  const el = document.getElementById('ia-mats'), inp = document.getElementById('ia-mat');
+  if (!el || !inp) return;
+  const atual = inp.value.trim().toUpperCase(), ls = materiaisApoio().filter(([m]) => contem(m, inp.value.trim()));
+  // mousedown não tira o foco do campo: a lista continua aberta para o clique chegar
+  el.innerHTML = ls.map(([m, q]) => `<button type="button" class="chip ${m.toUpperCase() === atual ? 'on' : ''}" data-m="${esc(m)}" onmousedown="event.preventDefault()" onclick="escolherMaterialApoio(this.dataset.m)">${esc(m)} <b>${q}</b></button>`).join('')
+    || `<span class="hint">${materiaisApoio().length ? 'Nenhum material igual: será cadastrado um novo' : 'Nenhum material cadastrado neste apoio ainda'}</span>`;
+  el.hidden = document.activeElement !== inp;
+}
+function escolherMaterialApoio(m) {
+  const inp = document.getElementById('ia-mat');
+  inp.value = m;
+  desenharMateriaisApoio();
+  document.getElementById('ia-desc')?.focus();
+}
+
+async function gravarItemApoio() {
+  const base = `${CAMINHOS.apoios}/${apo.sel}/precos`, precos = ESTADO.apoios[apo.sel]?.precos || {}, a = ESTADO.setores[apo.sel], u = usuarioAtual();
+  const old = _iaK ? precos[_iaK] : null;
+  const cod = old ? old.codigo : valorCampo('ia-cod').trim(), mat = old ? old.material || '' : valorCampo('ia-mat').trim();
+  const desc = valorCampo('ia-desc').trim(), preco = Math.round(numCampo('ia-preco') * 100) / 100, vig = valorCampo('ia-vig') || hojeISO();
+  if (!cod) return toast('Informe o código do item', 'erro');
+  if (!(preco >= 0)) return toast('Informe o preço', 'erro');
+  const k = _iaK || chaveItemApoio(cod, mat);
+  if (!old && precos[k]) return toast(precos[k].inativo ? `O item ${cod} já existe e está inativo: reative-o em "Inativos"` : `O item ${cod} já existe na tabela`, 'erro');
+  let item, hist;
+  if (!old) {
+    item = { codigo: cod, material: mat, descricao: desc, preco, vigencia: vig, manual: true, desde: Date.now(), criadoPor: u.nome };
+    hist = itemHistorico(item, 'criado', { para: preco, vigPara: vig });
+  } else {
+    const mudouValor = old.preco !== preco || (old.vigencia || '') !== vig;
+    if (!mudouValor && (old.descricao || '') === desc) return fecharGaveta();
+    item = { ...old, descricao: desc, preco, vigencia: vig, editadoEm: Date.now(), editadoPor: u.nome };
+    // o preço que valia segue valendo até a nova vigência (ver precoApoio)
+    if (mudouValor) item.anterior = old.vigencia > hojeISO() && old.anterior ? old.anterior : { preco: old.preco, vigencia: old.vigencia || null };
+    hist = itemHistorico(item, 'editado', { de: old.preco, para: preco, vigDe: old.vigencia, vigPara: vig });
+  }
+  await DB.mesclar('/', { [`${base}/${k}`]: item, ...loteHistoricoApoio('manual', { [k]: hist }) });
+  registrar('apoios', `${a.nome}: item ${cod} ${old ? `alterado à mão (${fmt(old.preco)} → ${fmt(preco)})` : `cadastrado à mão (${fmt(preco)})`}`);
+  apo.cache = null;
+  fecharGaveta();
+  toast(`Item ${cod} ${old ? 'atualizado' : 'cadastrado'}`);
+}
+
+async function alternarItemApoio(k) {
+  const it = ESTADO.apoios[apo.sel]?.precos?.[k], a = ESTADO.setores[apo.sel];
+  if (!it) return;
+  const inativar = !it.inativo, base = `${CAMINHOS.apoios}/${apo.sel}/precos/${k}`;
+  if (inativar) {
+    const vinc = Object.values(ESTADO.exames || {}).filter(e => e.vinculoApoio?.apoioId === apo.sel && e.vinculoApoio.chave === k).map(e => e.mn);
+    const ok = await confirmar({ titulo: `Inativar o item ${it.codigo}?`, botao: 'Inativar', perigo: vinc.length > 0,
+      texto: vinc.length ? `<b>${vinc.length} exame(s)</b> vinculado(s) (${esc(vinc.slice(0, 5).join(', '))}${vinc.length > 5 ? '…' : ''}) deixam de ter o custo vindo da tabela e aparecem como "Saiu da tabela".` : 'O item deixa de ser sugerido e de custear exames. Dá para reativar depois.' });
+    if (!ok) return;
+  }
+  await DB.mesclar('/', { [`${base}/inativo`]: inativar ? true : null, [`${base}/inativoEm`]: inativar ? Date.now() : null,
+    ...loteHistoricoApoio('manual', { [k]: itemHistorico(it, inativar ? 'inativado' : 'reativado', inativar ? { de: it.preco, vigDe: it.vigencia } : { para: it.preco, vigPara: it.vigencia }) }) });
+  registrar('apoios', `${a.nome}: item ${it.codigo} ${inativar ? 'inativado' : 'reativado'} à mão`);
+  apo.cache = null;
+  toast(`Item ${it.codigo} ${inativar ? 'inativado' : 'reativado'}`);
+}
+
+// ── Histórico de alterações da tabela, por lote ───────────────
+const TIPOS_HIST_APOIO = {
+  novo:      { t: 'Novo',      c: 'ok',   ic: 'fa-plus' },
+  criado:    { t: 'Criado à mão', c: 'ok', ic: 'fa-hand' },
+  alterado:  { t: 'Alterado',  c: 'base', ic: 'fa-right-left' },
+  editado:   { t: 'Editado à mão', c: 'base', ic: 'fa-pen' },
+  inativado: { t: 'Inativado', c: 'off',  ic: 'fa-ban' },
+  reativado: { t: 'Reativado', c: 'ok',   ic: 'fa-rotate-left' }
+};
+const HIST_ITENS_MAX = 300;
+function htmlHistoricoApoio() {
+  const lotes = lista(ESTADO.apoios[apo.sel]?.historico, (a, b) => (b.em || 0) - (a.em || 0));
+  if (!lotes.length) return vazio('fa-clock-rotate-left', '<b>Sem histórico ainda</b><br>As próximas importações e alterações à mão desta tabela aparecem aqui, lote a lote.');
+  const vig = (de, para) => de && para && de !== para ? `${dataBR(de)} → <b>${dataBR(para)}</b>` : para || de ? dataBR(para || de) : '<span class="muted">—</span>';
+  return `<div class="ah-l">${lotes.map((l, i) => {
+    const imp = l.tipo === 'importacao', itens = Object.values(l.itens || {}).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+    const cnt = {}; itens.forEach(x => { cnt[x.tipo] = (cnt[x.tipo] || 0) + 1; });
+    if (imp && l.n) Object.assign(cnt, { novo: l.n.novos || 0, alterado: l.n.alterados || 0, inativado: l.n.inativados || 0, reativado: l.n.reativados || 0 });
+    const resumo = Object.keys(TIPOS_HIST_APOIO).filter(t => cnt[t]).map(t => `<span class="badge-s ${TIPOS_HIST_APOIO[t].c}"><i class="fa-solid ${TIPOS_HIST_APOIO[t].ic}"></i>${cnt[t]} ${TIPOS_HIST_APOIO[t].t.toLowerCase()}</span>`).join('');
+    return `<details class="ah" ${i === 0 ? 'open' : ''}><summary><span class="po-ic" style="--c:${imp ? 'var(--cyan)' : 'var(--amber)'}"><i class="fa-solid ${imp ? 'fa-file-import' : 'fa-hand'}"></i></span>
+        <div class="ah-t"><b>${imp ? `Importação${l.arquivo ? ` · ${esc(l.arquivo)}` : ''}` : 'Alteração à mão'}</b><small>${dataHora(l.em)} · ${esc(l.por || '—')}${imp && l.vigencia ? ` · vigência ${dataBR(l.vigencia)}` : ''}${imp && l.total != null ? ` · ${num(l.total, 0)} itens ativos` : ''}</small></div>
+        <span class="ah-r">${resumo || '<span class="muted" style="font-size:12px">sem alterações de valor</span>'}</span><i class="fa-solid fa-chevron-down ah-chev"></i></summary>
+      ${itens.length ? `<div class="tbl-wrap"><table><thead><tr><th>Item</th><th>Descrição</th><th>Alteração</th><th class="num">Preço</th><th>Vigência do custo</th></tr></thead><tbody>
+        ${itens.slice(0, HIST_ITENS_MAX).map(x => {
+          const tp = TIPOS_HIST_APOIO[x.tipo] || TIPOS_HIST_APOIO.alterado, so = x.de != null && x.para != null && x.de === x.para;
+          const d = x.de > 0 && x.para != null && !so ? x.para / x.de - 1 : null;
+          return `<tr><td><span class="mn">${esc(x.codigo)}</span> ${x.material ? `<span class="tag">${esc(x.material)}</span>` : ''}</td><td class="desc" title="${esc(x.descricao || '')}">${esc(x.descricao || '')}</td>
+            <td><span class="badge-s ${tp.c}"><i class="fa-solid ${tp.ic}"></i>${so ? 'Vigência' : tp.t}</span></td>
+            <td class="num">${x.de != null && x.para != null && !so ? `<span class="muted">${fmt(x.de)}</span> → <b>${fmt(x.para)}</b>${d ? ` <small style="color:var(--${d > 0 ? 'red' : 'green'})">${d > 0 ? '+' : ''}${pct(d)}</small>` : ''}` : x.para != null ? fmt(x.para) : x.de != null ? `<span class="muted">${fmt(x.de)}</span>` : '—'}</td>
+            <td>${vig(x.vigDe, x.vigPara)}</td></tr>`;
+        }).join('')}</tbody></table></div>${itens.length > HIST_ITENS_MAX ? `<div class="hint" style="padding:8px 18px">+ ${itens.length - HIST_ITENS_MAX} itens neste lote</div>` : ''}`
+        : `<div class="hint" style="padding:10px 18px">${imp && l.primeira ? 'Primeira importação: os itens entraram todos como novos e não são listados um a um.' : 'Nenhum valor mudou neste lote.'}</div>`}</details>`;
+  }).join('')}</div>`;
 }

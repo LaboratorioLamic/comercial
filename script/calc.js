@@ -56,7 +56,8 @@ const dataBR = iso => iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(8, 10) +
 // Preço vigente de um item da tabela do apoio (vigência futura → vale o anterior)
 function precoApoio(apoioId, chave) {
   const p = ESTADO.apoios?.[apoioId]?.precos?.[chave];
-  if (!p) return null;
+  // item inativo (saiu da tabela importada ou foi inativado à mão) não custeia
+  if (!p || p.inativo) return null;
   if (p.vigencia && p.vigencia > hojeISO() && p.anterior) return { ...p, valor: p.anterior.preco, vigencia: p.anterior.vigencia, agendado: { preco: p.preco, vigencia: p.vigencia } };
   return { ...p, valor: p.preco };
 }
