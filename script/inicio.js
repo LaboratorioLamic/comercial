@@ -6,6 +6,90 @@ const ICONE_HIST = { conveniados: 'fa-handshake', exames: 'fa-flask-vial', tabel
   custos: 'fa-coins', reagentes: 'fa-vials', setores: 'fa-sitemap', parametros: 'fa-sliders', apoio: 'fa-truck-medical', instrucoes: 'fa-book-medical' };
 let _iniHist = null, _iniHistEm = 0;
 
+// ── Sininho: propostas aguardando aprovação ───────────────────
+let _sinoAberto = false, _sinoFiltro = '';
+const sinoPendentes = () => lista(ESTADO.propostas, (a, b) => (b.em || 0) - (a.em || 0)).filter(p => p.status === 'pendente');
+const propostaMinha = p => { const u = usuarioAtual(); return p.autorId === u.id || p.autor === u.nome; };
+
+function haQuanto(ts) {
+  if (!ts) return '—';
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return 'agora';
+  if (m < 60) return `há ${m} min`;
+  if (m < 1440) return `há ${Math.floor(m / 60)} h`;
+  const d = Math.floor(m / 1440);
+  return d < 30 ? `há ${d} dia${d > 1 ? 's' : ''}` : dataHora(ts);
+}
+
+// Resumo da proposta contra os preços de hoje: quantos sobem/descem, variação média e abaixo do piso
+function resumoProposta(p) {
+  const cx = ctxAlvo(p.alvo);
+  let sobe = 0, desce = 0, soma = 0, nv = 0, abaixo = 0;
+  Object.entries(p.itens || {}).forEach(([k, it]) => {
+    const e = ESTADO.exames[k], de = cx && e ? cx.salvo(k) : it.de;
+    if (de > 0 && it.para != null) { const d = it.para / de - 1; if (d > 0) sobe++; else if (d < 0) desce++; soma += d; nv++; }
+    if (cx && e && it.para != null && calcular(e, it.para, cx.tab).status === 'r') abaixo++;
+  });
+  return { n: p.n || Object.keys(p.itens || {}).length, sobe, desce, media: nv ? soma / nv : null, abaixo, pisoNome: cx?.pisoNome || 'piso' };
+}
+
+function sinoPainel() {
+  const todas = sinoPendentes(), minhas = todas.filter(propostaMinha).length;
+  if (!minhas || minhas === todas.length) _sinoFiltro = '';
+  const ls = todas.filter(p => !_sinoFiltro || (_sinoFiltro === 'minhas') === propostaMinha(p));
+  const precos = todas.reduce((s, p) => s + (p.n || Object.keys(p.itens || {}).length), 0);
+  const antiga = todas.length ? Math.min(...todas.map(p => p.em || Date.now())) : null;
+  const chip = (f, nome, n) => `<button class="chip ${_sinoFiltro === f ? 'on' : ''}" onclick="_sinoFiltro='${f}';document.getElementById('sino-pan').innerHTML=sinoPainel()">${nome} <b>${n}</b></button>`;
+  return `
+    <div class="sino-h"><span class="sino-ic"><i class="fa-solid fa-stamp"></i></span>
+      <div><b>Propostas pendentes</b><span>${todas.length ? `${num(precos, 0)} preço(s) aguardando · mais antiga ${haQuanto(antiga)}` : 'Nada aguardando aprovação'}</span></div>
+      <button class="pop-x" onclick="fecharSino()" title="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
+    ${_sinoFiltro || (minhas && minhas < todas.length) ? `<div class="chips sino-chips">${chip('', 'Todas', todas.length)}${chip('minhas', 'Minhas', minhas)}${chip('outros', 'De outros', todas.length - minhas)}</div>` : ''}
+    <div class="sino-l">${ls.map((p, i) => {
+      const a = alvoInfo(p.alvo), r = resumoProposta(p), velha = Date.now() - (p.em || 0) > 3 * 864e5;
+      return `<button class="sino-it" style="animation-delay:${Math.min(i, 8) * 35}ms" onclick="fecharSino();abrirProposta('${p.id}')">
+        <span class="avatar" style="background:${corAvatar(p.autorId || p.autor)}">${esc(iniciais(p.autor))}</span>
+        <span class="sino-c">
+          <span class="sino-t"><i class="fa-solid ${a.icone}" style="color:${a.cor}"></i><b>${esc(a.nome)}</b><em class="${velha ? 'velha' : ''}" title="${dataHora(p.em)}">${velha ? '<i class="fa-solid fa-clock"></i> ' : ''}${haQuanto(p.em)}</em></span>
+          <span class="sino-s">${esc(p.autor)}${propostaMinha(p) ? ' (você)' : ''} · ${num(r.n, 0)} preço(s)</span>
+          <span class="sino-m">
+            ${r.sobe ? `<span class="up" title="Preços que sobem"><i class="fa-solid fa-arrow-up"></i>${r.sobe}</span>` : ''}
+            ${r.desce ? `<span class="dn" title="Preços que descem"><i class="fa-solid fa-arrow-down"></i>${r.desce}</span>` : ''}
+            ${r.media != null ? `<span title="Variação média sobre o preço de hoje">média ${r.media > 0 ? '+' : ''}${pct(r.media)}</span>` : ''}
+            ${r.abaixo ? `<span class="bad" title="Preços abaixo do ${r.pisoNome}"><i class="fa-solid fa-circle-xmark"></i>${r.abaixo} abaixo do ${r.pisoNome}</span>` : ''}
+          </span>
+          ${p.justificativa ? `<span class="sino-j">${esc(p.justificativa)}</span>` : ''}
+        </span>
+        <i class="fa-solid fa-chevron-right sino-go"></i></button>`; }).join('')
+      || `<div class="sino-vazio"><i class="fa-solid fa-circle-check"></i><b>Tudo em dia</b><span>Nenhuma proposta aguardando aprovação.</span></div>`}</div>
+    <div class="sino-f"><span>${pode('tabelas', 'aprovar') ? 'Clique para revisar e aprovar' : 'Clique para ver os detalhes'}</span>
+      <button onclick="fecharSino();tabAba='propostas';irPara('tabelas')">Ver todas <i class="fa-solid fa-arrow-right"></i></button></div>`;
+}
+
+const sinoHtml = n => `<div class="sino ${_sinoAberto ? 'open' : ''}" id="sino">
+    <button class="sino-btn ${n ? 'tem' : ''}" onclick="event.stopPropagation();alternarSino()" title="Propostas pendentes" aria-haspopup="true" aria-expanded="${_sinoAberto}">
+      <i class="fa-solid fa-bell"></i>${n ? `<span class="sino-n">${n > 99 ? '99+' : n}</span>` : ''}</button>
+    <div class="sino-pan" id="sino-pan" onclick="event.stopPropagation()">${_sinoAberto ? sinoPainel() : ''}</div></div>`;
+
+// Sino na barra do topo: redesenha a cada mudança nos dados
+function atualizarSino() {
+  const el = document.getElementById('tb-sino');
+  if (el) el.innerHTML = usuarioAtual() && pode('tabelas') ? sinoHtml(sinoPendentes().length) : '';
+}
+
+function alternarSino() {
+  const el = document.getElementById('sino');
+  if (!el) return;
+  fecharPop();
+  _sinoAberto = !_sinoAberto;
+  if (_sinoAberto) document.getElementById('sino-pan').innerHTML = sinoPainel();
+  el.classList.toggle('open', _sinoAberto);
+  el.querySelector('.sino-btn').setAttribute('aria-expanded', _sinoAberto);
+}
+function fecharSino() { if (_sinoAberto) alternarSino(); _sinoAberto = false; }
+document.addEventListener('click', fecharSino);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharSino(); });
+
 function renderInicio() {
   const u = usuarioAtual();
   const exames = examesVisiveis().filter(e => e.ativo !== false).map(e => ({ e, c: calcular(e) }));
@@ -40,7 +124,7 @@ function renderInicio() {
 
   document.getElementById('s-inicio').innerHTML = `
     <div class="h-row"><div><h2>Olá, ${esc((u?.nome || '').split(' ')[0])}</h2><p>Imposto ${pct(parametro('imposto'))} · margem mínima ${pct(mMin)} · alvo ${pct(mAlvo)}</p></div>
-      ${!exames.length && pode('importar', 'importar') ? `<button class="btn pri" onclick="irPara('importar')"><i class="fa-solid fa-file-import"></i>Migrar planilha</button>` : ''}</div>
+      <div style="display:flex;gap:8px;align-items:center">${!exames.length && pode('importar', 'importar') ? `<button class="btn pri" onclick="irPara('importar')"><i class="fa-solid fa-file-import"></i>Migrar planilha</button>` : ''}</div></div>
     <div class="kpis">
       ${kpi('fa-percent', 'var(--cyan)', 'var(--cyan-light)', 'Margem média', media != null ? pct(media) : '—', `${num(comMargem.length, 0)} de ${num(exames.length, 0)} exames com custo e preço`, pode('exames') ? "irPara('exames')" : '')}
       ${kpi('fa-circle-xmark', 'var(--red)', 'var(--red-bg)', 'Abaixo do mínimo', cont('r'), `margem menor que ${pct(mMin)}`, irPend('min'))}

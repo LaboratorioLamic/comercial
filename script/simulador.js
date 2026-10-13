@@ -28,10 +28,11 @@ function renderSimulador() {
   const salvas = lista(ESTADO.simulacoes).length;
   el.innerHTML = `
     <div class="h-row"><div><h2>Simulador</h2><p>Veja o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada.</p></div></div>
-    <div class="subnav" data-grupo="simulador">
+    <div class="subnav-row"><div class="subnav" data-grupo="simulador">
       <button data-p="reajuste" class="${simAba === 'reajuste' ? 'on' : ''}"><i class="fa-solid fa-arrow-trend-up"></i>Reajuste de tabela</button>
-      <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
+      <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta comercial${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
     </div>
+    <button class="btn so-lab" onclick="abrirModeloPdf()" title="Texto padrão do PDF, vale para todas as propostas"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
     <div class="pane ${simAba === 'reajuste' ? 'on' : ''}" id="simulador-reajuste"></div>
     <div class="pane ${simAba === 'lab' ? 'on' : ''}" id="simulador-lab"></div>`;
   iniciarSubnav();
@@ -352,14 +353,13 @@ function desenharSimLab() {
       <div class="sec-card-h"><span class="tc-ic" style="--c:#8b5cf6"><i class="fa-solid fa-handshake"></i></span>
         <div style="min-width:0;flex:1"><h3>${esc(pl.nome || 'Nova proposta')}${pl.sujo ? ' <span class="badge-s warn">não salva</span>' : sv ? ' <span class="badge-s ok">salva</span>' : ''}</h3>
           <div class="sub">${sv ? `${esc(sv.autor)} · ${dataHora(sv.atualizadoEm || sv.em)}` : 'Preço proposto × volume mensal por exame · margem pelo perfil de custo da tabela de referência'}</div></div>
-        <div class="rt"><div id="pop-plsalvas"></div>
-          <button class="btn sm" onclick="novaSimLab()"><i class="fa-solid fa-file"></i>Nova</button>
-          <button class="btn sm" onclick="exportarSimLab()"><i class="fa-solid fa-file-csv"></i>Exportar</button>
-          <button class="btn sm" onclick="abrirPdfLab()" title="Proposta em PDF com texto de apresentação"><i class="fa-solid fa-file-pdf"></i>PDF</button>
-          <button class="btn sm" onclick="abrirModeloPdf()" title="Texto padrão do PDF, vale para todas as propostas"><i class="fa-solid fa-file-signature"></i>Texto padrão</button>
-          ${sv && pode('tabelas', 'criar') ? `<button class="btn sm" onclick="abrirConverterLab()" title="Proposta salva vira tabela de preço ou laboratório apoiado"><i class="fa-solid fa-right-left"></i>Converter</button>` : ''}
-          ${sv && (usuarioAtual().admin || sv.autorId === usuarioAtual().id || pode('simulador', 'aprovar')) ? `<button class="btn sm perigo-txt" onclick="excluirSimLab()" title="Excluir simulação"><i class="fa-solid fa-trash"></i></button>` : ''}
-          ${cria ? `<button class="btn sm pri" onclick="salvarSimLab()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>` : ''}</div></div>
+        <div class="rt"><button class="btn qd" onclick="novaSimLab()" title="Nova proposta"><i class="fa-solid fa-plus" style="color:var(--cyan)"></i></button>
+          <div id="pop-plsalvas"></div>
+          <button class="btn qd" onclick="exportarSimLab()" title="Exportar planilha"><i class="fa-solid fa-file-csv"></i></button>
+          <button class="btn qd" onclick="abrirPdfLab()" title="Proposta em PDF com texto de apresentação"><i class="fa-solid fa-file-pdf"></i></button>
+          ${sv && pode('tabelas', 'criar') ? `<button class="btn qd" onclick="abrirConverterLab()" title="Converter: proposta salva vira tabela de preço ou laboratório apoiado"><i class="fa-solid fa-right-left"></i></button>` : ''}
+          ${sv && (usuarioAtual().admin || sv.autorId === usuarioAtual().id || pode('simulador', 'aprovar')) ? `<button class="btn qd perigo-txt" onclick="excluirSimLab()" title="Excluir simulação"><i class="fa-solid fa-trash"></i></button>` : ''}
+          ${cria ? `<button class="btn qd pri" onclick="salvarSimLab()" title="Salvar"><i class="fa-solid fa-floppy-disk"></i></button>` : ''}</div></div>
       <div class="fgrid pl-dados">
         ${campo('pl-nome', 'Nome da proposta', pl.nome, { tipo: 'text', ph: 'Ex.: Lab. Vida — out/2026', aoMudar: 'pl.nome=this.value;pl.sujo=true' })}
         <div class="field"><label>Laboratório</label><div id="pop-pllab" class="block"></div></div>

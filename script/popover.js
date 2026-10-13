@@ -32,7 +32,8 @@ const opcoesPop = st => typeof st.opcoes === 'function' ? st.opcoes() : st.opcoe
 const valorPop = id => POPS[id]?.valor ?? '';
 
 function desenharBotaoPop(id) {
-  const st = POPS[id], todas = opcoesPop(st);
+  // soIcone: botão sem texto, não precisa montar as opções só para desenhar
+  const st = POPS[id], todas = st.soIcone ? [] : opcoesPop(st);
   const o = todas.find(x => x.valor === st.valor) || todas[0] || { rotulo: '—' };
   const marcado = st.valor !== (st.padrao ?? '');
   st.btn.classList.toggle('set', marcado && !!st.limpavel);

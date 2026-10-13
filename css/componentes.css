@@ -16,6 +16,15 @@
 .btn.perigo-txt:hover:not(:disabled) { border-color: var(--red); color: var(--red); background: var(--red-bg); }
 .btn.sm { padding: 5px 10px; font-size: 12px; }
 .btn:disabled { opacity: .5; }
+/* Botão quadrado só com ícone, na altura do popover */
+.btn.qd { width: 44px; height: 44px; padding: 0; justify-content: center; font-size: 15px; flex-shrink: 0; }
+.btn.qd .fa-file-csv { color: var(--green); }
+.btn.qd .fa-file-pdf { color: var(--red); }
+/* Subnav com ação à direita */
+.subnav-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.subnav-row .subnav { margin-bottom: 0; }
+.subnav-row .so-lab { display: none; }
+.subnav-row:has(button[data-p="lab"].on) .so-lab { display: inline-flex; }
 
 .icon-btn {
   width: 36px; height: 36px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card);

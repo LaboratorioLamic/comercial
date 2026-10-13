@@ -155,8 +155,8 @@ function renderTabelas() {
       <button data-p="tabelas" class="${tabAba === 'tabelas' ? 'on' : ''}"><i class="fa-solid fa-table-list"></i>Tabelas</button>
       <button data-p="labs" class="${tabAba === 'labs' ? 'on' : ''}"><i class="fa-solid fa-building-user"></i>Laboratórios apoiados</button>
       <button data-p="conv" class="${tabAba === 'conv' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Conveniados</button>
-      <button data-p="propostas" class="${tabAba === 'propostas' ? 'on' : ''}"><i class="fa-solid fa-stamp"></i>Propostas${pend ? `<span class="n-sub">${pend}</span>` : ''}</button>
       <button data-p="hierarquia" class="${tabAba === 'hierarquia' ? 'on' : ''}"><i class="fa-solid fa-stairs"></i>Hierarquia${nQuebras ? `<span class="n-sub aviso">${nQuebras}</span>` : ''}</button>
+      <button data-p="propostas" class="${tabAba === 'propostas' ? 'on' : ''}"><i class="fa-solid fa-stamp"></i>Propostas${pend ? `<span class="n-sub">${pend}</span>` : ''}</button>
     </div>
     <div class="pane ${tabAba === 'tabelas' ? 'on' : ''}" id="tabelas-tabelas"></div>
     <div class="pane ${tabAba === 'labs' ? 'on' : ''}" id="tabelas-labs"></div>

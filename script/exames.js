@@ -10,6 +10,13 @@ const tagSetor = id => {
   return s ? `<span class="tag"><i class="fa-solid ${s.icone}" style="color:${s.cor}"></i>${esc(s.nome)}</span>`
     : '<span class="warn-i"><i class="fa-solid fa-triangle-exclamation"></i>sem setor</span>';
 };
+// Filtro "Controle interno" da lista de exames
+const CTRL_EXAME = {
+  aud:  { rotulo: 'A auditar',            icone: 'fa-magnifying-glass-dollar', cor: 'var(--amber)',      desc: 'Valor marcado para auditoria',         f: e => !!e.auditar },
+  sist: { rotulo: 'Fora do sistema',      icone: 'fa-plug-circle-xmark',       cor: 'var(--text-muted)', desc: 'Mnemônico não existe no catálogo',     f: e => !!e.foraDoSistema },
+  efet: { rotulo: 'Não efetua na Particular', icone: 'fa-ban',                 cor: 'var(--text-muted)', desc: 'Efetua = N na tabela Particular do Unilab', f: e => !!e.inativoNoSistema },
+  nneg: { rotulo: 'Apoio não negociado',  icone: 'fa-handshake-slash',         cor: 'var(--red)',        desc: 'Exame de apoio sem valor negociado',   f: e => e.origem === 'apoio' && !negociadoExame(e) }
+};
 const iconesExame = e =>
   (e.auditar ? ' <i class="fa-solid fa-magnifying-glass-dollar flag" style="color:var(--amber)" title="Valor a auditar"></i>' : '') +
   (e.origem === 'apoio' && negociadoExame(e) ?' <i class="fa-solid fa-handshake flag" style="color:var(--green)" title="Apoio com negociação"></i>' : '') +
@@ -29,7 +36,7 @@ function renderExames() {
   const el = document.getElementById('s-exames');
   el.innerHTML = `
     <div class="h-row"><div><h2>Exames</h2><p>Clique em um exame para ver a composição do preço</p></div>
-      <div style="display:flex;gap:8px">${pode('exames', 'editar') ? `<button class="btn" onclick="abrirImportExames()"><i class="fa-solid fa-file-csv"></i>Importar CSV</button>` : ''}${pode('exames', 'criar') ? `<button class="btn pri" onclick="abrirDadosExame()"><i class="fa-solid fa-plus"></i>Novo exame</button>` : ''}</div></div>
+      <div style="display:flex;gap:8px">${pode('exames', 'editar') ? `<button class="btn" onclick="abrirImportExames()"><i class="fa-solid fa-file-csv"></i>Importar CSV</button>` : ''}${pode('tabelas') ? `<button class="btn" onclick="tabAba='propostas';irPara('tabelas')"><i class="fa-solid fa-stamp"></i>Propostas</button>` : ''}${pode('exames', 'criar') ? `<button class="btn pri" onclick="abrirDadosExame()"><i class="fa-solid fa-plus"></i>Novo exame</button>` : ''}</div></div>
     <div class="subnav" data-grupo="exst">
       <button data-p="ativos" class="${exF.inativos ? '' : 'on'}"><i class="fa-solid fa-play"></i>Ativos<span class="n-sub neutro" id="ex-n-ativos"></span></button>
       <button data-p="inativos" class="${exF.inativos ? 'on' : ''}"><i class="fa-solid fa-pause"></i>Inativos<span class="n-sub neutro" id="ex-n-inativos"></span></button>
@@ -39,6 +46,7 @@ function renderExames() {
         <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="q-ex" value="${esc(exF.q)}" placeholder="Buscar mnemônico ou descrição…" oninput="exF.q=this.value;exF.pag=1;desenharExames()"></div>
         <div id="pop-exsetor"></div>
         <div id="pop-exorigem"></div>
+        <div id="pop-exctrl"></div>
       </div>
       <div class="chips" id="ex-chips"></div>
       <div class="tbl-wrap" style="margin-top:10px"><table><thead id="ex-head"></thead><tbody id="ex-body"></tbody></table></div>
@@ -62,15 +70,23 @@ function renderExames() {
       { valor: 'apoio', rotulo: 'Apoio', icone: 'fa-truck-medical', cor: 'var(--cyan)', desc: 'Enviado a laboratório de apoio', qtd: vis.filter(e => e.origem === 'apoio').length }],
     aoMudar: () => { exF.pag = 1; desenharExames(); }
   });
+  criarPop('pop-exctrl', {
+    rotulo: 'Controle interno', titulo: 'Controle interno', icone: 'fa-clipboard-check', limpavel: true,
+    opcoes: () => [
+      { valor: '', rotulo: 'Todos', icone: 'fa-layer-group', desc: 'Sem filtro de controle', qtd: vis.length },
+      ...Object.entries(CTRL_EXAME).map(([valor, o]) => ({ valor, rotulo: o.rotulo, icone: o.icone, cor: o.cor, desc: o.desc, qtd: vis.filter(o.f).length }))],
+    aoMudar: () => { exF.pag = 1; desenharExames(); }
+  });
   desenharExames();
 }
 
 function linhasExames() {
-  const fs = valorPop('pop-exsetor'), fo = valorPop('pop-exorigem');
+  const fs = valorPop('pop-exsetor'), fo = valorPop('pop-exorigem'), fc = CTRL_EXAME[valorPop('pop-exctrl')]?.f;
   return examesVisiveis()
     .filter(e => (exF.inativos ? e.ativo === false : e.ativo !== false))
     .filter(e => fs === '__sem' ? !ESTADO.setores[e.setorId] : !fs || e.setorId === fs)
     .filter(e => !fo || (fo === 'apoio' ? e.origem === 'apoio' : e.origem !== 'apoio'))
+    .filter(e => !fc || fc(e))
     .filter(e => contem(e.mn + ' ' + e.descricao, exF.q))
     .map(e => ({ e, c: calcular(e) }));
 }

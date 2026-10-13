@@ -146,7 +146,7 @@ const PENDENCIAS = {
   custo:  { nome: 'Sem custo',           icone: 'fa-circle-question',          desc: 'Sem custo do teste: margem desconhecida.' },
   setor:  { nome: 'Sem setor',           icone: 'fa-tags',                     desc: 'Exame sem setor definido.' },
   preco:  { nome: 'Sem preço',           icone: 'fa-circle-minus',             desc: 'Exame sem preço praticado.' },
-  sist:   { nome: 'Fora do sistema',     icone: 'fa-plug-circle-xmark',        desc: 'Mnemônico não encontrado no sistema do laboratório, ou marcado como não efetuado (efetua = N) lá.' },
+  sist:   { nome: 'Fora do sistema',     icone: 'fa-plug-circle-xmark',        desc: 'Mnemônico não encontrado no sistema do laboratório, ou não efetuado pela tabela Particular (efetua = N no Unilab).' },
   div:    { nome: 'Divergência de preço', icone: 'fa-code-compare',            desc: 'Preço praticado diferente do cadastrado no sistema do laboratório.' },
   hier:   { nome: 'Quebra hierarquia',   icone: 'fa-stairs',                   desc: 'Preço de uma tabela acima de outra que deveria ser maior (Particular ≥ Cartões ≥ … ; tabelas fora da hierarquia ≤ Particular). Ajuste em Tabelas de preço → Hierarquia.' },
   aud:    { nome: 'A auditar',           icone: 'fa-magnifying-glass-dollar',  desc: 'Valores marcados para auditoria interna.' },

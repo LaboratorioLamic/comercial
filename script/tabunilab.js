@@ -80,7 +80,7 @@ function desenharImportUnilab() {
         ${kp('fa-arrows-rotate', 'var(--cyan)', 'Já cadastrados', a.atualizar.length, `${a.inativos} com efetua = N`)}
         ${kp('fa-code-compare', 'var(--amber)', 'Preço diferente', a.divergentes.length, 'Unilab × praticado')}
         ${kp('fa-plus', 'var(--green)', 'Novos (efetua S)', a.novosS.length, 'com preço no Unilab')}
-        ${kp('fa-ban', 'var(--gray)', 'Novos (efetua N)', a.novosN.length, 'não realizados')}
+        ${kp('fa-ban', 'var(--gray)', 'Novos (efetua N)', a.novosN.length, 'não efetuados pela Particular')}
         ${kp('fa-plug-circle-xmark', 'var(--red)', 'Fora do Unilab', a.fora.length, 'na base, não no arquivo')}
       </div>
       ${a.divergentes.length ? `<div class="sec-t"><i class="fa-solid fa-code-compare"></i>Preços diferentes (${a.divergentes.length})</div>

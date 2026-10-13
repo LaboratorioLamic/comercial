@@ -16,20 +16,42 @@ const chaveItemApoio = (codigo, material) => chaveExame(`${codigo}|${material ||
 const _STOP = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E', 'PARA', 'POR', 'COM', 'EM', 'A', 'O', 'ANTI', 'ANTICORPOS', 'S', 'U', 'NO', 'NA']);
 const textoComparar = s => normalizar(s).toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const tokens = s => new Set(s.split(' ').filter(t => t && !_STOP.has(t)));
-function dice(a, b) {
+function bigramas(s) {
+  const m = new Map();
+  for (let i = 0; i < s.length - 1; i++) { const g = s.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); }
+  return m;
+}
+// Texto já preparado para comparar (normalizado, tokens e bigramas): calculado uma vez por descrição
+const _prepTexto = new Map();
+function prepararTexto(s) {
+  let p = _prepTexto.get(s);
+  if (p) return p;
+  const a = textoComparar(s), tk = tokens(a), o = [...tk].sort().join(' ');
+  p = { a, tk, o, ga: bigramas(a), go: bigramas(o) };
+  if (_prepTexto.size > 30000) _prepTexto.clear();
+  _prepTexto.set(s, p);
+  return p;
+}
+function dice(a, ma, b, mb) {
   if (a === b) return 1;
   if (a.length < 2 || b.length < 2) return 0;
-  const m = new Map();
-  for (let i = 0; i < a.length - 1; i++) { const g = a.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); }
+  if (ma.size > mb.size) { const t = ma; ma = mb; mb = t; }
   let inter = 0;
-  for (let i = 0; i < b.length - 1; i++) { const g = b.slice(i, i + 2), n = m.get(g); if (n) { inter++; m.set(g, n - 1); } }
+  for (const [g, n] of ma) { const o = mb.get(g); if (o) inter += n < o ? n : o; }
   return 2 * inter / (a.length + b.length - 2);
 }
-function similaridade(a, b) {
-  a = textoComparar(a); b = textoComparar(b);
-  const ta = tokens(a), tb = tokens(b);
-  const uni = new Set([...ta, ...tb]).size, inter = [...ta].filter(t => tb.has(t)).length;
-  return Math.max(dice(a, b), dice([...ta].sort().join(' '), [...tb].sort().join(' ')), uni ? inter / uni : 0);
+function similaridadePrep(pa, pb) {
+  let inter = 0;
+  for (const t of pa.tk) if (pb.tk.has(t)) inter++;
+  const uni = pa.tk.size + pb.tk.size - inter;
+  return Math.max(dice(pa.a, pa.ga, pb.a, pb.ga), dice(pa.o, pa.go, pb.o, pb.go), uni ? inter / uni : 0);
+}
+const similaridade = (a, b) => similaridadePrep(prepararTexto(a), prepararTexto(b));
+// Teto da similaridade só pelos tamanhos: permite pular pares que não superam o melhor já achado
+const _tetoDice = (x, y) => x < 2 || y < 2 || x === y ? 1 : 2 * Math.min(x - 1, y - 1) / (x + y - 2);
+function tetoSimilaridade(pa, pb) {
+  const na = pa.tk.size, nb = pb.tk.size;
+  return Math.max(_tetoDice(pa.a.length, pb.a.length), _tetoDice(pa.o.length, pb.o.length), na && nb ? Math.min(na, nb) / Math.max(na, nb) : 0);
 }
 
 // ── Leitura do arquivo ────────────────────────────────────────
@@ -101,22 +123,67 @@ function analisarTabelaAlvaro(linhas) {
 const LEITORES_APOIO = { pardini4114: analisarTabelaPardini, alvaro2656: analisarTabelaAlvaro };
 
 // ── Classificação dos vínculos ────────────────────────────────
-// Para cada exame do setor do apoio: vinculado | auto | conf | forte | fraca | sem
+// Para cada exame do setor do apoio: vinculado | auto | conf | forte | fraca | sem | rejeitado
+// Índice da tabela (por código, textos preparados) e melhor item por descrição: guardados enquanto a tabela não muda
+const _indiceApoio = new WeakMap();
+function indiceTabelaApoio(itens) {
+  let ix = _indiceApoio.get(itens);
+  if (ix) return ix;
+  ix = { porCodigo: {}, todos: [], melhor: new Map() };
+  Object.entries(itens).forEach(([k, it]) => {
+    const x = { k, ...it };
+    (ix.porCodigo[String(it.codigo).toUpperCase()] ??= []).push(x);
+    ix.todos.push({ it: x, p: prepararTexto(it.descricao) });
+  });
+  _indiceApoio.set(itens, ix);
+  return ix;
+}
+// rej = itens rejeitados para o exame ({ chave: true }): ficam fora da busca (e o resultado fora da memória)
+function melhorItemApoio(ix, descricao, rej) {
+  let m = rej ? undefined : ix.melhor.get(descricao);
+  if (m !== undefined) return m;
+  const pe = prepararTexto(descricao);
+  m = null;
+  for (const { it, p } of ix.todos) {
+    if (rej && rej[it.k]) continue;
+    if (m && (m.s >= 1 || tetoSimilaridade(pe, p) <= m.s)) continue;
+    const s = similaridadePrep(pe, p);
+    if (!m || s > m.s) m = { it, s };
+  }
+  if (!rej) ix.melhor.set(descricao, m);
+  return m;
+}
+// Sugestões de vínculo rejeitadas para o exame neste apoio: exame.vinculosRejeitados[apoioId] = { chaveDoItem: true }
+const rejeitadosDoExame = (e, apoioId) => { const r = e?.vinculosRejeitados?.[apoioId]; return r && Object.keys(r).length ? r : null; };
+
 function classificarVinculos(apoioId, itens) {
-  const porCodigo = {};
-  Object.entries(itens).forEach(([k, it]) => { (porCodigo[it.codigo.toUpperCase()] ??= []).push({ k, ...it }); });
-  const todos = Object.entries(itens).map(([k, it]) => ({ k, ...it }));
+  const ix = indiceTabelaApoio(itens), porCodigo = ix.porCodigo;
   return lista(ESTADO.exames).filter(e => e.setorId === apoioId).map(e => {
     if (e.vinculoApoio?.apoioId === apoioId) {
       return { e, st: itens[e.vinculoApoio.chave] ? 'vinculado' : 'saiu', k: e.vinculoApoio.chave, it: itens[e.vinculoApoio.chave] };
+    }
+    // sugestão rejeitada: o exame sai da fila de sugestões e fica na categoria própria,
+    // até uma importação trazer item novo (entrou na tabela depois da rejeição) que combine
+    const rej = rejeitadosDoExame(e, apoioId);
+    if (rej) {
+      const desde = Math.max(...Object.values(rej).map(v => typeof v === 'number' ? v : 0));
+      const novos = ix.todos.filter(x => x.it.desde > desde && !rej[x.it.k]);
+      if (novos.length) {
+        const pe = prepararTexto(e.descricao), mn = e.mn.toUpperCase();
+        const melhorDe = l => l.reduce((m, x) => { const s = similaridadePrep(pe, x.p); return !m || s > m.s ? { it: x.it, s } : m; }, null);
+        const mesmos = novos.filter(x => String(x.it.codigo).toUpperCase() === mn);
+        if (mesmos.length) { const m = melhorDe(mesmos); return { e, st: m.s >= 0.75 ? 'auto' : 'conf', k: m.it.k, it: m.it, sc: m.s, multi: mesmos.length > 1 }; }
+        const m = melhorDe(novos);
+        if (m.s >= 0.6) return { e, st: m.s >= 0.9 ? 'forte' : 'fraca', k: m.it.k, it: m.it, sc: m.s };
+      }
+      return { e, st: 'rejeitado', k: null, it: null, rejIt: Object.keys(rej).map(k => itens[k]).filter(Boolean) };
     }
     const mesmos = porCodigo[e.mn.toUpperCase()];
     if (mesmos) {
       const melhor = mesmos.map(it => ({ it, s: similaridade(e.descricao, it.descricao) })).sort((a, b) => b.s - a.s)[0];
       return { e, st: melhor.s >= 0.75 ? 'auto' : 'conf', k: melhor.it.k, it: melhor.it, sc: melhor.s, multi: mesmos.length > 1 };
     }
-    let melhor = null;
-    for (const it of todos) { const s = similaridade(e.descricao, it.descricao); if (!melhor || s > melhor.s) melhor = { it, s }; }
+    const melhor = melhorItemApoio(ix, e.descricao);
     const st = melhor && melhor.s >= 0.9 ? 'forte' : melhor && melhor.s >= 0.6 ? 'fraca' : 'sem';
     return { e, st, k: st !== 'sem' ? melhor.it.k : null, it: st !== 'sem' ? melhor.it : null, sc: melhor?.s };
   });
@@ -129,26 +196,35 @@ const VST = {
   fraca:     { t: 'Sugestão fraca',   c: 'base', ic: 'fa-wand-magic-sparkles', h: 'descrição parecida: confira' },
   conf:      { t: 'Conferir',         c: 'bad',  ic: 'fa-triangle-exclamation', h: 'mesmo mnemônico, exame diferente: não vincula sozinho' },
   sem:       { t: 'Sem vínculo',      c: 'off',  ic: 'fa-link-slash',          h: 'não encontrado na tabela' },
+  rejeitado: { t: 'Rejeitado',        c: 'bad',  ic: 'fa-ban',                 h: 'sugestão rejeitada: só volta a sugerir com item novo na tabela ou ao restaurar' },
   saiu:      { t: 'Saiu da tabela',   c: 'warn', ic: 'fa-circle-exclamation',  h: 'item vinculado não está mais na tabela' },
   manual:    { t: 'Escolhido',        c: 'base', ic: 'fa-hand-pointer',        h: 'item trocado manualmente: confirme para vincular' }
 };
 
 // ── Tela (Custos → Laboratórios de apoio) ─────────────────────
-const apo = { sel: null, passo: 0, arquivo: null, analise: null, erro: '', comFortes: false, filtro: '', pag: 1, cache: null, troca: {}, trocaEx: {} };
+const apo = { sel: null, passo: 0, arquivo: null, analise: null, erro: '', comFortes: false, filtro: '', pag: 1, cache: null, troca: {}, trocaEx: {}, marc: {} };
 aoAtualizar(ch => { if (ch === 'exames' || ch === 'apoios' || ch === 'setores') apo.cache = null; });
 
 function htmlApoios() {
   const apoios = lista(ESTADO.setores, porNome).filter(s => s.categoria === 'apoio');
   if (!apoios.length) return `<div class="card">${vazio('fa-truck-medical', 'Nenhum setor da categoria "Laboratório de apoio" cadastrado.')}</div>`;
   if (!apoios.find(a => a.id === apo.sel)) apo.sel = (apoios.find(a => modeloDoApoio(a)) || apoios[0]).id;
+  // contagem dos cartões em uma única passada pelos exames
+  const cont = Object.fromEntries(apoios.map(a => [a.id, { n: 0, vinc: 0, sem: 0 }]));
+  Object.entries(ESTADO.exames || {}).forEach(([id, e]) => {
+    const c = cont[e.setorId];
+    if (!c) return;
+    c.n++;
+    if (e.vinculoApoio?.apoioId === e.setorId) c.vinc++;
+    if (!custoTesteExame({ id, ...e })) c.sem++;
+  });
   return `<div class="cards">${apoios.map(a => {
       const t = ESTADO.apoios[a.id] || {}, nItens = Object.keys(t.precos || {}).length;
-      const exs = lista(ESTADO.exames).filter(e => e.setorId === a.id), vinc = exs.filter(e => e.vinculoApoio?.apoioId === a.id).length;
-      const modelo = modeloDoApoio(a);
-      return `<button class="card tcard ${a.id === apo.sel ? 'on' : ''}" onclick="apo.sel='${a.id}';apo.passo=0;apo.cache=null;apo.pag=1;apo.troca={};apo.trocaEx={};renderCustos()">
+      const c = cont[a.id], modelo = modeloDoApoio(a);
+      return `<button class="card tcard ${a.id === apo.sel ? 'on' : ''}" onclick="apo.sel='${a.id}';apo.passo=0;apo.cache=null;apo.pag=1;apo.troca={};apo.trocaEx={};apo.marc={};renderCustos()">
         <div class="tc-h"><span class="tc-ic" style="--c:${a.cor}"><i class="fa-solid ${a.icone}"></i></span><div><div class="tc-n">${esc(a.nome)}</div>
           <div class="tc-s">${nItens ? `tabela de ${dataBR(t.vigencia)} · ${num(nItens, 0)} itens` : modelo ? 'tabela ainda não importada' : 'modelo de importação pendente'}</div></div></div>
-        <div class="tc-stats"><div><b>${exs.length}</b><span>exames LAMIC</span></div><div><b>${vinc}</b><span>vinculados</span></div><div><b>${exs.filter(e => !custoTesteExame(e)).length}</b><span>sem custo</span></div></div></button>`;
+        <div class="tc-stats"><div><b>${c.n}</b><span>exames LAMIC</span></div><div><b>${c.vinc}</b><span>vinculados</span></div><div><b>${c.sem}</b><span>sem custo</span></div></div></button>`;
     }).join('')}</div>
     <div class="card" style="margin-top:14px" id="apoio-det">${htmlApoioDetalhe()}</div>`;
 }
@@ -191,7 +267,7 @@ function htmlImportacaoApoio() {
         ${kp('fa-link', 'var(--green)', 'Automáticos', (cont.auto || 0) + (cont.vinculado || 0), `${cont.vinculado || 0} já vinculados`)}
         ${kp('fa-wand-magic-sparkles', 'var(--cyan)', 'Sugestões', (cont.forte || 0) + (cont.fraca || 0), `${cont.forte || 0} fortes · ${cont.fraca || 0} fracas`)}
         ${kp('fa-triangle-exclamation', 'var(--red)', 'Conferir', cont.conf || 0, 'mesmo MN, exame diferente')}
-        ${kp('fa-link-slash', 'var(--gray)', 'Sem vínculo', (cont.sem || 0) + (cont.saiu || 0), cont.saiu ? `${cont.saiu} saíram da tabela` : 'custo manual')}
+        ${kp('fa-link-slash', 'var(--gray)', 'Sem vínculo', (cont.sem || 0) + (cont.saiu || 0) + (cont.rejeitado || 0), [cont.saiu ? `${cont.saiu} saíram da tabela` : '', cont.rejeitado ? `${cont.rejeitado} rejeitados` : ''].filter(Boolean).join(' · ') || 'custo manual')}
         ${kp('fa-arrow-trend-up', 'var(--red)', 'Custos sobem', imp.sobem, imp.mediana != null ? `mediana ${imp.mediana > 0 ? '+' : ''}${pct(imp.mediana)}` : '')}
         ${kp('fa-arrow-trend-down', 'var(--green)', 'Custos descem', imp.descem)}
         ${kp('fa-circle-xmark', 'var(--red)', 'Caem abaixo do mínimo', imp.caem.length)}
@@ -204,6 +280,7 @@ function htmlImportacaoApoio() {
       <div class="sec-t" style="margin-top:16px"><i class="fa-solid fa-sliders"></i>Ao aplicar</div>
       <div class="casc">
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-link" style="color:var(--green)"></i><div>Gravar a tabela e vincular os automáticos<div class="s">custos passam a vir da tabela e os exames ficam marcados como negociados</div></div></div><span class="badge-s ok">sempre</span></div>
+        <div class="casc-r"><div class="lft"><i class="fa-solid fa-sitemap" style="color:${ESTADO.setores[apo.sel].cor}"></i><div>Vincular apenas os ${an.vinc.length} exames do setor ${esc(ESTADO.setores[apo.sel].nome)}<div class="s">exames de outros setores e as tabelas dos outros apoios não são alterados</div></div></div><span class="badge-s ok">sempre</span></div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--cyan)"></i><div>Vincular também as ${cont.forte || 0} sugestões fortes<div class="s">descrição igual, mnemônico diferente (ex.: 17PG → 17-PG)</div></div></div>${chave(apo.comFortes, 'apo.comFortes=!apo.comFortes;this.classList.toggle(\'on\')')}</div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-hand-pointer"></i><div>Sugestões fracas e "conferir"<div class="s">ficam para confirmação manual na lista de vínculos</div></div></div><span class="badge-s off">manual</span></div>
       </div>`;
@@ -228,6 +305,9 @@ async function analisarApoio() {
     const leitor = LEITORES_APOIO[modeloDoApoio(ESTADO.setores[apo.sel])];
     if (!leitor) throw new Error('Este setor não tem modelo de importação.');
     const { itens, avisos } = leitor(await linhasDoArquivo(apo.arquivo));
+    // desde = quando o item entrou na tabela: sugestões rejeitadas só voltam com item mais novo que a rejeição
+    const antes = ESTADO.apoios[apo.sel]?.precos || {}, agora = Date.now();
+    Object.entries(itens).forEach(([k, it]) => { if (!antes[k]) it.desde = agora; else if (antes[k].desde) it.desde = antes[k].desde; });
     const vinc = classificarVinculos(apo.sel, itens);
     // impacto: exames que ficarão vinculados (já vinculados + automáticos)
     const imp = { sobem: 0, descem: 0, caem: [], var: [] }, min = parametro('margemMinima');
@@ -288,56 +368,166 @@ async function aplicarTabelaApoio() {
 
 // ── Lista de vínculos ─────────────────────────────────────────
 const VINC_POR_PAG = 40;
+// Itens da tabela do apoio selecionado; o mesmo objeto enquanto a tabela não muda (aproveita o índice)
+const _itensApoio = new WeakMap();
+function itensApoioSel() {
+  const precos = ESTADO.apoios[apo.sel]?.precos;
+  if (!precos) return {};
+  let itens = _itensApoio.get(precos);
+  if (!itens) _itensApoio.set(precos, itens = Object.fromEntries(Object.entries(precos).map(([k, v]) => [k, { k, ...v }])));
+  return itens;
+}
+// Linha como está na tela: com o item e/ou o exame trocados à mão (valem até confirmar)
+function vinculoEfetivo(v, itens) {
+  const lin = v.e.id, tr = v.st !== 'vinculado' && itens[apo.troca[lin]];
+  if (tr) v = { ...v, k: tr.k, it: tr, sc: similaridade(v.e.descricao, tr.descricao), manual: true };
+  // exame LAMIC trocado à mão: o item da linha passa a ser oferecido a outro exame do setor
+  const ex = v.st !== 'vinculado' && v.it && ESTADO.exames[apo.trocaEx[lin]];
+  if (ex) v = { ...v, e: { ...ex, id: apo.trocaEx[lin] }, sc: similaridade(ex.descricao, v.it.descricao), manual: true };
+  return v;
+}
+const vinculoConfirmavel = v => v.st !== 'vinculado' && !!v.k && (v.manual || v.st !== 'saiu');
 function htmlVinculos() {
-  const itens = Object.fromEntries(Object.entries(ESTADO.apoios[apo.sel]?.precos || {}).map(([k, v]) => [k, { k, ...v }]));
+  const nRej = id => Object.keys(ESTADO.exames[id]?.vinculosRejeitados?.[apo.sel] || {}).length;
+  const itens = itensApoioSel();
   if (!apo.cache) apo.cache = classificarVinculos(apo.sel, itens);
   const cont = {}; apo.cache.forEach(v => { cont[v.st] = (cont[v.st] || 0) + 1; });
-  const ls = apo.cache.filter(v => !apo.filtro || v.st === apo.filtro || (apo.filtro === 'pend' && !['vinculado'].includes(v.st)));
-  const ordem = ['saiu', 'conf', 'auto', 'forte', 'fraca', 'sem', 'vinculado'];
+  // rejeitados ficam só na categoria própria, fora de "Todos"
+  if (apo.filtro && !cont[apo.filtro]) apo.filtro = '';
+  const ls = apo.cache.filter(v => apo.filtro ? v.st === apo.filtro : v.st !== 'rejeitado');
+  const ordem = ['saiu', 'conf', 'auto', 'forte', 'fraca', 'sem', 'vinculado', 'rejeitado'];
   ls.sort((a, b) => ordem.indexOf(a.st) - ordem.indexOf(b.st) || a.e.mn.localeCompare(b.e.mn));
   const n = Math.max(1, Math.ceil(ls.length / VINC_POR_PAG)); if (apo.pag > n) apo.pag = n;
   const editar = pode('exames', 'editar') || pode('custos', 'editar');
+  // seleção para confirmar em lote: só linhas que dá para confirmar, no filtro atual
+  const conf = apo.conf = new Set(editar ? ls.filter(v => vinculoConfirmavel(vinculoEfetivo(v, itens))).map(v => v.e.id) : []);
+  Object.keys(apo.marc).forEach(k => { if (!conf.has(k)) delete apo.marc[k]; });
+  const todosMarc = conf.size > 0 && Object.keys(apo.marc).length === conf.size;
   return `<div class="chips" style="padding-bottom:12px">
-      <button class="chip ${!apo.filtro ? 'on' : ''}" onclick="apo.filtro='';apo.pag=1;desenharApoioDet()"><i class="fa-solid fa-list"></i>Todos <b>${apo.cache.length}</b></button>
+      <button class="chip ${!apo.filtro ? 'on' : ''}" onclick="apo.filtro='';apo.pag=1;desenharApoioDet()"><i class="fa-solid fa-list"></i>Todos <b>${apo.cache.length - (cont.rejeitado || 0)}</b></button>
       ${ordem.filter(k => cont[k]).map(k => `<button class="chip ${apo.filtro === k ? 'on' : ''}" onclick="apo.filtro='${k}';apo.pag=1;desenharApoioDet()"><i class="fa-solid ${VST[k].ic}"></i>${VST[k].t} <b>${cont[k]}</b></button>`).join('')}
+      ${conf.size ? `<span id="vinc-lote" style="margin-left:auto;display:inline-flex;gap:8px;align-items:center">${htmlLoteVinculos()}</span>` : ''}
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>MN LAMIC</th><th>Exame LAMIC</th><th></th><th>Item do apoio</th><th>Descrição no apoio</th><th class="num">Preço</th><th>Situação</th><th></th></tr></thead><tbody>
+    <div class="tbl-wrap"><table><thead><tr><th>${conf.size ? `<button id="vinc-cx-todos" class="cb sel-cx ${todosMarc ? 'on' : ''}" onclick="marcarVinculos()" title="Selecionar ou desmarcar todos os que faltam confirmar"><i class="fa-solid fa-check"></i></button>` : ''}MN LAMIC</th><th>Exame LAMIC</th><th></th><th>Item do apoio</th><th>Descrição no apoio</th><th class="num">Preço</th><th>Situação</th><th></th></tr></thead><tbody>
     ${ls.slice((apo.pag - 1) * VINC_POR_PAG, apo.pag * VINC_POR_PAG).map(v => {
-      // item trocado à mão na linha: vale no lugar da sugestão até confirmar
-      const lin = v.e.id, tr = v.st !== 'vinculado' && itens[apo.troca[lin]];
-      if (tr) v = { ...v, k: tr.k, it: tr, sc: similaridade(v.e.descricao, tr.descricao), manual: true };
-      // exame LAMIC trocado à mão: o item da linha passa a ser oferecido a outro exame do setor
-      const ex = v.st !== 'vinculado' && v.it && ESTADO.exames[apo.trocaEx[lin]];
-      if (ex) v = { ...v, e: { ...ex, id: apo.trocaEx[lin] }, sc: similaridade(ex.descricao, v.it.descricao), manual: true };
+      const lin = v.e.id;
+      v = vinculoEfetivo(v, itens);
       const podeTrocar = editar && v.st !== 'vinculado';
       const s = v.manual ? VST.manual : VST[v.st], it = v.it, p = v.st === 'vinculado' ? precoApoio(apo.sel, v.k) : null;
-      return `<tr><td><span class="mn" style="cursor:pointer" onclick="abrirFicha('${v.e.id}')">${esc(v.e.mn)}</span>${podeTrocar && it ? `<span class="pop-mini" id="pop-ve-${lin}" data-ex="${lin}" data-tipo="ex" title="Trocar o exame LAMIC"></span>` : ''}</td><td class="desc" title="${esc(v.e.descricao)}">${esc(v.e.descricao)}</td>
+      return `<tr data-lin="${lin}" ${conf.has(lin) ? `class="vlin ${apo.marc[lin] ? 'vsel' : ''}" onclick="cliqueLinhaVinculo(event,'${lin}')"` : ''}><td>${conf.size ? (conf.has(lin) ? `<button class="cb sel-cx ${apo.marc[lin] ? 'on' : ''}" onclick="marcarVinculo('${lin}')" title="Selecionar para confirmar em lote"><i class="fa-solid fa-check"></i></button>` : '<span class="cb sel-cx" style="visibility:hidden"></span>') : ''}<span class="mn" style="cursor:pointer" onclick="abrirFicha('${v.e.id}')">${esc(v.e.mn)}</span>${podeTrocar && it ? `<span class="pop-mini" id="pop-ve-${lin}" data-ex="${lin}" data-tipo="ex" title="Trocar o exame LAMIC"></span>` : ''}</td><td class="desc" title="${esc(v.e.descricao)}">${esc(v.e.descricao)}</td>
         <td class="muted"><i class="fa-solid fa-arrows-left-right"></i></td>
         <td>${it ? `<span class="mn">${esc(it.codigo)}</span> <span class="tag">${esc(it.material || '—')}</span>` : '—'}${podeTrocar ? `<span class="pop-mini" id="pop-vt-${lin}" data-ex="${lin}" title="Trocar o item do apoio"></span>` : ''}</td>
-        <td class="desc" title="${esc(it?.descricao || '')}">${it ? (v.st === 'conf' && !v.manual ? `<span style="color:var(--red)">${esc(it.descricao)}</span>` : esc(it.descricao)) : '<span class="muted">não encontrado</span>'}</td>
+        <td class="desc" title="${esc(it?.descricao || '')}">${it ? (v.st === 'conf' && !v.manual ? `<span style="color:var(--red)">${esc(it.descricao)}</span>` : esc(it.descricao)) : v.st === 'rejeitado' && v.rejIt.length ? `<span class="muted" title="${esc(v.rejIt.map(r => `${r.codigo} · ${r.descricao}`).join('\n'))}">rejeitado: ${esc(v.rejIt[0].codigo)} · ${esc(v.rejIt[0].descricao)}${v.rejIt.length > 1 ? ` (+${v.rejIt.length - 1})` : ''}</span>` : '<span class="muted">não encontrado</span>'}</td>
         <td class="num">${p ? fmt(p.valor) + (p.agendado ? ` <i class="fa-solid fa-clock" style="color:var(--amber)" title="${fmt(p.agendado.preco)} a partir de ${dataBR(p.agendado.vigencia)}"></i>` : '') : it ? fmt(it.preco) : '—'}</td>
         <td><span class="badge-s ${s.c}" title="${s.h}"><i class="fa-solid ${s.ic}"></i>${s.t}${v.sc != null && (v.manual || (v.st !== 'vinculado' && v.st !== 'auto')) ? ` ${Math.round(v.sc * 100)}%` : ''}</span></td>
         <td class="acts">${editar ? (v.st === 'vinculado'
           ? `<button title="Remover vínculo" onclick="definirVinculo('${v.e.id}', null)"><i class="fa-solid fa-link-slash"></i></button>`
-          : `${v.manual ? `<button title="Desfazer a troca" onclick="delete apo.troca['${lin}'];delete apo.trocaEx['${lin}'];desenharApoioDet()"><i class="fa-solid fa-rotate-left"></i></button>` : ''}${v.k && (v.manual || v.st !== 'saiu') ? `<button title="Confirmar vínculo" onclick="definirVinculo('${v.e.id}', '${v.k}')"><i class="fa-solid fa-check"></i></button>` : ''}<button title="Escolher na ficha do exame" onclick="abrirFicha('${v.e.id}');setTimeout(()=>trocarFonteCusto('apoio'),80)"><i class="fa-solid fa-magnifying-glass"></i></button>`) : ''}</td></tr>`;
+          : `${v.manual ? `<button title="Desfazer a troca" onclick="delete apo.troca['${lin}'];delete apo.trocaEx['${lin}'];desenharApoioDet()"><i class="fa-solid fa-rotate-left"></i></button>` : ''}${v.k && (v.manual || v.st !== 'saiu') ? `<button title="Confirmar vínculo" onclick="definirVinculo('${v.e.id}', '${v.k}')"><i class="fa-solid fa-check"></i></button><button title="Rejeitar: não sugerir mais este item para este exame" onclick="rejeitarVinculo('${v.e.id}', '${v.k}', '${lin}')"><i class="fa-solid fa-ban" style="color:var(--red)"></i></button>` : ''}${nRej(lin) ? `<button title="Restaurar: voltar a sugerir (${nRej(lin)} item(ns) rejeitados)" onclick="restaurarRejeitados('${lin}')"><i class="fa-solid fa-rotate"></i></button>` : ''}<button title="Escolher na ficha do exame" onclick="abrirFicha('${v.e.id}');setTimeout(()=>trocarFonteCusto('apoio'),80)"><i class="fa-solid fa-magnifying-glass"></i></button>`) : ''}</td></tr>`;
     }).join('') || `<tr><td colspan="8">${vazio('fa-link', 'Nada nesta situação')}</td></tr>`}
     </tbody></table></div>
     <div class="foot">${paginacao(ls.length, apo.pag, VINC_POR_PAG, 'paginaVinculos')}</div>`;
 }
 function paginaVinculos(p) { apo.pag = p; desenharApoioDet(); }
 
+// ── Confirmação em lote ───────────────────────────────────────
+// A seleção mexe só nas linhas já desenhadas: não redesenha a tabela (lenta em tabelas grandes)
+function htmlLoteVinculos() {
+  const total = apo.conf?.size || 0, n = Object.keys(apo.marc).length, todos = total > 0 && n === total;
+  return `${n ? `<span class="muted" style="font-size:12px">${n} de ${total} selecionado(s)</span>` : ''}
+    <button class="btn sm" onclick="marcarVinculos()" title="${todos ? 'Desmarca todos' : `Marca os ${total} que faltam confirmar neste filtro`}"><i class="fa-solid ${todos ? 'fa-xmark' : 'fa-check-double'}"></i>${todos ? 'Desmarcar todos' : 'Selecionar todos'}</button>
+    <button class="btn sm perigo-txt" ${n ? '' : 'disabled'} onclick="rejeitarVinculosMarcados()" title="Não sugerir mais estes itens para estes exames"><i class="fa-solid fa-ban"></i>Rejeitar ${n || ''}</button>
+    <button class="btn sm pri" ${n ? '' : 'disabled'} onclick="confirmarVinculosMarcados()"><i class="fa-solid fa-link"></i>Confirmar ${n || ''} vínculo(s)</button>`;
+}
+function atualizarSelecaoVinculos() {
+  document.querySelectorAll('#apoio-det tr.vlin').forEach(tr => {
+    const on = !!apo.marc[tr.dataset.lin];
+    tr.classList.toggle('vsel', on);
+    tr.querySelector('.sel-cx')?.classList.toggle('on', on);
+  });
+  const lote = document.getElementById('vinc-lote'), total = apo.conf?.size || 0;
+  if (lote) lote.innerHTML = htmlLoteVinculos();
+  document.getElementById('vinc-cx-todos')?.classList.toggle('on', total > 0 && Object.keys(apo.marc).length === total);
+}
+function marcarVinculo(lin) {
+  if (!apo.conf?.has(lin)) return;
+  if (apo.marc[lin]) delete apo.marc[lin]; else apo.marc[lin] = true;
+  atualizarSelecaoVinculos();
+}
+// Clique em qualquer ponto da linha seleciona; botões, mnemônico e trocas seguem com a ação própria
+function cliqueLinhaVinculo(ev, lin) {
+  if (ev.target.closest('button, a, input, .mn, .pop-mini')) return;
+  marcarVinculo(lin);
+}
+// Marca (ou desmarca) todos os que faltam confirmar no filtro atual, em todas as páginas
+function marcarVinculos(sim) {
+  const total = apo.conf?.size || 0;
+  sim ??= !(total > 0 && Object.keys(apo.marc).length === total);
+  apo.marc = {};
+  if (sim) apo.conf?.forEach(id => { apo.marc[id] = true; });
+  atualizarSelecaoVinculos();
+}
+
+async function confirmarVinculosMarcados() {
+  const itens = itensApoioSel(), u = usuarioAtual(), id = apo.sel, feitos = {};
+  // um vínculo por exame: se duas linhas apontam para o mesmo exame (troca à mão), vale a primeira
+  const pares = (apo.cache || []).filter(v => apo.marc[v.e.id]).map(v => ({ lin: v.e.id, v: vinculoEfetivo(v, itens) }))
+    .filter(x => vinculoConfirmavel(x.v) && itens[x.v.k] && !feitos[x.v.e.id] && (feitos[x.v.e.id] = true));
+  if (!pares.length) return toast('Nenhum vínculo selecionado', 'erro');
+  const fracos = pares.filter(x => !x.v.manual && (x.v.st === 'fraca' || x.v.st === 'conf')).length;
+  const ok = await confirmar({ titulo: `Confirmar ${pares.length} vínculo(s)?`, botao: 'Confirmar vínculos',
+    texto: `Os custos destes exames passam a vir da tabela do apoio.${fracos ? ` ${fracos} são sugestões fracas ou "conferir": confira as descrições antes.` : ''}` });
+  if (!ok) return;
+  const upd = {}, agora = DB.agora();
+  pares.forEach(({ v }) => {
+    const b = `${CAMINHOS.exames}/${v.e.id}`;
+    upd[`${b}/vinculoApoio`] = { apoioId: id, chave: v.k };
+    upd[`${b}/negociado`] = true;
+    upd[`${b}/atualizadoEm`] = agora;
+    upd[`${b}/atualizadoPor`] = u.nome;
+    upd[`historicoExames/${v.e.id}/${DB.novaChave('historicoExames')}`] = { descricao: `Vinculado ao item ${v.it.codigo} (${v.it.material || '—'}) do apoio`, usuario: u.nome, usuarioId: u.id, em: agora };
+  });
+  await DB.mesclar('/', upd);
+  registrar('apoios', `${ESTADO.setores[id].nome}: ${pares.length} vínculo(s) confirmados em lote`);
+  pares.forEach(({ lin }) => { delete apo.troca[lin]; delete apo.trocaEx[lin]; });
+  apo.marc = {}; apo.cache = null;
+  toast(`${pares.length} vínculo(s) confirmados`);
+  desenharApoioDet();
+}
+
+async function rejeitarVinculosMarcados() {
+  const itens = itensApoioSel(), u = usuarioAtual(), id = apo.sel;
+  const pares = (apo.cache || []).filter(v => apo.marc[v.e.id]).map(v => ({ lin: v.e.id, v: vinculoEfetivo(v, itens) })).filter(x => vinculoConfirmavel(x.v) && itens[x.v.k]);
+  if (!pares.length) return toast('Nenhum vínculo selecionado', 'erro');
+  const ok = await confirmar({ titulo: `Rejeitar ${pares.length} sugestão(ões)?`, botao: 'Rejeitar', perigo: true,
+    texto: 'Os itens sugeridos deixam de ser recomendados para estes exames, inclusive nas próximas importações.' });
+  if (!ok) return;
+  const upd = {}, agora = DB.agora();
+  pares.forEach(({ v }) => {
+    upd[`${CAMINHOS.exames}/${v.e.id}/vinculosRejeitados/${id}/${v.k}`] = Date.now();
+    upd[`historicoExames/${v.e.id}/${DB.novaChave('historicoExames')}`] = { descricao: `Sugestão de vínculo rejeitada: item ${v.it.codigo} (${v.it.material || '—'}) do apoio`, usuario: u.nome, usuarioId: u.id, em: agora };
+  });
+  await DB.mesclar('/', upd);
+  registrar('apoios', `${ESTADO.setores[id].nome}: ${pares.length} sugestão(ões) de vínculo rejeitadas em lote`);
+  pares.forEach(({ lin }) => { delete apo.troca[lin]; delete apo.trocaEx[lin]; });
+  apo.marc = {}; apo.cache = null;
+  toast(`${pares.length} sugestão(ões) rejeitadas`);
+  desenharApoioDet();
+}
+
 // Botão de troca em cada linha: popover com a tabela do apoio; a escolha fica na linha até confirmar
 function popsVinculos() {
+  // listas montadas uma vez por desenho, só quando um popover abre, e divididas entre todas as linhas
+  let opEx, opIt;
+  const exames = () => opEx ??= Object.entries(ESTADO.exames || {}).filter(([, e]) => e.setorId === apo.sel && !e.vinculoApoio)
+    .sort((a, b) => a[1].mn.localeCompare(b[1].mn)).map(([id, e]) => ({ valor: id, rotulo: `${e.mn} · ${e.descricao}`, icone: 'fa-vial' }));
+  const itens = () => opIt ??= lista(ESTADO.apoios[apo.sel]?.precos, (a, b) => String(a.codigo).localeCompare(b.codigo))
+    .map(p => ({ valor: p.id, rotulo: `${p.codigo} · ${p.descricao}`, icone: 'fa-flask', desc: [p.material, fmt(p.preco)].filter(Boolean).join(' · ') }));
   document.querySelectorAll('#apoio-det .pop-mini').forEach(el => {
     delete POPS[el.id];
     const lin = el.dataset.ex, ex = el.dataset.tipo === 'ex', mapa = ex ? apo.trocaEx : apo.troca;
     criarPop(el.id, {
-      rotulo: 'Trocar', titulo: ex ? 'Trocar o exame LAMIC' : 'Trocar o item do apoio', icone: 'fa-right-left', busca: ex ? 'Mnemônico ou nome…' : 'Código ou nome…', padrao: '',
-      opcoes: () => [{ valor: '', rotulo: 'Escolha', icone: 'fa-right-left' }, ...(ex
-        ? lista(ESTADO.exames, (a, b) => a.mn.localeCompare(b.mn)).filter(e => e.setorId === apo.sel && !e.vinculoApoio && e.id !== lin)
-          .map(e => ({ valor: e.id, rotulo: `${e.mn} · ${e.descricao}`, icone: 'fa-vial' }))
-        : lista(ESTADO.apoios[apo.sel]?.precos, (a, b) => String(a.codigo).localeCompare(b.codigo))
-          .map(p => ({ valor: p.id, rotulo: `${p.codigo} · ${p.descricao}`, icone: 'fa-flask', desc: [p.material, fmt(p.preco)].filter(Boolean).join(' · ') })))].filter(o => o.valor || !popAberto),
+      rotulo: 'Trocar', titulo: ex ? 'Trocar o exame LAMIC' : 'Trocar o item do apoio', icone: 'fa-right-left', busca: ex ? 'Mnemônico ou nome…' : 'Código ou nome…', padrao: '', soIcone: true,
+      opcoes: () => [{ valor: '', rotulo: 'Escolha', icone: 'fa-right-left' }, ...(ex ? exames().filter(o => o.valor !== lin) : itens())].filter(o => o.valor || !popAberto),
       aoMudar: k => { if (k) mapa[lin] = k; else delete mapa[lin]; desenharApoioDet(); }
     });
   });
@@ -356,4 +546,25 @@ async function definirVinculo(exameId, chaveItem) {
   const lin = Object.keys(apo.trocaEx).find(k => apo.trocaEx[k] === exameId) || exameId;
   delete apo.troca[lin]; delete apo.trocaEx[lin];
   toast(chaveItem ? `${e.mn} vinculado` : `Vínculo de ${e.mn} removido`);
+}
+
+// Rejeita a sugestão: o item deixa de ser recomendado para este exame (vale também nas próximas importações)
+async function rejeitarVinculo(exameId, chaveItem, lin) {
+  const e = ESTADO.exames[exameId], u = usuarioAtual(), it = ESTADO.apoios[apo.sel]?.precos?.[chaveItem];
+  delete apo.troca[lin]; delete apo.trocaEx[lin]; delete apo.marc[lin];
+  await DB.mesclar('/', {
+    [`${CAMINHOS.exames}/${exameId}/vinculosRejeitados/${apo.sel}/${chaveItem}`]: Date.now(),
+    [`historicoExames/${exameId}/${DB.novaChave('historicoExames')}`]: { descricao: `Sugestão de vínculo rejeitada: item ${it?.codigo} (${it?.material || '—'}) do apoio`, usuario: u.nome, usuarioId: u.id, em: DB.agora() }
+  });
+  apo.cache = null;
+  toast(`${e.mn}: sugestão ${it?.codigo || ''} rejeitada`);
+  desenharApoioDet();
+}
+
+async function restaurarRejeitados(exameId) {
+  const e = ESTADO.exames[exameId];
+  await DB.mesclar('/', { [`${CAMINHOS.exames}/${exameId}/vinculosRejeitados/${apo.sel}`]: null });
+  apo.cache = null;
+  toast(`${e.mn}: sugestões rejeitadas voltaram`);
+  desenharApoioDet();
 }
