@@ -40,7 +40,8 @@ const DB = {
   ouvir(caminho, cb) {
     const r = _db.ref(caminho);
     const fn = s => cb(s.val());
-    r.on('value', fn);
+    // sem permissão de leitura: segue com vazio em vez de travar a carga
+    r.on('value', fn, err => { console.warn(`Sem acesso a ${caminho}:`, err?.message); cb(null); });
     return () => r.off('value', fn);
   },
   // Estado da conexão com o servidor

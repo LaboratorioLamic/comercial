@@ -317,7 +317,7 @@ function desenharCustoTeste() {
       <div class="price-in"><span>R$</span><input id="fx-custo-in" type="number" step="0.01" min="0" value="${e.custoTeste != null ? Number(e.custoTeste).toFixed(2) : ''}" placeholder="0,00" ${editar ? '' : 'disabled'}
         oninput="_fx.custoTeste=this.value===''?null:Math.max(0,parseFloat(this.value)||0);_fx.custoOrigem='manual';atualizarFicha()"></div></div>`;
   } else if (fonte === 'reagente') {
-    const r = ESTADO.reagentes[e.reagenteId], cpt = r ? custoPorTeste(r) : null;
+    const r = ESTADO.reagentes[e.reagenteId], cpt = r ? custoPorTeste(r, e.reagenteId) : null;
     corpo = `<div class="casc-r"><div class="lft"><i class="fa-solid fa-vials"></i><div>Reagente<div class="s">${r ? `${esc(r.fornecedor || '')} · ${fmt(cpt)} por teste` : 'escolha o reagente'}</div></div></div><div id="pop-fxreag" style="min-width:220px"></div></div>
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-xmark"></i><div>Testes por exame<div class="s">ex.: 2 se o exame consome dois testes</div></div></div>
         <div class="price-in"><input type="number" step="0.01" min="0.01" value="${e.qtdReagente || 1}" ${editar ? '' : 'disabled'} oninput="_fx.qtdReagente=Math.max(0.01,parseFloat(this.value)||1);atualizarFicha()"></div></div>`;

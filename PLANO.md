@@ -243,7 +243,9 @@ config/parametros      imposto, taxaMaquininha, margemMinima, margemAlvo, exames
 config/custosFixos/{id} nome, colunaOrigem, valor, cobranca (linear|rateado), etapa (null|coleta|triagem)
 setores/{id}            nome, categoria (interno|servico|apoio), icone, cor,
                         etapas {coleta, triagem}, margemAlvo?
-reagentes/{id}          nome, fornecedor, precoKit, testesPorKit, perdasPct, controles, atualizadoEm
+reagentes/{id}          nome, fornecedor, precoKit, testesPorKit, perdas, controles (outros testes gastos), diasKit,
+                        calId, calPontos, calDias, ctrlId, ctrlNiveis, ctrlCorridasDia, atualizadoEm
+insumosCQ/{id}          tipo ('cal'|'ctrl'), nome, fornecedor, preco, niveis, rende (usos por embalagem), atualizadoEm
 apoios/{id}             nome, modeloImportacao (pardini4114|null), ultimaVigencia
 apoios/{id}/precos/{codigo|material}  descricao, material, preco, vigencia, historico[]
 apoios/{id}/vinculos/{codigo|material} mnemonicosLamic[], status

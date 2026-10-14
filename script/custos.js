@@ -10,7 +10,8 @@ function renderCustos() {
   const el = document.getElementById('s-custos');
   const editar = pode('custos', 'editar'), criar = pode('custos', 'criar');
   const botao = !criar ? '' : custosAba === 'fixos' ? `<button class="btn pri" onclick="abrirCustoFixo()"><i class="fa-solid fa-plus"></i>Novo custo fixo</button>`
-    : custosAba === 'reag' ? `<button class="btn pri" onclick="abrirReagente()"><i class="fa-solid fa-plus"></i>Novo reagente</button>` : '';
+    : custosAba === 'reag' ? (reagVista === 'cq' ? `<button class="btn pri" onclick="abrirInsumoCq()"><i class="fa-solid fa-plus"></i>Novo calibrador / controle</button>`
+      : `<button class="btn pri" onclick="abrirReagente()"><i class="fa-solid fa-plus"></i>Novo reagente</button>`) : '';
   el.innerHTML = `
     <div class="h-row"><div><h2>Custos</h2><p>Base do custo de cada exame. Alterações valem para todos os exames.</p></div>${botao}</div>
     <div class="subnav" data-grupo="custos">

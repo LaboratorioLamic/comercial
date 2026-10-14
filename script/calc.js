@@ -62,10 +62,42 @@ function precoApoio(apoioId, chave) {
   return { ...p, valor: p.preco };
 }
 
-const custoPorTeste = r => {
-  const uteis = (r.testesPorKit || 0) * (1 - (r.perdas || 0) / 100) - (r.controles || 0);
-  return uteis > 0 ? r.precoKit / uteis : null;
-};
+// Reagente com calibrador e controle (insumosCQ). Num kit em uso por diasKit dias:
+//   calibrações = ⌈diasKit ÷ calDias⌉ (mín. 1; sem intervalo: 1 por kit)   corridas de CQ = ⌈diasKit × ctrlCorridasDia⌉
+//   testes úteis = testes × (1 − perdas) − calibrações × pontos − corridas × níveis − outros consumos
+//   material     = calibrações × custo/calibração + corridas × custo/corrida
+//                  (custo por uso = preço ÷ rendimento ÷ reagentes que compartilham o insumo)
+//   custo/teste  = (preço do kit + material) ÷ testes úteis
+const _usoInsumos = new WeakMap();
+function reagentesDoInsumo() {
+  let m = _usoInsumos.get(ESTADO.reagentes);
+  if (!m) {
+    m = {};
+    Object.entries(ESTADO.reagentes || {}).forEach(([id, r]) => [r.calId, r.ctrlId].forEach(i => { if (i) (m[i] ||= new Set()).add(id); }));
+    _usoInsumos.set(ESTADO.reagentes, m);
+  }
+  return m;
+}
+// rid: reagente em cálculo (conta uma vez, mesmo que ainda não esteja gravado com o vínculo)
+const compartilhamInsumo = (insId, rid) => { const s = reagentesDoInsumo()[insId]; return (s ? s.size - (rid && s.has(rid) ? 1 : 0) : 0) + 1; };
+const custoUsoInsumo = (i, insId, rid) => i && i.preco > 0 && i.rende > 0 ? i.preco / i.rende / compartilhamInsumo(insId, rid) : 0;
+
+function detalheReagente(r, rid = r.id) {
+  const ins = ESTADO.insumosCQ || {}, cal = r.calId ? ins[r.calId] : null, ctrl = r.ctrlId ? ins[r.ctrlId] : null, dias = r.diasKit || 0;
+  const nCal = cal ? (r.calDias > 0 && dias > 0 ? Math.max(1, Math.ceil(dias / r.calDias - 1e-9)) : 1) : 0;
+  const nCq = ctrl ? Math.ceil(dias * (r.ctrlCorridasDia || 0) - 1e-9) : 0;
+  const pontos = r.calPontos || cal?.niveis || 1, niveis = r.ctrlNiveis || ctrl?.niveis || 1;
+  const tCal = nCal * pontos, tCq = nCq * niveis;
+  const uCal = custoUsoInsumo(cal, r.calId, rid), uCq = custoUsoInsumo(ctrl, r.ctrlId, rid);
+  const mCal = nCal * uCal, mCq = nCq * uCq;
+  const base = (r.testesPorKit || 0) * (1 - (r.perdas || 0) / 100) - (r.controles || 0);
+  const uteis = base - tCal - tCq, kit = r.precoKit || 0;
+  const custo = uteis > 0 ? (kit + mCal + mCq) / uteis : null;
+  const semCq = base > 0 ? kit / base : null;
+  return { cal, ctrl, dias, nCal, nCq, pontos, niveis, tCal, tCq, uCal, uCq, mCal, mCq, base, uteis, custo,
+    pesoCq: custo && semCq != null && (nCal || nCq) ? 1 - semCq / custo : null };
+}
+const custoPorTeste = (r, rid) => detalheReagente(r, rid).custo;
 
 function custoTesteExame(e) {
   if (e.vinculoApoio) {
@@ -73,7 +105,7 @@ function custoTesteExame(e) {
     if (p) return { valor: p.valor, origem: 'apoio', ref: p };
   }
   if (e.reagenteId && ESTADO.reagentes[e.reagenteId]) {
-    const r = ESTADO.reagentes[e.reagenteId], v = custoPorTeste(r);
+    const r = ESTADO.reagentes[e.reagenteId], v = custoPorTeste(r, e.reagenteId);
     if (v != null) return { valor: v * (e.qtdReagente || 1), origem: 'reagente', ref: r };
   }
   return e.custoTeste != null ? { valor: e.custoTeste, origem: e.custoOrigem || 'manual' } : null;

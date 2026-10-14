@@ -8,7 +8,8 @@
 //   setores/{id}               setores com categoria, ícone, cor, etapas
 //   exames/{chave}             exames (chave = mnemônico com / . # $ [ ] codificados)
 //   historicoExames/{chave}/{id} alterações de cada exame
-//   reagentes/{id}             reagentes e insumos (custo por teste)
+//   reagentes/{id}             reagentes e insumos (custo por teste; calId/ctrlId → insumosCQ)
+//   insumosCQ/{id}             calibradores e controles: tipo 'cal'|'ctrl', preço, níveis, rende (usos por embalagem)
 //   apoios/{setorId}/precos/{código|material}  tabela importada do apoio (preço + vigência)
 //   catalogo/{chave}           nome, material, prazo, instrução e anexos do exame (+ checklist de publicação)
 //   tabelas/{id}               tabelas de preço (exceto Particular): nome, tipo, piso, perfil de custo,
@@ -36,6 +37,7 @@ const ESTADO = {
   setores: {},
   exames: {},
   reagentes: {},
+  insumosCQ: {},
   apoios: {},
   tabelas: {},
   laboratorios: {},
@@ -61,6 +63,7 @@ const CAMINHOS = {
   setores: 'setores',
   exames: 'exames',
   reagentes: 'reagentes',
+  insumosCQ: 'insumosCQ',
   apoios: 'apoios',
   tabelas: 'tabelas',
   laboratorios: 'laboratorios',
