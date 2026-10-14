@@ -340,5 +340,18 @@ async function desenharCatalogoFicha(id) {
       ${anexosDe(r).length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-paperclip"></i><div class="anx-links">${anexosDe(r).map(linkAnexo).join('')}</div></div></div>` : ''}
       <div class="casc-r"><div class="lft">${Object.entries(CHECKS).map(([k, c]) => `<span class="badge-s ${r[k] ? 'ok' : 'off'}"><i class="fa-solid ${r[k] ? 'fa-check' : c.icone}"></i>${c.nome}</span>`).join(' ')}</div>
         <span class="fx-ins-ac"><button class="btn sm bt-pdf" title="Gerar PDF do exame" onclick="abrirPdfInstrucao('${id}')"><i class="fa-solid fa-file-pdf"></i></button>
-          <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></span></div></div>`;
+          <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></span></div></div>
+      ${htmlSecoesFicha(r)}`;
+}
+
+// Seções da instrução em cartões compactos (texto em tópicos quando tem várias linhas)
+function htmlSecoesFicha(r) {
+  const sec = secoesDe(r);
+  return `<div class="fx-sc">${Object.entries(sec).map(([k, t]) => {
+    const S = SECOES[k], ls = String(t).split('\n').map(l => l.replace(/^\s*[-•*·]\s*/, '').trim()).filter(Boolean);
+    const corpo = ls.length > 1 ? `<ul>${ls.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : `<p>${esc(ls[0] || '')}</p>`;
+    return `<div class="fx-sc-c" style="--c:${S.cor}"><div class="fx-sc-h"><span class="ic"><i class="fa-solid ${S.icone}"></i></span><b>${S.nome}</b>
+      <button type="button" title="Copiar ${S.nome}" onclick="copiarTexto(${esc(JSON.stringify(`${S.nome}:\n${semEmoji(t)}`))},'${S.nome} copiado')"><i class="fa-solid fa-copy"></i></button></div>
+      <div class="fx-sc-b" onclick="this.classList.toggle('on')" title="Clique para expandir">${corpo}</div></div>`;
+  }).join('')}</div>`;
 }

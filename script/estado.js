@@ -19,6 +19,7 @@
 //   config/particular          regras próprias da Particular: piso (margem mínima), margemSugerida (alvo) e faixas
 //   config/hierarquia          hierarquia de valor: { definida, ordem: [idTabela…] } (Particular no topo)
 //   config/modeloProposta      textos padrão do PDF da proposta para laboratório
+//   config/modeloPropostaCli   textos padrão do PDF do orçamento (proposta para cliente)
 //   simulacoes/{id}            propostas para laboratório salvas no simulador (preço × volume)
 //   rascunhos/{alvo}/{usuario}/{chave}  edições ainda não enviadas (-1 = retirar da tabela)
 //   l2l/acessos/{id}           login do site L2L: laboratório apoiado (ou 'lamic', interno), sal e hash da senha
@@ -43,6 +44,7 @@ const ESTADO = {
   hierarquia: null,
   particular: null,
   modeloProposta: null,
+  modeloPropostaCli: null,
   catalogo: null,        // carregado sob demanda (textos de instrução são grandes)
   acessosL2L: {},
   usuarios: {},
@@ -66,6 +68,7 @@ const CAMINHOS = {
   hierarquia: 'config/hierarquia',
   particular: 'config/particular',
   modeloProposta: 'config/modeloProposta',
+  modeloPropostaCli: 'config/modeloPropostaCli',
   acessosL2L: 'l2l/acessos',
   usuarios: 'auth/usuarios',
   grupos: 'auth/grupos',

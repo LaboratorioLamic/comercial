@@ -6,6 +6,8 @@
 // apresentação editável, resumo, relação de exames (agrupada por setor),
 // encerramento, assinatura e rodapé com paginação. Textos padrão ficam em
 // config/modeloProposta; os da proposta, junto da simulação (pl.pdf).
+// O mesmo PDF serve à proposta para cliente (orçamento: pc.pdf), com textos padrão
+// próprios em config/modeloPropostaCli. _pdfModo diz qual das duas está em uso.
 // Bibliotecas (jsPDF + autoTable) carregadas só na primeira geração.
 
 const PDF_LIBS = [
@@ -35,6 +37,38 @@ Os prazos de entrega dos resultados estão evidenciados ao lado da descrição d
   validade: 30
 };
 const modeloProposta = () => ({ ...MODELO_PROPOSTA_PADRAO, ...(ESTADO.modeloProposta || {}) });
+
+const MODELO_CLIENTE_PADRAO = {
+  apresentacao: `Prezado(a) {destinatario},
+
+Agradecemos o seu contato e a confiança no Laboratório LAMIC. Segue o orçamento dos exames solicitados, com os valores e os prazos de entrega dos resultados.
+
+Atendimento e coleta:
+• Segunda-feira a sexta-feira: 06h00 às 17h00
+• Sábado: 06h00 às 12h00
+
+Preparo:
+Alguns exames exigem preparo (jejum, horário ou cuidados específicos). Consulte nossa equipe ao agendar a coleta.
+
+Entrega dos resultados:
+Os prazos de entrega estão ao lado de cada exame e contam a partir da coleta.`,
+  encerramento: 'Ficamos à disposição para esclarecer dúvidas e agendar o seu atendimento.',
+  assinatura: 'Laboratório LAMIC',
+  cargo: 'Atendimento ao cliente',
+  rodape: MODELO_PROPOSTA_PADRAO.rodape,
+  validade: 15
+};
+const modeloPropostaCli = () => ({ ...MODELO_CLIENTE_PADRAO, ...(ESTADO.modeloPropostaCli || {}) });
+
+// 'lab' = proposta comercial (pl) · 'cli' = proposta para cliente (pc)
+let _pdfModo = 'lab';
+const PDF_MODOS = {
+  lab: { st: () => pl, modelo: modeloProposta, original: MODELO_PROPOSTA_PADRAO, caminho: 'modeloProposta', itens: () => itensPdfLab(), prefixo: 'PC', nome: 'Proposta', abrir: () => abrirPdfLab() },
+  cli: { st: () => pc, modelo: modeloPropostaCli, original: MODELO_CLIENTE_PADRAO, caminho: 'modeloPropostaCli', itens: () => itensPdfCli(), prefixo: 'OR', nome: 'Orçamento', abrir: () => abrirPdfCli() }
+};
+const PM = () => PDF_MODOS[_pdfModo];
+// estado do PDF em edição (pl.pdf ou pc.pdf), usado nos campos da gaveta
+const pdfAtual = () => PM().st().pdf;
 
 let _libsPdf = null;
 function carregarLibsPdf() {
@@ -67,20 +101,22 @@ function itensPdfLab() {
   if (!ks.length) return (_plLinhas || []).filter(x => x.preco != null);
   return ks.map(k => linhaLab(cl, { ...ESTADO.exames[k], id: k })).filter(x => x.preco != null);
 }
+// Orçamento: todos os exames incluídos, com volume de exame e total (que pode ter sido digitado)
+const itensPdfCli = () => linhasCli(ctxCli()).filter(x => x.preco != null).map(x => ({ ...x, vol: x.q, tot: x.total }));
 // Grupo do exame no PDF: setores de apoio e exames sem setor viram um só grupo "Diversos" (sem o nome do parceiro)
 const grupoPdf = e => { const s = ESTADO.setores[e.setorId]; return !s || s.categoria === 'apoio' ? 'Diversos' : s.nome; };
 // Setores em ordem alfabética, com "Diversos" (apoio e exames sem setor) por último
 const ordemGrupoPdf = (a, b) => (a === 'Diversos') - (b === 'Diversos') || a.localeCompare(b, 'pt-BR');
-const numeroProposta = () => `PC-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${(pl.id || 'rasc').replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase()}`;
+const numeroProposta = () => `${PM().prefixo}-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${(PM().st().id || 'rasc').replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase()}`;
 
 // ── Textos: padrão (todos) × personalizado (proposta atual) ──
 const TEXTOS_PDF = ['apresentacao', 'encerramento', 'assinatura', 'cargo', 'rodape', 'validade'];
-const textoPersonalizado = (f, k) => String(f?.[k] ?? '') !== String(modeloProposta()[k] ?? '');
+const textoPersonalizado = (f, k, m = PM().modelo()) => String(f?.[k] ?? '') !== String(m[k] ?? '');
 // Ao salvar a simulação, guarda só o que difere do padrão: o resto segue o padrão atual
-function pdfParaSalvar(f) {
+function pdfParaSalvar(f, m = modeloProposta()) {
   if (!f) return null;
   const o = { ...f };
-  TEXTOS_PDF.forEach(k => { if (!textoPersonalizado(f, k)) delete o[k]; });
+  TEXTOS_PDF.forEach(k => { if (!textoPersonalizado(f, k, m)) delete o[k]; });
   return o;
 }
 
@@ -102,6 +138,7 @@ function htmlTextosPdf(f, alvo, aoMudar = '') {
 
 // ── Gaveta: proposta atual ────────────────────────────────────
 function abrirPdfLab() {
+  _pdfModo = 'lab';
   const itens = itensPdfLab();
   if (!itens.length) return toast('Nenhum exame com preço na lista: ajuste os filtros ou informe volume/preço', 'erro');
   garantirCatalogo();
@@ -132,7 +169,45 @@ function abrirPdfLab() {
       </div>
       <div class="hint"><i class="fa-solid fa-lock"></i> Custo, margem e lucro nunca saem no PDF.</div>
     </div>`,
-    rodape: `${pode('simulador', 'criar') ? `<button class="btn" style="margin-right:auto" onclick="salvarModeloPdf(pl.pdf)" title="Os textos desta proposta passam a ser o padrão de todas"><i class="fa-solid fa-bookmark"></i>Salvar como padrão</button>` : '<span style="margin-right:auto"></span>'}
+    rodape: `${pode('simulador', 'criar') ? `<button class="btn" style="margin-right:auto" onclick="salvarModeloPdf(pdfAtual())" title="Os textos desta proposta passam a ser o padrão de todas"><i class="fa-solid fa-bookmark"></i>Salvar como padrão</button>` : '<span style="margin-right:auto"></span>'}
+      <button class="btn" onclick="fecharGaveta()">Fechar</button>
+      <button class="btn pri" id="pdf-gerar" onclick="gerarPdfLab()"><i class="fa-solid fa-file-pdf"></i>Gerar PDF</button>`
+  });
+  seloTextoPdf();
+}
+
+// ── Gaveta: orçamento da proposta para cliente ───────────────
+function abrirPdfCli() {
+  _pdfModo = 'cli';
+  const itens = itensPdfCli();
+  if (!itens.length) return toast('Adicione exames com preço ao orçamento', 'erro');
+  garantirCatalogo();
+  const m = modeloPropostaCli();
+  pc.pdf = { destinatario: pc.cliente || '', cnpj: '', aosCuidados: '', setor: true, material: true,
+    ...Object.fromEntries(TEXTOS_PDF.map(k => [k, m[k]])), ...(pc.pdf || {}) };
+  if (!pc.pdf.destinatario && pc.cliente) pc.pdf.destinatario = pc.cliente;
+  const f = pc.pdf, sw = (k, t, d, ic) => `<div class="casc-r"><div class="lft"><i class="fa-solid ${ic}"></i><div>${t}<div class="s">${d}</div></div></div>${chave(f[k], `pc.pdf.${k}=!pc.pdf.${k};this.classList.toggle('on')`)}</div>`;
+  abrirGaveta({
+    sobre: 'Gerar PDF do orçamento', titulo: pc.nome || 'Orçamento',
+    meta: `<span class="tag"><i class="fa-solid fa-flask-vial"></i>${itens.length} exame(s)</span><span class="tag"><i class="fa-solid fa-hashtag"></i>${numeroProposta()}</span>`,
+    corpo: `<div class="form-col">
+      <div class="sec-t"><i class="fa-solid fa-user"></i>Cliente</div>
+      ${campo('pdf-dest', 'Nome do cliente', f.destinatario, { tipo: 'text', ph: 'Paciente ou empresa', aoMudar: 'pc.pdf.destinatario=this.value' })}
+      <div class="fgrid sem-pad">
+        ${campo('pdf-cnpj', 'CPF / CNPJ', f.cnpj, { tipo: 'text', ph: 'opcional', aoMudar: 'pc.pdf.cnpj=this.value' })}
+        ${campo('pdf-ac', 'Aos cuidados de', f.aosCuidados, { tipo: 'text', ph: 'opcional', aoMudar: 'pc.pdf.aosCuidados=this.value' })}
+      </div>
+      <div class="sec-t"><i class="fa-solid fa-align-left"></i>Textos deste orçamento</div>
+      <div id="pdf-selo"></div>
+      ${htmlTextosPdf(f, 'pc.pdf', 'pc.sujo=true;seloTextoPdf()')}
+      <div class="sec-t"><i class="fa-solid fa-sliders"></i>Conteúdo</div>
+      <div class="casc">
+        ${sw('setor', 'Agrupar por setor', 'exames separados por setor, em ordem alfabética', 'fa-layer-group')}
+        ${sw('material', 'Coluna de material', 'material biológico do catálogo', 'fa-vial')}
+      </div>
+      <div class="hint"><i class="fa-solid fa-lock"></i> Custo, margem e lucro nunca saem no PDF.</div>
+    </div>`,
+    rodape: `${pode('simulador', 'criar') ? `<button class="btn" style="margin-right:auto" onclick="salvarModeloPdf(pdfAtual())" title="Os textos deste orçamento passam a ser o padrão de todos os orçamentos"><i class="fa-solid fa-bookmark"></i>Salvar como padrão</button>` : '<span style="margin-right:auto"></span>'}
       <button class="btn" onclick="fecharGaveta()">Fechar</button>
       <button class="btn pri" id="pdf-gerar" onclick="gerarPdfLab()"><i class="fa-solid fa-file-pdf"></i>Gerar PDF</button>`
   });
@@ -142,34 +217,34 @@ function abrirPdfLab() {
 // Aviso: texto padrão ou personalizado nesta proposta
 function seloTextoPdf() {
   const el = document.getElementById('pdf-selo');
-  if (!el || !pl.pdf) return;
-  const n = TEXTOS_PDF.filter(k => textoPersonalizado(pl.pdf, k)).length;
+  if (!el || !pdfAtual()) return;
+  const n = TEXTOS_PDF.filter(k => textoPersonalizado(pdfAtual(), k)).length;
   el.innerHTML = n
     ? `<div class="alert a" style="margin:0"><i class="fa-solid fa-pen"></i><div><b>Texto personalizado nesta proposta</b> (${n} campo(s)). Fica salvo com a simulação; o padrão não muda.
         <div style="margin-top:6px"><button class="btn sm" onclick="restaurarTextosPdf()"><i class="fa-solid fa-rotate-left"></i>Voltar ao padrão</button></div></div></div>`
-    : `<div class="alert x" style="margin:0"><i class="fa-solid fa-file-signature"></i><div><b>Usando o texto padrão</b> (vale para todas as propostas). Editar aqui muda só esta proposta${pode('simulador', 'criar') ? '; para mudar o padrão use "Texto padrão" no simulador' : ''}.</div></div>`;
+    : `<div class="alert x" style="margin:0"><i class="fa-solid fa-file-signature"></i><div><b>Usando o texto padrão</b> (vale para ${_pdfModo === 'cli' ? 'todos os orçamentos' : 'todas as propostas'}). Editar aqui muda só esta proposta${pode('simulador', 'criar') ? '; para mudar o padrão use "Texto padrão" no simulador' : ''}.</div></div>`;
 }
 
 function restaurarTextosPdf() {
-  const m = modeloProposta();
-  TEXTOS_PDF.forEach(k => { pl.pdf[k] = m[k]; });
-  pl.sujo = true;
-  abrirPdfLab();
+  const m = PM().modelo(), st = PM().st();
+  TEXTOS_PDF.forEach(k => { st.pdf[k] = m[k]; });
+  st.sujo = true;
+  PM().abrir();
 }
 
 // ── Gaveta: texto padrão (todas as propostas) ─────────────────
 let _mpd = null;
 function abrirModeloPdf(base) {
-  _mpd = { ...(base || modeloProposta()) };
-  const edit = pode('simulador', 'criar');
+  _mpd = { ...(base || PM().modelo()) };
+  const edit = pode('simulador', 'criar'), salvo = ESTADO[PM().caminho];
   abrirGaveta({
-    sobre: 'Proposta', titulo: 'Texto padrão do PDF',
-    meta: ESTADO.modeloProposta?.atualizadoPor ? `<span class="tag"><i class="fa-solid fa-user-pen"></i>${esc(ESTADO.modeloProposta.atualizadoPor)} · ${dataHora(ESTADO.modeloProposta.atualizadoEm)}</span>` : '<span class="tag"><i class="fa-solid fa-file-signature"></i>texto original do sistema</span>',
+    sobre: _pdfModo === 'cli' ? 'Proposta cliente' : 'Proposta', titulo: _pdfModo === 'cli' ? 'Texto padrão do orçamento' : 'Texto padrão do PDF',
+    meta: salvo?.atualizadoPor ? `<span class="tag"><i class="fa-solid fa-user-pen"></i>${esc(salvo.atualizadoPor)} · ${dataHora(salvo.atualizadoEm)}</span>` : '<span class="tag"><i class="fa-solid fa-file-signature"></i>texto original do sistema</span>',
     corpo: `<div class="form-col">
-      <div class="alert x" style="margin:0"><i class="fa-solid fa-users"></i><div>Vale para <b>todas</b> as propostas. Propostas com texto personalizado mantêm a versão delas.</div></div>
+      <div class="alert x" style="margin:0"><i class="fa-solid fa-users"></i><div>Vale para <b>${_pdfModo === 'cli' ? 'todos</b> os orçamentos de cliente. Orçamentos' : 'todas</b> as propostas. Propostas'} com texto personalizado mantêm a versão delas.</div></div>
       ${htmlTextosPdf(_mpd, '_mpd')}
     </div>`,
-    rodape: `<button class="btn" style="margin-right:auto" onclick="abrirModeloPdf(MODELO_PROPOSTA_PADRAO)" title="Volta ao texto original do sistema"><i class="fa-solid fa-rotate-left"></i>Texto original</button>
+    rodape: `<button class="btn" style="margin-right:auto" onclick="abrirModeloPdf(PM().original)" title="Volta ao texto original do sistema"><i class="fa-solid fa-rotate-left"></i>Texto original</button>
       <button class="btn" onclick="fecharGaveta()">${edit ? 'Cancelar' : 'Fechar'}</button>
       ${edit ? `<button class="btn pri" onclick="salvarModeloPdf(_mpd, true)"><i class="fa-solid fa-floppy-disk"></i>Salvar padrão</button>` : ''}`
   });
@@ -177,14 +252,15 @@ function abrirModeloPdf(base) {
 }
 
 async function salvarModeloPdf(f, fechar) {
-  const u = usuarioAtual(), dados = { ...Object.fromEntries(TEXTOS_PDF.map(k => [k, f[k] ?? MODELO_PROPOSTA_PADRAO[k]])), validade: f.validade || 30, atualizadoPor: u.nome, atualizadoEm: Date.now() };
+  const P = PM(), st = P.st(), u = usuarioAtual();
+  const dados = { ...Object.fromEntries(TEXTOS_PDF.map(k => [k, f[k] ?? P.original[k]])), validade: f.validade || P.original.validade, atualizadoPor: u.nome, atualizadoEm: Date.now() };
   // proposta aberta: o que era igual ao padrão antigo passa a seguir o novo
-  if (pl.pdf) { const proprio = pdfParaSalvar(pl.pdf); TEXTOS_PDF.forEach(k => { if (!(k in proprio)) pl.pdf[k] = dados[k]; }); }
-  await DB.gravar(CAMINHOS.modeloProposta, dados);
-  ESTADO.modeloProposta = dados;
-  registrar('simulador', 'Texto padrão do PDF da proposta alterado');
+  if (st.pdf) { const proprio = pdfParaSalvar(st.pdf, P.modelo()); TEXTOS_PDF.forEach(k => { if (!(k in proprio)) st.pdf[k] = dados[k]; }); }
+  await DB.gravar(CAMINHOS[P.caminho], dados);
+  ESTADO[P.caminho] = dados;
+  registrar('simulador', `Texto padrão do PDF ${_pdfModo === 'cli' ? 'do orçamento de cliente' : 'da proposta'} alterado`);
   if (fechar) fecharGaveta(); else seloTextoPdf();
-  toast('Texto padrão salvo: vale para todas as propostas');
+  toast(`Texto padrão salvo: vale para ${_pdfModo === 'cli' ? 'todos os orçamentos' : 'todas as propostas'}`);
 }
 
 // ── Geração ───────────────────────────────────────────────────
@@ -193,11 +269,11 @@ async function gerarPdfLab() {
   if (bt) { bt.disabled = true; bt.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Gerando…'; }
   try {
     await Promise.all([carregarLibsPdf(), garantirCatalogo()]);
-    const doc = montarPdfLab(await logoPdf());
-    const nome = `Proposta LAMIC - ${(pl.pdf.destinatario || pl.nome || 'laboratório').trim()}.pdf`.replace(/[\\/:*?"<>|]/g, '-');
+    const doc = montarPdfLab(await logoPdf()), P = PM(), st = P.st();
+    const nome = `${P.nome} LAMIC - ${(st.pdf.destinatario || st.nome || (_pdfModo === 'cli' ? 'cliente' : 'laboratório')).trim()}.pdf`.replace(/[\\/:*?"<>|]/g, '-');
     doc.save(nome);
-    pl.sujo = true;
-    registrar('simulador', `PDF da proposta "${pl.nome || pl.pdf.destinatario}" gerado (${itensPdfLab().length} exames)`);
+    st.sujo = true;
+    registrar('simulador', `PDF ${_pdfModo === 'cli' ? 'do orçamento' : 'da proposta'} "${st.nome || st.pdf.destinatario}" gerado (${P.itens().length} exames)`);
     toast('PDF gerado · salve a simulação para guardar os textos');
   } catch (e) {
     console.error(e);
@@ -208,7 +284,7 @@ async function gerarPdfLab() {
 }
 
 function montarPdfLab(logo) {
-  const { jsPDF } = window.jspdf, f = pl.pdf, C = COR_PDF;
+  const { jsPDF } = window.jspdf, f = pdfAtual(), C = COR_PDF, cli = _pdfModo === 'cli';
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   doc.setLineHeightFactor(1.42);
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 42, LW = W - 2 * M;
@@ -224,16 +300,16 @@ function montarPdfLab(logo) {
   // ── Página 1: faixa de título e destinatário ──
   y = 128;
   fonte('bold', 19); cor(C.navy);
-  doc.text('Proposta de Prestação de Serviços Laboratoriais', M, y);
+  doc.text(cli ? 'Orçamento de Exames Laboratoriais' : 'Proposta de Prestação de Serviços Laboratoriais', M, y);
   y += 10;
   cor(C.azul, 'fill'); doc.rect(M, y, 46, 3, 'F');
   cor(C.cinza, 'fill'); doc.rect(M + 50, y, 14, 3, 'F');
   y += 18;
 
-  const itens = itensPdfLab().map(x => ({ ...x, setor: grupoPdf(x.e), material: ESTADO.catalogo?.[x.k]?.material || x.e.material || '' }));
-  const vol = itens.reduce((s, x) => s + (x.vol || 0), 0), total = itens.reduce((s, x) => s + x.preco * (x.vol || 0), 0);
-  // sem volume (0): relatório só com valores brutos, sem receita nem dados mensais
-  const comVol = f.totais && vol > 0;
+  const itens = PM().itens().map(x => ({ ...x, tot: x.tot ?? x.preco * (x.vol || 0), setor: grupoPdf(x.e), material: ESTADO.catalogo?.[x.k]?.material || x.e.material || '' }));
+  const vol = itens.reduce((s, x) => s + (x.vol || 0), 0), total = itens.reduce((s, x) => s + x.tot, 0);
+  // sem volume (0): relatório só com valores brutos, sem receita nem dados mensais (o orçamento sempre tem total)
+  const comVol = cli || (f.totais && vol > 0);
 
   // cartão do destinatário (esquerda) e dados da proposta (direita)
   const cardH = 78, colD = LW * 0.6;
@@ -246,11 +322,11 @@ function montarPdfLab(logo) {
   const dest = doc.splitTextToSize(f.destinatario || '—', colD - 30);
   doc.text(dest.slice(0, 2), M + 16, y + 34);
   fonte('normal', 9); cor(C.texto);
-  const extra = [f.cnpj ? `CNPJ ${f.cnpj}` : '', f.aosCuidados ? `A/C ${f.aosCuidados}` : ''].filter(Boolean).join('   ·   ');
+  const extra = [f.cnpj ? `${cli ? 'CPF/CNPJ' : 'CNPJ'} ${f.cnpj}` : '', f.aosCuidados ? `A/C ${f.aosCuidados}` : ''].filter(Boolean).join('   ·   ');
   if (extra) doc.text(extra, M + 16, y + 34 + dest.slice(0, 2).length * 14);
   const xD = M + colD + 10;
   cor(C.linha, 'draw'); doc.line(xD - 12, y + 12, xD - 12, y + cardH - 12);
-  [['Nº da proposta', nProp], ['Emissão', dt(hoje)], ['Validade', f.validade ? `${dt(validade)} (${f.validade} dias)` : '—']].forEach(([r, v], i) => {
+  [[cli ? 'Nº do orçamento' : 'Nº da proposta', nProp], ['Emissão', dt(hoje)], ['Validade', f.validade ? `${dt(validade)} (${f.validade} dias)` : '—']].forEach(([r, v], i) => {
     const yy = y + 24 + i * 19;
     rot(r, xD, yy); fonte('bold', 9.5); cor(C.navy); doc.text(v, W - M - 14, yy, { align: 'right' });
     if (i < 2) { cor(C.linha, 'draw'); doc.setLineWidth(0.4); doc.line(xD, yy + 7, W - M - 14, yy + 7); }
@@ -282,8 +358,9 @@ function montarPdfLab(logo) {
   y += 10;
 
   // ── Resumo ──
-  const caixas = [['Exames na proposta', String(itens.length)]];
-  if (comVol) caixas.push(['Volume mensal estimado', `${vol.toLocaleString('pt-BR')} exame(s)`], ['Investimento mensal estimado', brl(total)]);
+  const caixas = [[cli ? 'Exames no orçamento' : 'Exames na proposta', String(itens.length)]];
+  if (cli) caixas.push(['Quantidade de exames', vol.toLocaleString('pt-BR')], ['Total do orçamento', brl(total)]);
+  else if (comVol) caixas.push(['Volume mensal estimado', `${vol.toLocaleString('pt-BR')} exame(s)`], ['Investimento mensal estimado', brl(total)]);
   else caixas.push(['Validade da proposta', f.validade ? `${f.validade} dias` : '—']);
   quebra(70);
   const bw = (LW - (caixas.length - 1) * 10) / caixas.length;
@@ -304,8 +381,8 @@ function montarPdfLab(logo) {
   const cols = [{ k: 'mn', t: 'Mnemônico', w: 62 }, { k: 'ex', t: 'Exame' }];
   if (f.material) cols.push({ k: 'mat', t: 'Material', w: 70 });
   cols.push({ k: 'pz', t: 'Prazo', w: 64, a: 'center' }, { k: 'vl', t: 'Valor', w: 62, a: 'right' });
-  if (comVol) cols.push({ k: 'qt', t: 'Qtd/mês', w: 44, a: 'center' }, { k: 'tt', t: 'Total/mês', w: 68, a: 'right' });
-  const linhaTab = x => ({ mn: x.e.mn, ex: x.e.descricao || '', mat: x.material || '-', pz: textoPrazoPdf(x.k) || '-', vl: brl(x.preco), qt: x.vol ? String(x.vol) : '-', tt: x.vol ? brl(x.preco * x.vol) : '-' });
+  if (comVol) cols.push({ k: 'qt', t: cli ? 'Qtd' : 'Qtd/mês', w: 44, a: 'center' }, { k: 'tt', t: cli ? 'Total' : 'Total/mês', w: 68, a: 'right' });
+  const linhaTab = x => ({ mn: x.e.mn, ex: x.e.descricao || '', mat: x.material || '-', pz: textoPrazoPdf(x.k) || '-', vl: brl(x.preco), qt: x.vol ? String(x.vol) : '-', tt: x.vol ? brl(x.tot) : '-' });
   const ord = (a, b) => a.e.mn.localeCompare(b.e.mn, 'pt-BR', { sensitivity: 'base' });
   const corpo = [];
   if (f.setor) {
@@ -323,7 +400,7 @@ function montarPdfLab(logo) {
   colStyles[iVl].fontStyle = 'bold';
   doc.autoTable({
     startY: y, head: [cols.map(c => c.t)], body: corpo,
-    foot: comVol ? [[{ content: 'Total mensal estimado', colSpan: cols.length - 2, styles: { halign: 'right' } }, { content: vol.toLocaleString('pt-BR'), styles: { halign: 'center' } }, { content: brl(total), styles: { halign: 'right' } }]] : undefined,
+    foot: comVol ? [[{ content: cli ? 'Total do orçamento' : 'Total mensal estimado', colSpan: cols.length - 2, styles: { halign: 'right' } }, { content: vol.toLocaleString('pt-BR'), styles: { halign: 'center' } }, { content: brl(total), styles: { halign: 'right' } }]] : undefined,
     showFoot: 'lastPage', theme: 'plain',
     margin: { left: M, right: M, top: TOPO + 6, bottom: H - BASE + 4 },
     styles: { font: 'helvetica', fontSize: 8.4, cellPadding: { top: 4.5, bottom: 4.5, left: 5, right: 5 }, textColor: C.texto, lineColor: C.linha, lineWidth: { bottom: 0.5 }, valign: 'middle', overflow: 'linebreak' },
@@ -356,14 +433,14 @@ function montarPdfLab(logo) {
     cor(C.azul, 'fill'); doc.rect(W * 0.62, 0, W * 0.38, 5, 'F');
     if (i === 1) {
       if (logo) { const p = doc.getImageProperties(logo), lw = 150; doc.addImage(logo, 'PNG', M - 14, 18, lw, lw * p.height / p.width); }
-      fonte('bold', 8); cor(C.azul); doc.text('PROPOSTA COMERCIAL', W - M, 38, { align: 'right', charSpace: 1.2 });
+      fonte('bold', 8); cor(C.azul); doc.text(cli ? 'ORÇAMENTO' : 'PROPOSTA COMERCIAL', W - M, 38, { align: 'right', charSpace: 1.2 });
       fonte('bold', 15); cor(C.navy); doc.text(nProp, W - M, 56, { align: 'right' });
       fonte('normal', 8.5); cor(C.muted); doc.text(`Emitida em ${dt(hoje)}`, W - M, 70, { align: 'right' });
       cor(C.linha, 'draw'); doc.setLineWidth(0.6); doc.line(M, 86, W - M, 86);
     } else {
       if (logo) { const p = doc.getImageProperties(logo), lw = 92; doc.addImage(logo, 'PNG', M - 8, 16, lw, lw * p.height / p.width); }
-      fonte('bold', 9); cor(C.navy); doc.text(f.destinatario || 'Proposta comercial', W - M, 38, { align: 'right' });
-      fonte('normal', 8); cor(C.muted); doc.text(`Proposta ${nProp} · continuação`, W - M, 51, { align: 'right' });
+      fonte('bold', 9); cor(C.navy); doc.text(f.destinatario || (cli ? 'Orçamento' : 'Proposta comercial'), W - M, 38, { align: 'right' });
+      fonte('normal', 8); cor(C.muted); doc.text(`${PM().nome} ${nProp} · continuação`, W - M, 51, { align: 'right' });
       cor(C.linha, 'draw'); doc.setLineWidth(0.6); doc.line(M, 66, W - M, 66);
     }
     // rodapé
@@ -371,7 +448,7 @@ function montarPdfLab(logo) {
     cor(C.linha, 'draw'); doc.setLineWidth(0.5); doc.line(M + 44, H - 46, W - M, H - 46);
     fonte('normal', 7.8); cor(C.muted);
     doc.text(doc.splitTextToSize(f.rodape || '', LW - 90)[0] || '', M, H - 32);
-    doc.text(`Proposta ${nProp}${f.validade ? ` · válida até ${dt(validade)}` : ''}`, M, H - 21);
+    doc.text(`${PM().nome} ${nProp}${f.validade ? ` · válida até ${dt(validade)}` : ''}`, M, H - 21);
     fonte('bold', 8); cor(C.navy); doc.text(`Página ${i} de ${n}`, W - M, H - 32, { align: 'right' });
   }
   return doc;

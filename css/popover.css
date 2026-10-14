@@ -69,6 +69,8 @@
 .pop-foot { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 .pop-foot kbd { font-family: "DM Mono", monospace; font-size: 10px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--bg-soft); }
 .pop-foot button { border: 0; background: none; color: var(--cyan); font-size: 12px; font-weight: 600; }
+.pop-foot button + button { margin-left: 10px; }
+.pop-foot button.on { color: var(--amber); }
 .pop-fundo { position: fixed; inset: 0; z-index: 55; display: none; }
 .pop-fundo.open { display: block; }
 

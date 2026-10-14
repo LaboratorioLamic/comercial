@@ -441,6 +441,17 @@ tr.vlin.vsel td { background: var(--cyan-light); }
 .rg-l .price-in input { width: 100%; min-width: 0; }
 .rg-p input { padding: 6px 2px 6px 8px; }
 .rg-p .suf { padding: 0 8px; }
+/* Margem escalonada do simulador (coluna estreita) */
+.mfx { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft); }
+.mfx.ro { background: transparent; border-style: dashed; }
+.mfx-h, .mfx-l { display: grid; grid-template-columns: minmax(0, 1fr) 88px 24px; gap: 6px; align-items: center; }
+.mfx-h { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 0 2px; }
+.mfx-l .inp { width: 100%; min-width: 0; background: var(--bg-card); }
+.mfx-l .inp input { padding: 7px 8px; }
+.mfx-l .inp input { min-width: 0; width: 100%; }
+.mfx-l .inp .pre { padding: 0 0 0 10px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.mfx-de { font-size: 12.5px; color: var(--text-secondary); padding-left: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mfx > .btn { align-self: flex-start; margin-top: 2px; }
 .rg-x { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 6px; }
 .rg-x:hover { color: var(--red); background: var(--bg-soft); }
 
@@ -690,3 +701,30 @@ tr.vlin.vsel td { background: var(--cyan-light); }
 .pp-q b.g { color: var(--green); } .pp-q b.a { color: var(--amber); } .pp-q b.r { color: var(--red); }
 .pp-var:empty { display: none; }
 @media (max-width: 560px) { .pp-kpis { flex-direction: column; } .pp-ex small { display: none; } }
+/* Segmentado empilhado (coluna estreita do simulador) */
+.seg.seg-col { display: flex; flex-direction: column; width: 100%; }
+.seg.seg-col button { justify-content: flex-start; padding: 8px 12px; white-space: normal; text-align: left; }
+.seg.seg-col button + button { border-top: 1px solid var(--border); }
+.seg.seg-col button i { width: 14px; text-align: center; }
+
+/* Referência da tabela nos cards do simulador */
+.imp .rj-ref { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--bg2, rgba(127,127,127,.12)); border: 1px solid var(--line, rgba(127,127,127,.25)); color: var(--txt, inherit); font-weight: 600; font-size: .95em; white-space: nowrap; }
+/* Ficha → Instruções: seções em cartões compactos */
+.fx-sc { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.fx-sc-c { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg-card); }
+.fx-sc-h { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: color-mix(in srgb, var(--c) 9%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--c) 18%, transparent); }
+.fx-sc-h .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--c); color: #fff; font-size: 11px; }
+.fx-sc-h b { flex: 1; font-size: 12.5px; font-weight: 600; }
+.fx-sc-h button { border: 0; background: none; color: var(--text-muted); cursor: pointer; padding: 2px 4px; font-size: 11.5px; }
+.fx-sc-h button:hover { color: var(--c); }
+.fx-sc-b { padding: 6px 10px; font-size: 12px; line-height: 1.45; max-height: 76px; overflow: hidden; cursor: pointer; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.fx-sc-b.on { max-height: none; -webkit-mask-image: none; mask-image: none; }
+.fx-sc-b p { margin: 0; }
+.fx-sc-b ul { margin: 0; padding-left: 16px; }
+.fx-sc-b li { margin: 1px 0; }
+.fx-sc-b li::marker { color: var(--c); }
+
+/* Proposta cliente: legenda do custo (volume × custo + parte do atendimento) */
+.cus-cli { display: flex; justify-content: flex-end; align-items: center; gap: 6px; font-size: 10.5px; opacity: .75; white-space: nowrap; }
+.cus-cli b { font-weight: 600; color: var(--cyan); }
+.cus-cli i { font-size: 9px; margin-left: 2px; opacity: .7; }

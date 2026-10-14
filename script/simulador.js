@@ -8,10 +8,13 @@
 // Proposta para laboratório (antiga aba 01.LAB da Lamic-to-Lab): preço
 //   proposto × volume mensal por exame, filtro por prazo, margem ponderada e
 //   viabilidade pelo piso da tabela. Simulações ficam em simulacoes/{id}.
+// Proposta para cliente: exames incluídos pela busca × volume de exame, com um
+//   só atendimento dividido entre eles (simulacoes/{id} com tipo 'cli').
 
 const SIM_POR_PAG = 50;
-let simAba = 'reajuste';
-SUBNAV_GANCHO.simulador = p => { simAba = p; renderSimulador(); };
+// aba lembrada ao recarregar a página
+let simAba = (() => { try { return localStorage.getItem('simAba') || 'reajuste'; } catch { return 'reajuste'; } })();
+SUBNAV_GANCHO.simulador = p => { simAba = p; try { localStorage.setItem('simAba', p); } catch {} renderSimulador(); };
 
 // Arredonda para cima no múltiplo m (0 = centavos)
 const arredSim = (v, m) => v == null ? null : m ? Math.ceil(v / m - 1e-9) * m : Math.round(v * 100) / 100;
@@ -25,24 +28,30 @@ const OPCOES_ARRED = [
 
 function renderSimulador() {
   const el = document.getElementById('s-simulador');
-  const salvas = lista(ESTADO.simulacoes).length;
+  const salvas = lista(ESTADO.simulacoes).filter(s => s.tipo !== 'cli').length, salvasCli = lista(ESTADO.simulacoes).filter(s => s.tipo === 'cli').length;
   el.innerHTML = `
     <div class="h-row"><div><h2>Simulador</h2><p>Veja o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada.</p></div></div>
     <div class="subnav-row"><div class="subnav" data-grupo="simulador">
       <button data-p="reajuste" class="${simAba === 'reajuste' ? 'on' : ''}"><i class="fa-solid fa-arrow-trend-up"></i>Reajuste de tabela</button>
       <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta comercial${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
+      <button data-p="cli" class="${simAba === 'cli' ? 'on' : ''}"><i class="fa-solid fa-user"></i>Proposta cliente${salvasCli ? `<span class="n-sub">${salvasCli}</span>` : ''}</button>
     </div>
-    <button class="btn so-lab" onclick="abrirModeloPdf()" title="Texto padrão do PDF, vale para todas as propostas"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
+    <button class="btn so-lab" onclick="_pdfModo=simAba==='cli'?'cli':'lab';abrirModeloPdf()" title="Texto padrão do PDF da aba (proposta comercial ou orçamento de cliente)"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
     <div class="pane ${simAba === 'reajuste' ? 'on' : ''}" id="simulador-reajuste"></div>
-    <div class="pane ${simAba === 'lab' ? 'on' : ''}" id="simulador-lab"></div>`;
+    <div class="pane ${simAba === 'lab' ? 'on' : ''}" id="simulador-lab"></div>
+    <div class="pane ${simAba === 'cli' ? 'on' : ''}" id="simulador-cli"></div>`;
   iniciarSubnav();
   if (simAba === 'reajuste') desenharSimReajuste();
+  else if (simAba === 'cli') desenharSimCli();
   else desenharSimLab();
 }
 
 // ═══ Reajuste de tabela ══════════════════════════════════════
 // man: valores digitados à mão na coluna Novo (chave do exame → preço); valem sobre a regra
-const rj = { man: {}, alvo: 'particular', tipo: 'pct', p: 5, m: null, d: null, escopo: 'todos', naoReduzir: true, filtro: 'alt', q: '', pag: 1, ordem: 'var', dir: -1 };
+// mtab: margem desejada = a configurada na tabela (sugestão de margem; na Particular, margem alvo)
+// dtab/dfx: o mesmo para o desconto sobre a referência (desconto de referência da tabela)
+// mfx: margem desejada escalonada por custo total ([{ ate, v }], v em %; a última sem limite) ou null
+const rj = { man: {}, alvo: 'particular', tipo: 'pct', p: 5, m: null, mfx: null, mtab: true, d: null, dfx: null, dtab: true, escopo: 'todos', naoReduzir: true, filtro: 'alt', q: '', pag: 1, ordem: 'var', dir: -1 };
 
 const TIPOS_REAJUSTE = {
   pct:  { nome: 'Percentual',          icone: 'fa-percent',               desc: 'Aplica % sobre o preço atual' },
@@ -75,6 +84,8 @@ function desenharFormReajuste() {
   if (!el || !cx) return;
   const tipos = tiposDe(cx);
   if (!tipos.includes(rj.tipo)) rj.tipo = 'pct';
+  if (rj.escopo === 'fora' && !tabRjOk(cx, 'm')) rj.escopo = 'todos';
+  ['m', 'd'].forEach(k => { if (rj[k + 'tab'] && !tabRjOk(cx, k)) rj[k + 'tab'] = false; });
   if (rj.m == null) rj.m = Math.round(((cx.base ? parametro('margemAlvo') : cx.margemSug ?? cx.piso + 0.1)) * 1000) / 10;
   if (rj.d == null) rj.d = Math.round((cx.descRef || 0.1) * 1000) / 10;
   const cria = pode('simulador', 'criar');
@@ -83,23 +94,23 @@ function desenharFormReajuste() {
         <div class="inp"><input id="rj-p" type="number" step="0.5" value="${rj.p}" oninput="rj.p=parseFloat(this.value)||0;this.closest('.range-row').querySelector('input[type=range]').value=rj.p;recalcReajuste()"><span class="suf">%</span></div></div>
       <span class="hint">Negativo reduz o preço</span>`
     : rj.tipo === 'marg' ? `<span class="f-label">Margem desejada</span>
-      <div class="inp" style="width:130px"><input type="number" step="0.5" value="${rj.m}" oninput="rj.m=parseFloat(this.value)||0;recalcReajuste()"><span class="suf">%</span></div>
-      <span class="hint">${cx.base ? `Alvo geral ${textoAlvoParticular()}` : cx.margemSug != null ? `Sugestão de margem da tabela: ${cx.msugTxt}` : `Piso da tabela: ${cx.pisoTxt}`} · exames sem custo ficam de fora</span>`
+      ${htmlParamRj(cx, 'm')}
+      <span class="hint">${rj.mtab ? (cx.base ? 'Margem alvo da Particular · setor com alvo próprio prevalece · ' : 'Sugestão de margem configurada na tabela · ') : rj.mfx ? '' : cx.base ? `Alvo geral ${textoAlvoParticular()} · ` : cx.margemSug != null ? `Sugestão de margem da tabela: ${cx.msugTxt} · ` : `Piso da tabela: ${cx.pisoTxt} · `}exames sem custo ficam de fora</span>`
     : rj.tipo === 'desc' ? `<span class="f-label">Desconto sobre ${esc(cx.ref?.nome || 'a referência')}</span>
-      <div class="inp" style="width:130px"><input type="number" step="0.5" value="${rj.d}" oninput="rj.d=parseFloat(this.value)||0;recalcReajuste()"><span class="suf">%</span></div>
-      <span class="hint">${cx.descRef ? `Desconto de referência da tabela: ${cx.descTxt}` : ''}</span>`
+      ${htmlParamRj(cx, 'd')}
+      <span class="hint">${rj.dtab ? 'Desconto de referência configurado na tabela' : rj.dfx ? '' : cx.descRef ? `Desconto de referência da tabela: ${cx.descTxt}` : ''}</span>`
     : rj.tipo === 'piso' ? `<span class="f-label">Regra</span><div class="hint"><i class="fa-solid fa-circle-info"></i> Exames abaixo de ${cx.pisoTxt} sobem até o ${cx.pisoNome}; os demais não mudam.</div>`
     : `<span class="f-label">Regra</span><div class="hint"><i class="fa-solid fa-circle-info"></i> Preço = custo total ÷ (1 − imposto − margem alvo do setor).</div>`;
   el.innerHTML = `
     <div class="fg"><span class="f-label">Tabela</span><div id="pop-rjalvo" class="block"></div></div>
     <div class="fg"><span class="f-label">Setor</span><div id="pop-rjsetor" class="block"></div></div>
     <div class="fg"><span class="f-label">Aplicar em</span>
-      <div class="seg"><button class="${rj.escopo === 'todos' ? 'on' : ''}" onclick="rj.escopo='todos';desenharFormReajuste()" title="Todos os exames com preço"><i class="fa-solid fa-list"></i>Todos</button><button class="${rj.escopo === 'abaixo' ? 'on' : ''}" onclick="rj.escopo='abaixo';desenharFormReajuste()" title="Só os exames abaixo de ${cx.pisoTxt}"><i class="fa-solid fa-circle-xmark"></i>Abaixo do ${cx.pisoNome}</button></div></div>
+      <div class="seg seg-col"><button class="${rj.escopo === 'todos' ? 'on' : ''}" onclick="rj.escopo='todos';desenharFormReajuste()" title="Todos os exames com preço"><i class="fa-solid fa-list"></i>Todos</button><button class="${rj.escopo === 'abaixo' ? 'on' : ''}" onclick="rj.escopo='abaixo';desenharFormReajuste()" title="Só os exames abaixo de ${cx.pisoTxt}"><i class="fa-solid fa-circle-xmark"></i>Abaixo do ${cx.pisoNome}</button>${tabRjOk(cx, 'm') ? `<button class="${rj.escopo === 'fora' ? 'on' : ''}" onclick="rj.escopo='fora';desenharFormReajuste()" title="Só os exames abaixo da margem configurada na tabela (${cx.base ? textoAlvoParticular() : cx.msugTxt})"><i class="fa-solid fa-bullseye"></i>Fora da margem</button>` : ''}</div></div>
     <div class="fg"><span class="f-label">Arredondamento</span><div id="pop-rjarred" class="block"></div></div>
     <div class="fg full"><span class="f-label">Tipo de reajuste</span>
       <div class="opt-cards">${tipos.map(t => { const T = TIPOS_REAJUSTE[t]; return `<button type="button" class="oc ${rj.tipo === t ? 'on' : ''}" onclick="rj.tipo='${t}';rj.pag=1;desenharFormReajuste()">
         <span class="po-ic"><i class="fa-solid ${T.icone}"></i></span><span><b>${t === 'piso' ? `Levar ao ${cx.pisoNome}` : T.nome}</b><small>${t === 'piso' ? `Só os abaixo de ${cx.pisoTxt}` : t === 'desc' ? `${esc(cx.ref?.nome || 'Referência')} menos o percentual` : T.desc}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`; }).join('')}</div></div>
-    <div class="fg">${param}</div>
+    <div class="fg ${(rj.tipo === 'marg' && (rj.mtab || rj.mfx)) || (rj.tipo === 'desc' && (rj.dtab || rj.dfx)) ? 'full' : ''}">${param}</div>
     <div class="fg"><span class="f-label">Proteção</span>
       <div class="casc"><div class="casc-r"><div class="lft"><i class="fa-solid fa-shield"></i><div>Não reduzir preços<div class="s">mantém o atual quando a regra daria menos</div></div></div>${chave(rj.naoReduzir, 'rj.naoReduzir=!rj.naoReduzir;this.classList.toggle(\'on\');recalcReajuste()')}</div></div></div>
     ${cria ? `<div class="fg sim-acoes">
@@ -112,10 +123,10 @@ function desenharFormReajuste() {
       const c = ctxAlvo(a);
       return { valor: a, rotulo: c.nome, icone: c.icone, cor: c.cor, grupo: c.conv ? 'Conveniados' : c.lab ? 'Laboratórios apoiados' : 'Tabelas', desc: c.base ? 'Preço praticado' : `piso ${c.pisoTxt}` };
     }),
-    aoMudar: a => { rj.alvo = a; rj.man = {}; rj.m = null; rj.d = null; rj.pag = 1; desenharFormReajuste(); }
+    aoMudar: a => { rj.alvo = a; rj.man = {}; rj.m = null; rj.mfx = null; rj.mtab = true; rj.d = null; rj.dfx = null; rj.dtab = true; rj.pag = 1; desenharFormReajuste(); }
   });
   criarPop('pop-rjsetor', {
-    rotulo: 'Setor', titulo: 'Escopo do reajuste', icone: 'fa-bullseye', busca: 'Buscar setor…', limpavel: true,
+    rotulo: 'Setor', titulo: 'Escopo do reajuste', icone: 'fa-bullseye', busca: 'Buscar setor…', limpavel: true, multi: true,
     opcoes: () => opcoesSetorPop('Todos os setores', [{ valor: '__sem', rotulo: 'Sem setor', icone: 'fa-triangle-exclamation', cor: 'var(--amber)' }]),
     aoMudar: () => { rj.pag = 1; recalcReajuste(); }
   });
@@ -126,33 +137,101 @@ function desenharFormReajuste() {
   recalcReajuste();
 }
 
+// ── Margem desejada e desconto: da tabela, única ou escalonada (faixas pelo custo total, como em faixas.js) ──
+// k = 'm' (margem; campo margemSugerida) ou 'd' (desconto; campo descontoRef) · estado em rj[k], rj[k+'fx'], rj[k+'tab']
+const CAMPO_RJ = { m: 'margemSugerida', d: 'descontoRef' }, ROT_RJ = { m: 'Margem', d: 'Desconto' };
+const faixasTabRj = (cx, k) => faixasDe(cx.tab || ESTADO.particular, CAMPO_RJ[k]).filter(f => f.v != null);
+const valorTabRj = (cx, k) => k === 'm' ? (cx.base ? regraTab(null, 'margemSugerida') ?? parametro('margemAlvo') : cx.margemSug) : cx.descRef;
+const tabRjOk = (cx, k) => k === 'm' ? cx.base || (cx.msugTxt && cx.msugTxt !== '—') : faixasTabRj(cx, 'd').length > 1 || cx.descRef > 0;
+const valorRj = (k, custo) => { const fx = rj[k + 'fx']; return !fx || custo == null ? rj[k] || 0 : (fx.find(f => f.ate == null || custo <= f.ate)?.v ?? rj[k]) || 0; };
+
+function htmlParamRj(cx, k) {
+  const fx = rj[k + 'fx'], tab = rj[k + 'tab'], ok = tabRjOk(cx, k);
+  const seg = `<div class="seg" style="margin-bottom:8px"><button class="${tab ? 'on' : ''}" ${ok ? '' : `disabled title="Tabela sem ${k === 'm' ? 'sugestão de margem' : 'desconto de referência'}: defina em Configurar"`} onclick="modoRj('${k}','tab')" title="${ROT_RJ[k]} configurado na tabela, por faixa de custo quando houver"><i class="fa-solid fa-table-list"></i>Da tabela</button><button class="${!tab && !fx ? 'on' : ''}" onclick="modoRj('${k}','unica')"><i class="fa-solid fa-percent"></i>Única</button><button class="${fx && !tab ? 'on' : ''}" onclick="modoRj('${k}','fx')" title="${ROT_RJ[k]} escalonado por faixa de custo total"><i class="fa-solid fa-chart-line"></i>Escalonada</button></div>`;
+  const corpo = tab ? htmlTabRj(cx, k) : fx ? htmlFxRj(k)
+    : `<div class="inp" style="width:130px"><input type="number" step="0.5" value="${rj[k]}" oninput="rj.${k}=parseFloat(this.value)||0;recalcReajuste()"><span class="suf">%</span></div>`;
+  return seg + corpo + (fx && !tab ? `<span class="hint">Faixas pelo custo total do exame: começam em R$ 0 e a última vale para todo custo acima</span>` : '');
+}
+function htmlFxRj(k) {
+  const fx = rj[k + 'fx'];
+  return `<div class="mfx"><div class="mfx-h"><span>Custo total</span><span>${ROT_RJ[k]}</span><span></span></div>${fx.map((f, i) => {
+    const de = i ? fx[i - 1].ate : 0, ult = i === fx.length - 1;
+    return `<div class="mfx-l">${ult ? `<span class="mfx-de">acima de <b>${de != null ? fmt(de) : '…'}</b></span>`
+        : `<div class="inp"><span class="pre">até R$</span><input type="number" step="0.01" min="0" value="${f.ate ?? ''}" oninput="rj.${k}fx[${i}].ate=this.value.trim()===''?null:parseFloat(this.value);recalcReajuste()" onchange="desenharFormReajuste()" onfocus="this.select()"></div>`}
+      <div class="inp"><input type="number" step="0.5" value="${f.v}" oninput="rj.${k}fx[${i}].v=parseFloat(this.value)||0;recalcReajuste()" onfocus="this.select()"><span class="suf">%</span></div>
+      ${ult ? '<span></span>' : `<button type="button" class="rg-x" title="Remover faixa" onclick="removerFxRj('${k}',${i})"><i class="fa-solid fa-xmark"></i></button>`}</div>`;
+  }).join('')}
+  <button type="button" class="btn sm" onclick="adicionarFxRj('${k}')"><i class="fa-solid fa-plus"></i>Adicionar faixa</button></div>`;
+}
+// Valor configurado na tabela, só leitura (faixas pelo custo total quando houver)
+function htmlTabRj(cx, k) {
+  const fx = faixasTabRj(cx, k);
+  const caixa = v => `<div class="inp" style="opacity:.75"><input type="text" value="${v != null ? num(v * 100, 1) : '—'}" disabled><span class="suf">%</span></div>`;
+  if (fx.length < 2) return `<div style="width:130px" title="Configurado na tabela">${caixa(valorTabRj(cx, k))}</div>`;
+  return `<div class="mfx ro" title="Configurado na tabela"><div class="mfx-h"><span>Custo total</span><span>${ROT_RJ[k]}</span><span></span></div>${fx.map((f, i) => {
+    const de = i ? fx[i - 1].ate : 0, ult = i === fx.length - 1;
+    return `<div class="mfx-l"><span class="mfx-de">${ult ? `acima de <b>${fmt(de)}</b>` : `até <b>${fmt(f.ate)}</b>`}</span>${caixa(f.v)}<span></span></div>`;
+  }).join('')}</div>`;
+}
+function modoRj(k, modo) {
+  rj[k + 'tab'] = modo === 'tab';
+  if (modo === 'unica' && rj[k + 'fx']) { rj[k] = rj[k + 'fx'][0].v; rj[k + 'fx'] = null; }
+  if (modo === 'fx' && !rj[k + 'fx']) {
+    // começa pelas faixas configuradas na tabela, quando houver
+    const fx = faixasTabRj(ctxAlvo(rj.alvo), k);
+    rj[k + 'fx'] = fx.length > 1 ? fx.map((f, i) => ({ ate: i === fx.length - 1 ? null : f.ate, v: Math.round(f.v * 1000) / 10 }))
+      : [{ ate: 100, v: rj[k] ?? 0 }, { ate: null, v: rj[k] ?? 0 }];
+  }
+  desenharFormReajuste();
+}
+// Nova faixa entra antes da última ("acima de")
+function adicionarFxRj(k) {
+  const fx = rj[k + 'fx'], ant = fx[fx.length - 2]?.ate;
+  fx.splice(fx.length - 1, 0, { ate: ant ? ant * 2 : 100, v: fx[fx.length - 1].v });
+  desenharFormReajuste();
+}
+function removerFxRj(k, i) {
+  const fx = rj[k + 'fx'];
+  fx.splice(i, 1);
+  if (fx.length < 2) { rj[k] = fx[0].v; rj[k + 'fx'] = null; }
+  desenharFormReajuste();
+}
+
 // Novo preço de um exame pela regra escolhida (undefined = não muda)
 function novoPrecoReajuste(cx, x) {
   const { atual, c, ref } = x;
   let v;
   if (rj.tipo === 'pct') v = atual * (1 + (rj.p || 0) / 100);
   else if (rj.tipo === 'piso') v = c.status === 'r' ? c.minimo : undefined;
-  else if (rj.tipo === 'marg') v = precoParaMargem(c, (rj.m || 0) / 100);
+  else if (rj.tipo === 'marg') v = rj.mtab ? precoParaMargem(c, cx.base ? c.alvo : c.margemSug) : precoParaMargem(c, valorRj('m', c.custo) / 100);
   else if (rj.tipo === 'sug') v = c.sugerido || undefined;
-  else if (rj.tipo === 'desc') v = ref != null ? ref * (1 - (rj.d || 0) / 100) : undefined;
+  else if (rj.tipo === 'desc') v = ref != null ? ref * (1 - (rj.dtab ? c.descRef || 0 : valorRj('d', c.custo) / 100)) : undefined;
   if (v == null || isNaN(v) || v <= 0) return undefined;
   v = arredSim(v, +valorPop('pop-rjarred') || 0);
   if (rj.naoReduzir && v < atual) return undefined;
   return Math.abs(v - atual) < 0.005 ? undefined : v;
 }
 
+// Margem abaixo da configurada na tabela (sugestão de margem; na Particular, margem alvo menos a tolerância)
+function foraDaMargem(cx, c) {
+  if (c.margem == null) return false;
+  const alvo = cx.base ? c.alvo - (ESTADO.particular?.tolerancia || 0) : c.margemSug;
+  return alvo != null && c.margem < alvo - 1e-9;
+}
+
 let _rjLinhas = [], _rjSimbolicos = 0;
 function calcularReajuste() {
-  const cx = ctxAlvo(rj.alvo), fs = valorPop('pop-rjsetor');
+  const cx = ctxAlvo(rj.alvo);
   _rjSimbolicos = 0;
   _rjLinhas = examesVisiveis().filter(e => e.ativo !== false)
-    .filter(e => fs === '__sem' ? !ESTADO.setores[e.setorId] : !fs || e.setorId === fs)
+    .filter(e => passaPop('pop-rjsetor', ESTADO.setores[e.setorId] ? e.setorId : '__sem'))
     .map(e => {
       const atual = cx.salvo(e.id);
       if (atual == null) return null;
       if (precoSimbolico(atual)) { _rjSimbolicos++; return null; }
       const c = calcular(e, atual, cx.tab);
       if (rj.escopo === 'abaixo' && c.status !== 'r') return null;
+      if (rj.escopo === 'fora' && !foraDaMargem(cx, c)) return null;
       const x = { e, k: e.id, atual, c, ref: cx.ref?.valor(e.id) ?? null };
       x.man = e.id in rj.man;
       const v = x.man ? (Math.abs(rj.man[e.id] - atual) < 0.005 ? undefined : rj.man[e.id]) : novoPrecoReajuste(cx, x);
@@ -174,11 +253,15 @@ function recalcReajuste() {
   const sobe = alt.filter(x => x.novo > x.atual).length, desce = alt.length - sobe;
   const s0 = ls.reduce((s, x) => s + x.atual, 0), s1 = ls.reduce((s, x) => s + x.novo, 0);
   const semCusto = ls.filter(x => x.c.semCusto).length;
+  // desconto médio sobre a referência (tabelas que têm referência), antes e depois
+  const comRef = ls.filter(x => x.ref > 0), d0 = media(comRef, x => 1 - x.atual / x.ref), d1 = media(comRef, x => 1 - x.novo / x.ref);
   const imp = (ic, rot, v, d, cls = '') => `<div class="imp"><div class="l"><i class="fa-solid ${ic}"></i>${rot}</div><div class="v">${v}</div><div class="d ${cls}">${d}</div></div>`;
+  const vm = valorTabRj(cx, 'm'), tabM = !cx.base && cx.msugTxt && cx.msugTxt !== '—' ? cx.msugTxt : vm != null ? pct(vm) : cx.pisoTxt && cx.pisoTxt !== '—' ? `${cx.pisoNome} ${cx.pisoTxt}` : pct(parametro('margemAlvo'));
   document.getElementById('rj-imp').innerHTML =
     imp('fa-flask-vial', 'Exames alterados', `${num(alt.length, 0)}<small> de ${num(ls.length, 0)}</small>`, `<span class="muted">${[sobe && `${sobe} sobem`, desce && `${desce} descem`].filter(Boolean).join(' · ') || 'nenhuma alteração'}</span>`)
     + imp('fa-tags', 'Variação média', alt.length ? `${media(alt, x => x.var) >= 0 ? '+' : ''}${pct(media(alt, x => x.var))}` : '—', `<span class="muted">no escopo ${s0 ? `${s1 >= s0 ? '+' : ''}${pct(s1 / s0 - 1)}` : '—'}</span>`)
-    + imp('fa-percent', 'Margem média', m1 != null ? pct(m1) : '—', `<i class="fa-solid fa-clock-rotate-left"></i>antes ${m0 != null ? pct(m0) : '—'}`, m1 == null || m0 == null ? 'muted' : m1 >= m0 ? 'up' : 'dn')
+    + imp('fa-percent', 'Margem média', m1 != null ? pct(m1) : '—', `<i class="fa-solid fa-clock-rotate-left"></i>antes ${m0 != null ? pct(m0) : '—'}${tabM ? `<span class="rj-ref">Ref. ${tabM}</span>` : ''}`, m1 == null || m0 == null ? 'muted' : m1 >= m0 ? 'up' : 'dn')
+    + (d1 != null ? imp('fa-tags', `Desconto médio s/ ${esc(cx.ref.nome)}`, pct(d1), `<i class="fa-solid fa-clock-rotate-left"></i>antes ${d0 != null ? pct(d0) : '—'}${cx.descTxt && cx.descTxt !== '—' ? `<span class="rj-ref">Ref. ${cx.descTxt}</span>` : ''}`, d0 == null ? 'muted' : d1 <= d0 ? 'up' : 'dn') : '')
     + imp('fa-life-ring', `Abaixo do ${cx.pisoNome}`, num(ab1, 0), `<span class="muted">antes ${ab0}${saem ? ` · <b style="color:var(--green)">${saem} saem</b>` : ''}</span>`)
     + (semCusto ? imp('fa-circle-question', 'Sem custo', num(semCusto, 0), '<span class="muted">margem desconhecida</span>') : '')
     + (_rjSimbolicos ? imp('fa-ban', 'Ignorados', num(_rjSimbolicos, 0), `<span class="muted">preço abaixo de ${fmt(PRECO_MIN_VARIACAO)}</span>`) : '');
@@ -201,7 +284,7 @@ function desenharResultadoReajuste() {
     const n = base.filter(F.f).length;
     if (!n && k !== rj.filtro && k !== 'alt' && k !== 'todos') return '';
     return `<button class="chip ${rj.filtro === k ? 'on' : ''}" onclick="rj.filtro='${k}';rj.pag=1;desenharResultadoReajuste()">${F.cor ? `<span class="d" style="background:${F.cor}"></span>` : `<i class="fa-solid ${F.icone}"></i>`}${k === 'r' ? `Abaixo do ${cx.pisoNome} depois` : F.nome} <b>${n}</b></button>`;
-  }).join('');
+  }).join('') + (Object.keys(rj.man).length ? `<button class="btn qd" style="color:var(--amber);border-color:var(--amber)" onclick="limparManuaisReajuste()" title="Desfazer ${Object.keys(rj.man).length} edição(ões) manual(is): voltam à regra"><i class="fa-solid fa-rotate-left"></i></button>` : '');
   const ls = base.filter(FILTROS_RJ[rj.filtro].f);
   const val = { mn: x => x.e.mn.toUpperCase(), desc: x => normalizar(x.e.descricao), custo: x => x.c.custo ?? -1, atual: x => x.atual, novo: x => x.novo,
     var: x => x.var, m0: x => x.c.margem ?? -9, m1: x => x.c1.margem ?? -9 }[rj.ordem] || (x => x.e.mn);
@@ -234,6 +317,7 @@ function editarNovoReajuste(inp) {
   recalcReajuste();
 }
 function desfazerNovoReajuste(k) { delete rj.man[k]; recalcReajuste(); }
+function limparManuaisReajuste() { const n = Object.keys(rj.man).length; rj.man = {}; if (rj.filtro === 'man') rj.filtro = 'alt'; recalcReajuste(); toast(`${n} edição(ões) manual(is) desfeita(s)`); }
 // Enter / ↑ ↓ confirmam o valor e passam para o preço vizinho
 function teclaReajuste(ev) {
   if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(ev.key)) return;
@@ -272,7 +356,7 @@ async function levarReajuste(enviar) {
   const alt = _rjLinhas.filter(x => x.alt);
   if (!alt.length) return toast('Nenhum preço muda com essa regra', 'erro');
   const nMan = alt.filter(x => x.man).length;
-  const T = TIPOS_REAJUSTE[rj.tipo], origem = (nMan ? `${nMan} valor(es) manual(is) + ` : '') + (rj.tipo === 'pct' ? `${rj.p > 0 ? '+' : ''}${num(rj.p, 1)}%` : rj.tipo === 'marg' ? `margem ${num(rj.m, 1)}%` : rj.tipo === 'desc' ? `desconto ${num(rj.d, 1)}%` : T.nome.toLowerCase());
+  const T = TIPOS_REAJUSTE[rj.tipo], origem = (nMan ? `${nMan} valor(es) manual(is) + ` : '') + (rj.tipo === 'pct' ? `${rj.p > 0 ? '+' : ''}${num(rj.p, 1)}%` : rj.tipo === 'marg' ? (rj.mtab ? 'margem da tabela' : rj.mfx ? `margem escalonada ${rj.mfx.map(f => num(f.v, 1) + '%').join('/')}` : `margem ${num(rj.m, 1)}%`) : rj.tipo === 'desc' ? (rj.dtab ? 'desconto da tabela' : rj.dfx ? `desconto escalonado ${rj.dfx.map(f => num(f.v, 1) + '%').join('/')}` : `desconto ${num(rj.d, 1)}%`) : T.nome.toLowerCase());
   const ok = await levarAoRascunho(rj.alvo, Object.fromEntries(alt.map(x => [x.k, x.novo])), origem);
   if (!ok) return;
   irParaGrade(rj.alvo);
@@ -301,8 +385,9 @@ const textoPrazoPdf = k => textoPrazo(k).replace(/\bdias\b(?!\s+[uú]teis)/i, 'd
 const textoPrazo = k => { const c = ESTADO.catalogo?.[k], e = ESTADO.exames[k]; return prazoTexto(c?.prazoDias ?? e?.prazoDias) || c?.prazo || e?.prazo || ''; };
 
 // Contexto: tabela de referência (perfil de custo, piso) e laboratório vinculado
-function ctxLabSim() {
-  const t = ESTADO.tabelas[pl.tabelaId] || null, l = ESTADO.laboratorios[pl.labId] || null;
+// o: estado da proposta (pl ou pc)
+function ctxLabSim(o = pl) {
+  const t = ESTADO.tabelas[o.tabelaId] || null, l = ESTADO.laboratorios[o.labId] || null;
   return {
     t, l, tab: t ? { ...t, id: pl.tabelaId } : null, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null,
     // preço simbólico (abaixo de R$ 1,00) não serve de referência
@@ -406,8 +491,8 @@ function desenharSimLab() {
   });
   criarPop('pop-plsalvas', {
     rotulo: 'Salvas', titulo: 'Simulações salvas', icone: 'fa-folder-open', padrao: '', busca: 'Buscar…',
-    opcoes: () => [{ valor: '', rotulo: lista(ESTADO.simulacoes).length ? 'Abrir…' : 'Nenhuma salva', icone: 'fa-folder-open' },
-      ...lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).map(s => ({
+    opcoes: () => [{ valor: '', rotulo: lista(ESTADO.simulacoes).some(s => s.tipo !== 'cli') ? 'Abrir…' : 'Nenhuma salva', icone: 'fa-folder-open' },
+      ...lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).filter(s => s.tipo !== 'cli').map(s => ({
         valor: s.id, rotulo: s.nome || 'Sem nome', icone: 'fa-handshake', cor: '#8b5cf6',
         desc: `${s.resumo ? `${s.resumo.n} exames · ${num(s.resumo.vol, 0)}/mês · ${fmt(s.resumo.receita)}` : ''} · ${esc(s.autor || '')} ${dataHora(s.atualizadoEm || s.em)}` }))],
     aoMudar: id => { POPS['pop-plsalvas'].valor = ''; if (id) abrirSimLab(id); }
@@ -776,4 +861,358 @@ async function converterLab() {
   irParaGrade(alvo);
   if (direto) grade.proxFiltro = null;
   toast(c.modo === 'lab' ? `${nome} cadastrado · ${n} valor(es) ${direto ? 'diferenciado(s)' : 'no rascunho'}` : `Tabela ${nome} criada · ${n} preço(s)${direto ? '' : ' no rascunho'}`);
+}
+
+// ═══ Proposta para cliente ════════════════════════════════════
+// Exames incluídos um a um pela busca; o volume de exame multiplica o preço (o total é editável).
+// O paciente tem um só atendimento: o custo fixo "Atendimento" (valor fixo, do perfil da tabela) sai de
+// cada exame e é dividido entre os exames com custo, sem multiplicar pelo volume; os demais custos
+// (teste, outros fixos, adicionais) multiplicam pelo volume de exame.
+// itens: { chave: { q: volume de exame, p: preço unitário digitado, t: total digitado } } (ordem de inclusão)
+// pdf: dados do PDF do orçamento (destinatário, textos próprios, opções) ou null
+const pc = { id: null, nome: '', cliente: '', tabelaId: '', base: 'tab', d: 10, itens: {}, pdf: null, sujo: false };
+// Rascunho no navegador: sobrevive ao recarregar a página até "Tirar todos"
+const RASCUNHO_CLI = 'rascunhoPropostaCli';
+try { Object.assign(pc, JSON.parse(localStorage.getItem(RASCUNHO_CLI)) || {}); } catch {}
+function guardarRascunhoCli() {
+  try {
+    if (Object.keys(pc.itens).length || pc.nome || pc.cliente) localStorage.setItem(RASCUNHO_CLI, JSON.stringify(pc));
+  } catch {}
+}
+window.addEventListener('beforeunload', guardarRascunhoCli);
+let _pcSug = [], _pcHi = 0;
+
+const custoFixoAtend = () => lista(ESTADO.custosFixos).find(f => normalizar(f.nome) === 'atendimento') || null;
+// Um atendimento pelo perfil da tabela (tabela que não cobra atendimento = 0)
+function atendPadraoCli(cl) {
+  const f = custoFixoAtend(), p = f && cl.tab?.perfil?.[f.id];
+  return !f || p === false ? 0 : typeof p === 'number' ? p : f.valor || 0;
+}
+function ctxCli() {
+  const cl = ctxLabSim(pc);
+  cl.atend = atendPadraoCli(cl);
+  return cl;
+}
+
+function linhasCli(cl) {
+  const fA = custoFixoAtend(), imp = parametro('imposto');
+  const bs = Object.keys(pc.itens).filter(k => ESTADO.exames[k]).map(k => {
+    const e = { ...ESTADO.exames[k], id: k }, c0 = calcular(e, null, cl.tab), at = fA && c0.fx.find(f => f.id === fA.id && f.aplica);
+    return { e, k, c0, q: pc.itens[k].q || 1, base: c0.semCusto ? null : c0.custo - (at?.v || 0) };
+  });
+  // custo = custo da linha: (custo sem atendimento × volume) + parte do atendimento
+  const nEx = bs.filter(b => b.base != null).length, atendUn = nEx ? cl.atend / nEx : 0;
+  return bs.map(({ e, k, c0, q, base }) => {
+    const it = pc.itens[k], ref = cl.ref(k), custo = base != null ? base * q + atendUn : null;
+    const m = c0.margemSug ?? cl.margemSug ?? c0.alvo;
+    const padrao = pc.base === 'desc' ? (ref != null ? Math.round(ref * (1 - (pc.d || 0) / 100)) : null)
+      : pc.base === 'msug' && custo != null && 1 - imp - m > 0 ? Math.ceil(custo / q / (1 - imp - m)) : ref;
+    const preco = it.t != null ? it.t / q : it.p ?? padrao, total = it.t ?? (preco != null ? Math.round(preco * q * 100) / 100 : null);
+    const lucro = total != null && custo != null ? total * (1 - imp) - custo : null, margem = lucro != null && total > 0 ? lucro / total : null;
+    const dica = custo == null ? '' : `(${[`Teste ${fmt(c0.teste.valor)}`, ...c0.fx.filter(f => f.aplica && f.id !== fA?.id).map(f => `${f.nome} ${fmt(f.v)}`),
+      ...c0.extras.map(x => `${x.nome} ${fmt(x.valor)}`)].join(' + ')} = ${fmt(base)}) × ${q} + Atendimento ÷ ${nEx} ${fmt(atendUn)} = ${fmt(custo)}`;
+    return { e, k, q, ref, padrao, preco, total, custo, base, atendUn, c0, lucro, margem, dica, manP: it.p != null, manT: it.t != null,
+      status: preco == null ? 'p' : custo == null ? 'x' : margem < c0.min ? 'r' : 'g', desc: ref && preco != null ? 1 - preco / ref : null };
+  });
+}
+
+function resumoCli(cl, ls) {
+  const s = { n: ls.length, un: 0, receita: 0, lucro: 0, recC: 0, refT: 0, recR: 0, semCusto: 0, ab: 0 };
+  ls.forEach(x => {
+    if (x.total == null) return;
+    s.un += x.q; s.receita += x.total;
+    if (x.custo == null) s.semCusto++;
+    else { s.lucro += x.lucro; s.recC += x.total; if (x.status === 'r') s.ab++; }
+    if (x.ref) { s.refT += x.ref * x.q; s.recR += x.total; }
+  });
+  s.margem = s.recC ? s.lucro / s.recC : null;
+  s.desc = s.refT ? 1 - s.recR / s.refT : null;
+  s.viavel = s.margem != null && s.margem >= cl.piso;
+  return s;
+}
+
+function desenharSimCli() {
+  const el = document.getElementById('simulador-cli');
+  if (!el) return;
+  if (pc.tabelaId && !ESTADO.tabelas[pc.tabelaId]) pc.tabelaId = '';
+  const cria = pode('simulador', 'criar'), sv = pc.id ? ESTADO.simulacoes[pc.id] : null, cl = ctxCli(), fA = custoFixoAtend();
+  el.innerHTML = `<div class="card">
+      <div class="sec-card-h"><span class="tc-ic" style="--c:#00a8cc"><i class="fa-solid fa-user"></i></span>
+        <div style="min-width:0;flex:1"><h3>${esc(pc.nome || 'Nova proposta')}${pc.sujo ? ' <span class="badge-s warn">não salva</span>' : sv ? ' <span class="badge-s ok">salva</span>' : ''}</h3>
+          <div class="sub">${sv ? `${esc(sv.autor)} · ${dataHora(sv.atualizadoEm || sv.em)}` : 'Exames escolhidos × volume de exame · um só atendimento dividido entre os exames'}</div></div>
+        <div class="rt"><button class="btn qd" onclick="novaSimCli()" title="Nova proposta"><i class="fa-solid fa-plus" style="color:var(--cyan)"></i></button>
+          <div id="pop-pcsalvas"></div>
+          <button class="btn qd" onclick="exportarSimCli()" title="Exportar planilha"><i class="fa-solid fa-file-csv"></i></button>
+          <button class="btn qd" onclick="abrirPdfCli()" title="Orçamento em PDF para o cliente"><i class="fa-solid fa-file-pdf"></i></button>
+          ${sv && (usuarioAtual().admin || sv.autorId === usuarioAtual().id || pode('simulador', 'aprovar')) ? `<button class="btn qd perigo-txt" onclick="excluirSimCli()" title="Excluir proposta"><i class="fa-solid fa-trash"></i></button>` : ''}
+          ${cria ? `<button class="btn qd pri" onclick="salvarSimCli()" title="Salvar"><i class="fa-solid fa-floppy-disk"></i></button>` : ''}</div></div>
+      <div class="fgrid pl-dados">
+        ${campo('pc-nome', 'Nome da proposta', pc.nome, { tipo: 'text', ph: 'Ex.: Check-up Maria — out/2026', aoMudar: 'pc.nome=this.value;pc.sujo=true' })}
+        ${campo('pc-cliente', 'Cliente', pc.cliente, { tipo: 'text', ph: 'Nome do paciente ou empresa', aoMudar: 'pc.cliente=this.value;pc.sujo=true' })}
+        <div class="field"><label>Tabela de referência</label><div id="pop-pctab" class="block"></div></div>
+        <div class="field"><label>Preço inicial</label><div id="pop-pcbase" class="block"></div></div>
+        ${pc.base === 'desc' ? campo('pc-d', 'Desconto', pc.d, { suf: '%', passo: '0.5', aoMudar: 'pc.d=parseFloat(this.value)||0;pc.sujo=true;atualizarLinhasCli()' }) : ''}
+        ${campo('pc-atend', 'Custo do atendimento', cl.atend.toFixed(2), { pre: 'R$', tipo: 'text', desab: true,
+          dica: !fA ? 'Sem custo fixo "Atendimento" cadastrado' : `valor fixo${cl.atend ? '' : ' (a tabela não cobra)'} · um só por paciente, dividido entre os exames` })}
+      </div>
+      <div class="impact" id="pc-imp" style="padding-top:0"></div>
+      <div class="toolbar">
+        <div class="gx-busca"><div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="pc-q" placeholder="Adicionar exame: mnemônico ou nome…" autocomplete="off"
+            oninput="buscarCli(this.value)" onfocus="buscarCli(this.value)" onkeydown="teclaBuscaCli(event)" onblur="setTimeout(fecharSugCli, 150)"></div>
+          <div class="gx-sug" id="pc-sug"></div></div>
+        <span class="hint"><i class="fa-solid fa-keyboard"></i> Enter adiciona · ↑ ↓ escolhem</span>
+      </div>
+      <div class="bulk on" id="pc-bulk"></div>
+      <div class="tbl-wrap"><table class="tab-edit"><thead><tr><th>MN</th><th>Descrição</th><th class="col-opt">Prazo</th><th class="num" title="Custo da linha: custo do exame × volume + parte do atendimento">Custo total</th><th class="num">${esc(cl.refNome)}</th>
+        <th class="num">Preço</th><th class="num col-opt">Desc.</th><th class="num" title="Multiplica o preço do exame">Volume de exame</th><th class="num">Total</th><th class="num">Margem</th><th>Situação</th><th></th></tr></thead>
+        <tbody id="pc-body"></tbody></table></div></div>`;
+  criarPop('pop-pctab', {
+    rotulo: 'Tabela', titulo: 'Tabela de referência', icone: 'fa-table-list', padrao: '',
+    opcoes: () => [{ valor: '', rotulo: 'Particular', icone: 'fa-user', cor: '#00a8cc', grupo: 'Base', desc: 'Preço praticado e custos fixos padrão' },
+      ...tabelasLista().map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, grupo: TIPOS_TABELA[t.tipo]?.nome, desc: `piso ${textoRegra(t, 'piso')} · ${resumoPerfil(t)}` }))],
+    aoMudar: v => { pc.tabelaId = v; pc.sujo = true; desenharSimCli(); }
+  });
+  POPS['pop-pctab'].valor = pc.tabelaId; desenharBotaoPop('pop-pctab');
+  criarPop('pop-pcbase', {
+    rotulo: 'Preço inicial', titulo: 'Preço dos exames não digitados', icone: 'fa-tag', padrao: 'tab',
+    opcoes: () => [{ valor: 'tab', rotulo: `Valor da ${cl.refNome}`, icone: 'fa-equals', desc: 'Preço da tabela de referência' },
+      { valor: 'desc', rotulo: 'Desconto sobre a tabela', icone: 'fa-percent', desc: 'Tabela menos o percentual, sem centavos' },
+      { valor: 'msug', rotulo: 'Sugestão de margem', icone: 'fa-bullseye', desc: cl.margemSug != null ? `Preço que atinge ${pct(cl.margemSug, 0)}` : 'Preço que atinge a margem alvo' }],
+    aoMudar: v => { pc.base = v; pc.sujo = true; desenharSimCli(); }
+  });
+  POPS['pop-pcbase'].valor = pc.base; desenharBotaoPop('pop-pcbase');
+  criarPop('pop-pcsalvas', {
+    rotulo: 'Salvas', titulo: 'Propostas de cliente salvas', icone: 'fa-folder-open', padrao: '', busca: 'Buscar…',
+    opcoes: () => { const ss = lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).filter(s => s.tipo === 'cli');
+      return [{ valor: '', rotulo: ss.length ? 'Abrir…' : 'Nenhuma salva', icone: 'fa-folder-open' },
+        ...ss.map(s => ({ valor: s.id, rotulo: s.nome || 'Sem nome', icone: 'fa-user', cor: '#00a8cc',
+          desc: `${s.cliente ? s.cliente + ' · ' : ''}${s.resumo ? `${s.resumo.n} exames · ${fmt(s.resumo.receita)}` : ''} · ${s.autor || ''} ${dataHora(s.atualizadoEm || s.em)}` }))]; },
+    aoMudar: id => { POPS['pop-pcsalvas'].valor = ''; if (id) abrirSimCli(id); }
+  });
+  garantirCatalogo().then(() => desenharTabelaCli());
+}
+
+function desenharTabelaCli() {
+  const body = document.getElementById('pc-body');
+  if (!body) return;
+  const cl = ctxCli(), ls = linhasCli(cl);
+  body.innerHTML = ls.map(x => htmlLinhaCli(cl, x)).join('')
+    || `<tr><td colspan="12">${vazio('fa-magnifying-glass', 'Nenhum exame ainda: busque pelo mnemônico ou nome e tecle Enter para adicionar.')}</td></tr>`;
+  desenharImpactoCli(cl, ls);
+}
+
+function htmlLinhaCli(cl, x) {
+  const { e, k, q, ref, preco, total, custo, status } = x;
+  const inp = (c, v, on, extra = '') => `<div class="price-in ${on ? 'on' : ''}${c === 'q' ? ' vol-in' : ''}">${c === 'q' ? '' : '<span>R$</span>'}<input type="number" step="${c === 'q' ? 1 : 0.01}" min="${c === 'q' ? 1 : 0}" data-c="${c}" value="${v}" placeholder="—"
+      onchange="setTimeout(()=>editarCli(this))" onkeydown="teclaCli(event)" onfocus="this.dataset.v=this.value;this.select()"${extra}></div>`;
+  return `<tr data-k="${esc(k)}" class="ed">
+    <td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha(this.closest('tr').dataset.k);return false">${esc(e.mn)}</a></td>
+    <td class="desc" title="${esc(e.descricao)}">${esc(e.descricao)}</td>
+    <td class="nw muted col-opt">${esc(textoPrazo(k)) || '—'}</td>
+    <td class="num">${custo != null ? `<span title="${esc(x.dica)}">${fmt(custo)}</span><div class="sub-num cus-cli" title="${esc(x.dica)}">${q > 1 ? `<b>${q}×</b> ${fmt(x.base)}` : fmt(x.base)}${x.atendUn ? ` <i class="fa-solid fa-user-doctor"></i> ${fmt(x.atendUn)}` : ''}</div>` : '—'}</td>
+    <td class="num muted">${ref != null ? fmt(ref) : '—'}</td>
+    <td class="num">${inp('p', preco != null ? preco.toFixed(2) : '', x.manP)}</td>
+    <td class="num muted col-opt">${x.desc != null ? pct(x.desc) : '—'}</td>
+    <td class="num">${inp('q', q, true)}</td>
+    <td class="num">${inp('t', total != null ? total.toFixed(2) : '', x.manT, ' title="Valor final: preço × volume de exame"')}</td>
+    <td class="num" style="color:${status === 'r' ? 'var(--red)' : 'inherit'}">${x.margem != null ? pct(x.margem) : '—'}${x.lucro != null ? `<div class="sub-num" style="color:var(--${x.lucro < 0 ? 'red' : 'green'})">lucro ${fmt(x.lucro)}</div>` : ''}</td>
+    <td>${status === 'p' ? tagSt('p', 'fa-circle-minus', 'Sem preço') : status === 'x' ? tagStatus('x') : status === 'r' ? tagSt('r', 'fa-circle-xmark', 'Abaixo do piso') : tagSt('g', 'fa-circle-check', 'OK')}</td>
+    <td class="acts"><button title="Tirar da proposta" onclick="removerCli(this)"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
+}
+
+// Redesenha as linhas e devolve o foco ao campo onde o usuário estava (a parte do atendimento muda em todas)
+function atualizarLinhasCli() {
+  const body = document.getElementById('pc-body');
+  if (!body) return;
+  const cl = ctxCli(), ls = linhasCli(cl), ativo = document.activeElement, tmp = document.createElement('tbody');
+  const fk = ativo?.dataset.c && body.contains(ativo) ? [ativo.closest('tr').dataset.k, ativo.dataset.c] : null;
+  if (ls.length !== body.querySelectorAll('tr[data-k]').length) return desenharTabelaCli();
+  ls.forEach(x => {
+    const tr = [...body.children].find(t => t.dataset.k === x.k);
+    if (!tr) return;
+    tmp.innerHTML = htmlLinhaCli(cl, x);
+    const nova = tmp.firstElementChild;
+    [...tr.children].forEach((td, i) => { td.innerHTML = nova.children[i].innerHTML; });
+  });
+  if (fk) [...body.querySelectorAll(`input[data-c="${fk[1]}"]`)].find(i => i.closest('tr').dataset.k === fk[0])?.focus();
+  desenharImpactoCli(cl, ls);
+}
+
+function editarCli(inp) {
+  const k = inp.closest('tr').dataset.k, it = pc.itens[k], txt = inp.value.trim(), v = txt === '' ? null : parseFloat(txt);
+  if (!it || (v != null && (isNaN(v) || v < 0))) return;
+  const c = inp.dataset.c;
+  if (c === 'q') {
+    if (!(v >= 1)) return;
+    // total digitado vira preço unitário: o novo volume multiplica o mesmo preço
+    if (it.t != null) { it.p = Math.round(it.t / (it.q || 1) * 10000) / 10000; delete it.t; }
+    it.q = Math.round(v);
+  } else if (c === 't') {
+    if (v == null) delete it.t; else { it.t = Math.round(v * 100) / 100; delete it.p; }
+  } else {
+    delete it.t;
+    const padrao = linhasCli(ctxCli()).find(x => x.k === k)?.padrao;
+    if (v == null || (padrao != null && Math.abs(v - padrao) < 0.005)) delete it.p; else it.p = Math.round(v * 100) / 100;
+  }
+  pc.sujo = true;
+  atualizarLinhasCli();
+}
+
+function teclaCli(ev) {
+  if (ev.key === 'Escape') { ev.target.value = ev.target.dataset.v ?? ''; return ev.target.blur(); }
+  if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(ev.key)) return;
+  ev.preventDefault();
+  const c = ev.target.dataset.c, ins = [...document.querySelectorAll(`#pc-body input[data-c="${c}"]`)], i = ins.indexOf(ev.target);
+  const prox = ins[ev.key === 'ArrowUp' ? i - 1 : i + 1];
+  if (prox) prox.focus();
+  else if (ev.key === 'Enter') document.getElementById('pc-q')?.focus();
+}
+
+function removerCli(bt) {
+  delete pc.itens[bt.closest('tr').dataset.k];
+  pc.sujo = true;
+  desenharTabelaCli();
+}
+
+function desenharImpactoCli(cl, ls) {
+  guardarRascunhoCli();
+  const el = document.getElementById('pc-imp');
+  if (!el) return;
+  const s = resumoCli(cl, ls), un = ls.find(x => x.custo != null)?.atendUn;
+  const imp = (ic, rot, v, d, cls = '') => `<div class="imp"><div class="l"><i class="fa-solid ${ic}"></i>${rot}</div><div class="v">${v}</div><div class="d ${cls}">${d}</div></div>`;
+  el.innerHTML = !s.n ? `<div class="alert x" style="grid-column:1/-1;margin:0"><i class="fa-solid fa-circle-info"></i><div>Busque e adicione os exames do cliente. O <b>volume de exame</b> multiplica o preço e o total pode ser editado; o paciente tem <b>um só atendimento</b> (${fmt(cl.atend)}), dividido entre os exames.</div></div>`
+    : imp('fa-flask-vial', 'Exames', num(s.n, 0), `<span class="muted">${num(s.un, 0)} com o volume</span>`)
+    + imp('fa-headset', 'Atendimento', fmt(cl.atend), `<span class="muted">um só${un != null ? ` · ${fmt(un)} por exame` : ''}</span>`)
+    + imp('fa-sack-dollar', 'Total da proposta', fmt(s.receita), `<span class="muted">${s.desc != null ? `desconto médio ${pct(s.desc)} s/ ${esc(cl.refNome)}` : ''}</span>`)
+    + imp('fa-coins', 'Lucro', fmt(s.lucro), `<span class="muted">após custo total e imposto${s.semCusto ? ` · ${s.semCusto} sem custo fora da conta` : ''}</span>`)
+    + imp('fa-percent', 'Margem ponderada', s.margem != null ? pct(s.margem) : '—', `piso ${pct(cl.piso, 0)}`, s.margem == null ? 'muted' : s.viavel ? 'up' : 'dn')
+    + `<div class="imp viab ${s.viavel ? 'ok' : 'bad'}"><div class="l"><i class="fa-solid ${s.viavel ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>Viabilidade</div><div class="v">${s.margem == null ? '—' : s.viavel ? 'Viável' : 'Inviável'}</div>
+      <div class="d">${s.ab ? `${s.ab} exame(s) abaixo do piso` : 'todos os exames acima do piso'}</div></div>`;
+  desenharBulkCli(s);
+}
+
+function desenharBulkCli(s) {
+  const el = document.getElementById('pc-bulk');
+  if (!el) return;
+  const nMan = Object.values(pc.itens).filter(i => i.p != null || i.t != null).length;
+  el.innerHTML = `<b>${num(s.n, 0)} exame(s)</b>${s.un !== s.n ? `<span class="tag"><i class="fa-solid fa-layer-group"></i>${num(s.un, 0)} com o volume</span>` : ''}
+    ${nMan ? `<button class="btn sm" onclick="limparPrecosCli()"><i class="fa-solid fa-rotate-left"></i>Desfazer ${nMan} preço(s) digitado(s)</button>` : ''}
+    ${s.n ? `<button class="btn sm" onclick="tirarTodosCli()"><i class="fa-solid fa-eraser"></i>Tirar todos</button>` : ''}`;
+}
+
+// ── Busca: inclui o exame na proposta ─────────────────────────
+function buscarCli(q) {
+  const el = document.getElementById('pc-sug'), cl = ctxCli();
+  if (!el || !q.trim()) return fecharSugCli();
+  const ini = normalizar(q.trim()), pri = e => normalizar(e.mn).startsWith(ini) ? 0 : 1;
+  const todos = examesVisiveis().filter(e => e.ativo !== false && contem(e.mn + ' ' + e.descricao, q))
+    .sort((a, b) => pri(a) - pri(b) || String(a.mn).localeCompare(String(b.mn), 'pt-BR'));
+  const vis = todos.slice(0, 10);
+  _pcSug = vis.map(e => e.id); _pcHi = 0;
+  el.innerHTML = !vis.length ? `<div class="gx-sug-v"><i class="fa-solid fa-magnifying-glass"></i>Nenhum exame encontrado para <b>${esc(q)}</b></div>`
+    : vis.map((e, i) => {
+      const ja = e.id in pc.itens, ref = cl.ref(e.id);
+      return `<button type="button" class="${i ? '' : 'hi'}" onmousedown="event.preventDefault();adicionarCli(_pcSug[${i}])" onmouseenter="marcarSugCli(${i})">
+        <b>${esc(e.mn)}</b><span title="${esc(e.descricao)}">${esc(e.descricao)}</span><small class="${ja ? 'c' : ref != null ? 'g' : ''}"><i class="fa-solid ${ja ? 'fa-plus' : ref != null ? 'fa-table-list' : 'fa-circle-plus'}"></i>${ja ? 'na proposta · +1 no volume' : ref != null ? fmt(ref) : 'sem preço'}</small></button>`;
+    }).join('') + (todos.length > vis.length ? `<div class="gx-sug-v">+ ${todos.length - vis.length} exame(s): continue digitando para refinar</div>` : '');
+  el.classList.add('open');
+}
+function fecharSugCli() { _pcSug = []; document.getElementById('pc-sug')?.classList.remove('open'); }
+function marcarSugCli(i) {
+  _pcHi = i;
+  const bs = document.querySelectorAll('#pc-sug button');
+  bs.forEach((b, j) => b.classList.toggle('hi', j === i));
+  bs[i]?.scrollIntoView({ block: 'nearest' });
+}
+function teclaBuscaCli(ev) {
+  if (ev.key === 'Escape' && _pcSug.length) { ev.stopPropagation(); return fecharSugCli(); }
+  if (!_pcSug.length) return;
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); marcarSugCli(Math.max(0, Math.min(_pcSug.length - 1, _pcHi + (ev.key === 'ArrowDown' ? 1 : -1)))); }
+  else if (ev.key === 'Enter') { ev.preventDefault(); adicionarCli(_pcSug[_pcHi]); }
+}
+// Exame já na proposta: soma 1 ao volume
+function adicionarCli(k) {
+  const e = ESTADO.exames[k];
+  if (!e) return;
+  const it = pc.itens[k];
+  if (it) { if (it.t != null) { it.p = Math.round(it.t / (it.q || 1) * 10000) / 10000; delete it.t; } it.q = (it.q || 1) + 1; }
+  else pc.itens[k] = { q: 1 };
+  pc.sujo = true;
+  const q = document.getElementById('pc-q');
+  if (q) q.value = '';
+  fecharSugCli();
+  desenharTabelaCli();
+  q?.focus();
+  if (it) toast(`${e.mn}: volume ${it.q}`);
+}
+
+async function limparPrecosCli() {
+  if (!await confirmar({ titulo: 'Desfazer preços digitados?', texto: 'Os exames voltam ao preço inicial escolhido.', botao: 'Desfazer', perigo: true })) return;
+  Object.values(pc.itens).forEach(it => { delete it.p; delete it.t; });
+  pc.sujo = true;
+  desenharTabelaCli();
+}
+async function tirarTodosCli() {
+  if (!await confirmar({ titulo: 'Tirar todos os exames?', texto: 'A proposta fica sem exames.', botao: 'Tirar', perigo: true })) return;
+  pc.itens = {};
+  pc.sujo = true;
+  try { localStorage.removeItem(RASCUNHO_CLI); } catch {}
+  desenharTabelaCli();
+}
+
+// ── Salvar, abrir, nova, exportar ─────────────────────────────
+async function novaSimCli() {
+  if (pc.sujo && !await confirmar({ titulo: 'Descartar a proposta atual?', texto: 'As alterações não salvas serão perdidas.', botao: 'Descartar', perigo: true })) return;
+  Object.assign(pc, { id: null, nome: '', cliente: '', tabelaId: '', base: 'tab', d: 10, itens: {}, pdf: null, sujo: false });
+  desenharSimCli();
+}
+
+async function abrirSimCli(id) {
+  const s = ESTADO.simulacoes[id];
+  if (!s) return;
+  if (pc.sujo && id !== pc.id && !await confirmar({ titulo: 'Abrir outra proposta?', texto: 'As alterações não salvas da atual serão perdidas.', botao: 'Abrir', perigo: true })) return;
+  // ordem de inclusão guardada em "o" (o banco devolve as chaves em ordem alfabética)
+  const itens = Object.entries(JSON.parse(JSON.stringify(s.itens || {}))).sort((a, b) => (a[1].o ?? 0) - (b[1].o ?? 0));
+  Object.assign(pc, { id, nome: s.nome || '', cliente: s.cliente || '', tabelaId: s.tabelaId ?? '', base: s.base || 'tab', d: s.d ?? 10, pdf: s.pdf ? { ...s.pdf } : null,
+    itens: Object.fromEntries(itens.map(([k, it]) => { delete it.o; return [k, it]; })), sujo: false });
+  desenharSimCli();
+}
+
+async function salvarSimCli() {
+  const cl = ctxCli(), r = resumoCli(cl, linhasCli(cl)), u = usuarioAtual();
+  pc.nome = (valorCampo('pc-nome') || pc.nome).trim();
+  if (!pc.nome) { document.getElementById('pc-nome')?.focus(); return toast('Dê um nome à proposta', 'erro'); }
+  if (!Object.keys(pc.itens).length) return toast('Nada para salvar: adicione exames', 'erro');
+  const id = pc.id || DB.novaChave('simulacoes'), antes = ESTADO.simulacoes[id];
+  const itens = Object.fromEntries(Object.entries(pc.itens).map(([k, it], i) => [k, { ...it, o: i }]));
+  const dados = { tipo: 'cli', nome: pc.nome, cliente: pc.cliente.trim() || null, tabelaId: pc.tabelaId || '', base: pc.base, d: pc.d, itens, pdf: pdfParaSalvar(pc.pdf, modeloPropostaCli()),
+    resumo: { n: r.n, un: r.un, receita: Math.round(r.receita * 100) / 100, margem: r.margem, viavel: r.viavel },
+    autor: antes?.autor || u.nome, autorId: antes?.autorId || u.id, em: antes?.em || DB.agora(), atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+  await DB.gravar(`${CAMINHOS.simulacoes}/${id}`, dados);
+  ESTADO.simulacoes[id] = { ...dados, em: antes?.em || Date.now(), atualizadoEm: Date.now() };
+  pc.id = id; pc.sujo = false;
+  registrar('simulador', `Proposta cliente "${pc.nome}" salva (${r.n} exames, ${fmt(r.receita)})`);
+  renderSimulador();
+  toast('Proposta salva');
+}
+
+async function excluirSimCli() {
+  const s = ESTADO.simulacoes[pc.id];
+  if (!s || !await confirmar({ titulo: 'Excluir proposta?', texto: `"${esc(s.nome)}" será excluída.`, botao: 'Excluir', perigo: true })) return;
+  await DB.remover(`${CAMINHOS.simulacoes}/${pc.id}`);
+  delete ESTADO.simulacoes[pc.id];
+  pc.id = null; pc.sujo = true;
+  renderSimulador();
+}
+
+function exportarSimCli() {
+  const cl = ctxCli(), ls = linhasCli(cl);
+  if (!ls.length) return toast('Nenhum exame para exportar', 'erro');
+  const dec = v => v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ',');
+  const q = s => `"${String(s || '').replace(/"/g, '""')}"`;
+  const s = resumoCli(cl, ls);
+  const csv = [['Mnemônico', 'Exame', 'Prazo', cl.refNome, 'Preço', 'Desconto', 'Volume de exame', 'Total'].join(';'),
+    ...ls.map(x => [x.e.mn, q(x.e.descricao), q(textoPrazo(x.k)), dec(x.ref), dec(x.preco), x.desc != null ? pct(x.desc) : '', x.q, dec(x.total)].join(';')),
+    ['', q('Total'), '', '', '', s.desc != null ? pct(s.desc) : '', s.un, dec(s.receita)].join(';')].join('\r\n') + '\r\n';
+  baixarArquivo(`Proposta cliente - ${pc.nome || pc.cliente || 'sem nome'}.csv`, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
 }

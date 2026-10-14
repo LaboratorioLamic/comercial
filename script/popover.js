@@ -9,6 +9,8 @@
 //   opcoes: [{ valor, rotulo, icone, cor, desc, qtd, grupo }] | () => [...],
 //   aoMudar: valor => {}
 // })
+// multi: true → valor é uma lista (vazia = todos), o clique alterna sem fechar e o rodapé ganha "Inverter"
+// (st.inv = vale tudo menos os marcados)
 
 const POPS = {};
 let popAberto = null;
@@ -16,8 +18,8 @@ let popAberto = null;
 function criarPop(id, cfg) {
   const wrap = document.getElementById(id);
   if (!wrap) return null;
-  const st = Object.assign({ valor: cfg.padrao ?? '' }, cfg, { id, wrap });
-  if (POPS[id]) st.valor = POPS[id].valor;           // mantém a escolha ao recriar
+  const st = Object.assign({ valor: cfg.multi ? [] : cfg.padrao ?? '', inv: false }, cfg, { id, wrap });
+  if (POPS[id]) { st.valor = POPS[id].valor; st.inv = POPS[id].inv; }           // mantém a escolha ao recriar
   POPS[id] = st;
   wrap.classList.add('pop-wrap');
   wrap.innerHTML = `<button type="button" class="pop-btn" aria-haspopup="listbox" aria-expanded="false"></button><div class="pop" role="listbox" tabindex="-1"></div>`;
@@ -30,12 +32,19 @@ function criarPop(id, cfg) {
 
 const opcoesPop = st => typeof st.opcoes === 'function' ? st.opcoes() : st.opcoes;
 const valorPop = id => POPS[id]?.valor ?? '';
+const invPop = id => !!POPS[id]?.inv;
+// multi: o item passa no filtro?
+const passaPop = (id, v) => { const s = valorPop(id); return !s.length || s.includes(v) !== invPop(id); };
 
 function desenharBotaoPop(id) {
   // soIcone: botão sem texto, não precisa montar as opções só para desenhar
   const st = POPS[id], todas = st.soIcone ? [] : opcoesPop(st);
-  const o = todas.find(x => x.valor === st.valor) || todas[0] || { rotulo: '—' };
-  const marcado = st.valor !== (st.padrao ?? '');
+  let o = todas.find(x => x.valor === st.valor) || todas[0] || { rotulo: '—' };
+  const marcado = st.multi ? st.valor.length > 0 : st.valor !== (st.padrao ?? '');
+  if (st.multi && marcado) {
+    const um = st.valor.length === 1 ? todas.find(x => x.valor === st.valor[0]) : null;
+    o = { icone: st.inv ? 'fa-right-left' : um?.icone, rotulo: (st.inv ? 'Exceto ' : '') + (um ? um.rotulo : `${st.valor.length} selecionados`) };
+  }
   st.btn.classList.toggle('set', marcado && !!st.limpavel);
   st.btn.innerHTML = `<span class="pb-ic"><i class="fa-solid ${marcado && o.icone ? o.icone : st.icone}"></i></span>
     <span class="pb-txt"><span class="pb-l">${esc(st.rotulo)}</span><span class="pb-v">${esc(o.rotulo)}</span></span>
@@ -78,6 +87,7 @@ function desenharPainelPop(id) {
     ${st.busca ? `<div class="pop-search"><i class="fa-solid fa-magnifying-glass"></i><input placeholder="${esc(st.busca)}" oninput="POPS['${id}'].q=this.value;POPS['${id}'].hi=0;desenharListaPop('${id}')"></div>` : ''}
     <div class="pop-list"></div>
     <div class="pop-foot"><span class="keys"><kbd>↑↓</kbd> navegar · <kbd>Enter</kbd> · <kbd>Esc</kbd></span>
+      ${st.multi ? `<button class="${st.inv ? 'on' : ''}" title="Vale tudo menos os marcados" onclick="inverterPop('${id}')"><i class="fa-solid fa-right-left"></i> Inverter</button>` : ''}
       ${st.limpavel ? `<button onclick="definirPop('${id}','${esc(st.padrao ?? '')}')"><i class="fa-solid fa-rotate-left"></i> Limpar</button>` : ''}</div>`;
   desenharListaPop(id);
 }
@@ -88,7 +98,7 @@ function desenharListaPop(id) {
   let h = '', g = null;
   st.vis.forEach((o, i) => {
     if (o.grupo && o.grupo !== g) { g = o.grupo; h += `<div class="pop-group">${esc(g)}</div>`; }
-    const sel = o.valor === st.valor;
+    const sel = st.multi ? (o.valor === '' ? !st.valor.length : st.valor.includes(o.valor)) : o.valor === st.valor;
     h += `<button class="pop-opt ${sel ? 'sel' : ''} ${i === st.hi ? 'hi' : ''}" role="option" aria-selected="${sel}"
         onmouseenter="POPS['${id}'].hi=${i};marcarPop('${id}')" onclick="escolherPop('${id}',${i})">
       <span class="po-ic" style="--c:${o.cor || 'var(--cyan)'}"><i class="fa-solid ${o.icone || 'fa-circle'}"></i></span>
@@ -108,10 +118,31 @@ function marcarPop(id) {
   else if (el.offsetTop + el.offsetHeight > lista.scrollTop + lista.clientHeight) lista.scrollTop = el.offsetTop + el.offsetHeight - lista.clientHeight + 6;
 }
 
-function escolherPop(id, i) { definirPop(id, POPS[id].vis[i].valor); }
+function escolherPop(id, i) {
+  const st = POPS[id], v = st.vis[i].valor;
+  if (!st.multi) return definirPop(id, v);
+  st.valor = v === '' ? [] : st.valor.includes(v) ? st.valor.filter(x => x !== v) : [...st.valor, v];
+  if (!st.valor.length) st.inv = false;
+  atualizarMultiPop(id);
+}
+function inverterPop(id) {
+  const st = POPS[id];
+  st.inv = !st.inv;
+  atualizarMultiPop(id);
+}
+// multi: redesenha sem fechar o painel
+function atualizarMultiPop(id) {
+  const st = POPS[id], lista = st.painel.querySelector('.pop-list'), y = lista.scrollTop;
+  desenharBotaoPop(id);
+  desenharListaPop(id);
+  lista.scrollTop = y;
+  st.painel.querySelectorAll('.pop-foot button').forEach(b => b.querySelector('.fa-right-left') && b.classList.toggle('on', st.inv));
+  st.aoMudar?.(st.valor);
+}
 
 function definirPop(id, valor) {
   const st = POPS[id];
+  if (st.multi) { valor = Array.isArray(valor) ? valor : []; st.inv = false; }
   st.valor = valor;
   desenharBotaoPop(id);
   fecharPop();
