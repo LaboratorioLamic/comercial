@@ -587,10 +587,10 @@ function abrirDadosExame(id) {
           : `<div class="field"><label for="dx-mn">Mnemônico</label><div class="inp" id="dx-mn-w"><input id="dx-mn" class="txt" type="text" placeholder="Ex.: GLI" autocomplete="off"
               onblur="verificarMnDx()" onkeydown="if(event.key==='Enter'){event.preventDefault();verificarMnDx()}"></div>
             <span class="hint" id="dx-mn-hint">igual ao do sistema · conferido ao sair do campo</span></div>`}
-        ${campo('dx-preco', 'Preço praticado', e?.precoPraticado ?? '', { pre: 'R$', moeda: true, ph: '0,00', desab: !!id, dica: id ? 'altere na ficha' : '', aoMudar: novo ? 'previaDadosExame()' : '' })}
         ${novo ? campo('dx-custo', 'Custo do teste', '', { pre: 'R$', moeda: true, ph: '0,00', dica: 'manual', aoMudar: 'previaDadosExame()' }) : ''}
+        ${campo('dx-preco', 'Preço praticado', e?.precoPraticado ?? '', { pre: 'R$', moeda: true, ph: '0,00', desab: !!id, dica: id ? 'altere na ficha' : '', aoMudar: novo ? 'previaDadosExame()' : '' })}
       </div>
-      ${novo ? '<div class="dx-prev" id="dx-calc"></div>' : ''}
+      ${novo ? `<div class="dx-prev" id="dx-calc"></div>` : ''}
       ${campo('dx-desc', 'Nome do exame', e?.descricao || '', { tipo: 'text', ph: 'Ex.: Glicose' })}
       <div class="field"><label>Setor</label><div id="pop-dxsetor" class="block"></div></div>
       <div class="field"><label>Origem</label><div class="opt-cards" id="dx-origem">
@@ -831,7 +831,7 @@ async function gravarDadosExame() {
   const dias = parseInt(valorCampo('dx-dias'), 10);
   const dados = { descricao: desc, setorId: _dx.setorId || null, origem: _dx.origem, ativo: _dx.ativo,
     material: valorCampo('dx-mat').trim() || null, prazoDias: isNaN(dias) ? null : Math.max(0, dias), atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome };
-  let id = _dx.id;
+  let id = _dx.id, modoPreco = null;
   if (!id) {
     verificarMnDx();
     const mn = valorCampo('dx-mn').trim();
@@ -843,6 +843,11 @@ async function gravarDadosExame() {
     const preco = numCampo('dx-preco');
     const custo = numCampo('dx-custo');
     if (!isNaN(custo) && custo < 0) return toast('Custo do teste inválido', 'erro');
+    // preço praticado: janela para escolher entre proposta (padrão) e publicar direto
+    if (preco > 0) {
+      modoPreco = await escolherModoPrecoDx(preco, custo >= 0 && calcular({ setorId: _dx.setorId || null, origem: _dx.origem, custoTeste: custo }, preco).status === 'r');
+      if (!modoPreco) return;
+    }
     // valor negociado: o custo vira item manual da tabela do apoio e o exame já nasce vinculado a ele
     let itemApoio = null;
     if (_dx.origem === 'apoio' && _dx.negociado) {
@@ -854,7 +859,7 @@ async function gravarDadosExame() {
       itemApoio = { k, item: { codigo: cod, material: '', descricao: valorCampo('dx-ap-desc').trim() || desc, preco: Math.round(custo * 100) / 100, vigencia: hojeISO(), manual: true, desde: Date.now(), criadoPor: usuarioAtual().nome } };
       dados.vinculoApoio = { apoioId: _dx.setorId, chave: k };
     }
-    Object.assign(dados, { mn, precoPraticado: preco > 0 ? preco : null, criadoEm: DB.agora(),
+    Object.assign(dados, { mn, precoPraticado: modoPreco === 'publicar' ? preco : null, criadoEm: DB.agora(),
       custoTeste: custo >= 0 ? Math.round(custo * 100) / 100 : null, custoOrigem: custo >= 0 ? 'manual' : null,
       negociado: _dx.origem === 'apoio' && _dx.negociado ? true : null, auditar: _dx.auditar || null, foraDoSistema: _dx.fora || null });
     await DB.gravar(`${CAMINHOS.exames}/${id}`, dados);
@@ -863,6 +868,12 @@ async function gravarDadosExame() {
       registrar('apoios', `${ESTADO.setores[_dx.setorId].nome}: item ${itemApoio.item.codigo} cadastrado manualmente (${fmt(itemApoio.item.preco)}) no cadastro do exame ${mn}`);
     }
     await gravarCatalogoNovoExame(id, mn, desc);
+    if (modoPreco === 'proposta') {
+      const u = usuarioAtual(), pid = DB.novaChave('propostas');
+      await DB.gravar(`propostas/${pid}`, { alvo: 'particular', alvoNome: 'Particular', itens: { [id]: { mn, de: null, para: Math.round(preco * 100) / 100 } }, n: 1,
+        justificativa: 'Preço do exame novo (cadastro)', autor: u.nome, autorId: u.id, em: DB.agora(), status: 'pendente', origem: 'cadastro' });
+      registrar('tabelas', `Particular: proposta de preço do exame novo ${mn} enviada (cadastro)`, { proposta: pid });
+    }
   } else {
     // prazo em dias substitui o texto antigo, no exame e no catálogo de instruções
     if (dados.prazoDias != null) {
@@ -876,11 +887,47 @@ async function gravarDadosExame() {
     await DB.mesclar(`${CAMINHOS.exames}/${id}`, dados);
   }
   await DB.gravar(`historicoExames/${id}/${DB.novaChave('historicoExames')}`, {
-    descricao: _dx.id ? 'Dados do exame alterados' : 'Exame cadastrado', usuario: usuarioAtual().nome, usuarioId: usuarioAtual().id, em: DB.agora()
+    descricao: _dx.id ? 'Dados do exame alterados' : `Exame cadastrado${modoPreco === 'publicar' ? ` · preço ${fmt(numCampo('dx-preco'))} publicado` : modoPreco === 'proposta' ? ` · preço ${fmt(numCampo('dx-preco'))} enviado para aprovação` : ''}`, usuario: usuarioAtual().nome, usuarioId: usuarioAtual().id, em: DB.agora()
   });
   ESTADO.exames[id] = { ...(ESTADO.exames[id] || {}), ...dados, ...(dados.atualizadoEm ? { atualizadoEm: Date.now() } : {}) };
-  toast(_dx.id ? 'Dados salvos' : 'Exame cadastrado');
+  toast(_dx.id ? 'Dados salvos' : modoPreco === 'proposta' ? 'Exame cadastrado · preço enviado para aprovação' : 'Exame cadastrado');
   abrirFicha(id);
+}
+
+// Exame novo com preço praticado: aviso e escolha entre enviar como proposta (padrão) ou publicar direto (só quem aprova).
+// → 'proposta' | 'publicar' | null (voltou sem escolher)
+function escolherModoPrecoDx(preco, abaixoPiso) {
+  return new Promise(resolve => {
+    const aprova = pode('tabelas', 'aprovar'), m = document.getElementById('modal');
+    let modo = 'proposta';
+    const oc = (v, t, d, ic, ok) => `<button type="button" class="oc ${v === modo ? 'on' : ''}" data-v="${v}" ${ok ? '' : 'disabled'}><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${t}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`;
+    m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true">
+        <button class="modal-x" data-x title="Fechar"><i class="fa-solid fa-xmark"></i></button>
+        <div class="modal-ic pausa"><i class="fa-solid fa-tag"></i></div>
+        <h3>Preço praticado de ${fmt(preco)}</h3>
+        <p>Como o preço da Particular deste exame novo passa a valer?
+          ${abaixoPiso ? '<span class="modal-li"><span style="color:var(--red)"><i class="fa-solid fa-circle-xmark" style="color:var(--red)"></i>Preço abaixo da margem mínima</span></span>' : ''}</p>
+        <div class="opt-cards dx-pmodo" id="dx-pmodo">
+          ${oc('proposta', 'Enviar como proposta', 'Vale depois da aprovação; até lá o exame fica sem preço', 'fa-paper-plane', true)}
+          ${oc('publicar', 'Publicar direto', aprova ? 'Vale na hora, sem revisão de outra pessoa' : 'Só para quem aprova preços', 'fa-stamp', aprova)}</div>
+        <div class="modal-acoes"><button class="btn" data-r="0">Voltar</button><button class="btn pri" data-r="1"><i class="fa-solid fa-paper-plane"></i>Enviar proposta</button></div>
+      </div>`;
+    m.classList.add('open');
+    const ok = m.querySelector('[data-r="1"]');
+    m.querySelectorAll('#dx-pmodo .oc').forEach(b => b.onclick = () => {
+      modo = b.dataset.v;
+      marcarOc('dx-pmodo', b);
+      ok.innerHTML = modo === 'publicar' ? '<i class="fa-solid fa-stamp"></i>Publicar sem revisão' : '<i class="fa-solid fa-paper-plane"></i>Enviar proposta';
+    });
+    const fim = r => { m.classList.remove('open'); document.removeEventListener('keydown', tecla); resolve(r); };
+    const tecla = e => { if (e.key === 'Escape') fim(null); };
+    m.querySelector('[data-r="0"]').onclick = () => fim(null);
+    m.querySelector('[data-x]').onclick = () => fim(null);
+    ok.onclick = () => fim(modo);
+    m.onclick = e => { if (e.target === m) fim(null); };
+    document.addEventListener('keydown', tecla);
+    ok.focus();
+  });
 }
 
 // Origem escolhida ao cadastrar um exame: fica lembrada neste navegador para os próximos cadastros

@@ -24,7 +24,7 @@ Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 5 | `exames-buscar` | Exames | Buscar e filtrar exames | exames:ver | 10 |
 | 6 | `exames-ficha` | Exames | Ficha do exame | exames:ver | 13 |
 | 7 | `exames-alterar-preco` | Exames | Alterar preço e enviar para aprovação | exames:editar | 10 |
-| 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 12 |
+| 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 14 |
 | 9 | `exames-rascunho` | Exames | Rascunho de exames | exames:ver ou tabelas:ver | 10 |
 | 10 | `custos-fixos` | Custos | Custos fixos: linear ou rateado | custos:editar | 8 |
 | 11 | `custos-reagente` | Custos | Cadastrar reagente | custos:criar | 11 |
@@ -196,16 +196,18 @@ Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 |---|---|---|---|
 | 1 | `#s-exames [onclick="abrirDadosExame()"]` | clique | **Novo exame** — Clique em Novo exame. |
 | 2 | `#dx-mn` | digitar (sugestão: "TREINO1") · espera `#gaveta.open` | **Mnemônico** — Use o mesmo mnemônico do sistema do laboratório. Ele não pode ser alterado depois. |
-| 3 | `#dx-preco` | digitar (sugestão: "4500") | **Preço praticado** — Preço na tabela Particular. Digite só os números: a vírgula entra sozinha pelos centavos (4500 vira 45,00). |
-| 4 | `#dx-custo` | digitar (sugestão: "850") | **Custo do teste** — Custo manual do teste, também com a vírgula automática (850 vira 8,50). Depois você pode vincular um reagente ou a tabela do apoio na ficha. |
+| 3 | `#dx-custo` | digitar (sugestão: "850") | **Custo do teste** — Custo manual do teste, também com a vírgula automática (850 vira 8,50). Depois você pode vincular um reagente ou a tabela do apoio na ficha. |
+| 4 | `#dx-preco` | digitar (sugestão: "4500") | **Preço praticado** — Preço na tabela Particular. Digite só os números: a vírgula entra sozinha pelos centavos (4500 vira 45,00). |
 | 5 | `#dx-calc` | ver · condicional | **Prévia** — Prévia da margem com o preço e o custo informados. Piso e Alvo preenchem o preço que atinge a margem mínima ou a alvo. |
 | 6 | `#dx-calc .dp-arr` | ver · condicional | **Arredondar** — Arredonda os preços de Piso e Alvo ao múltiplo mais próximo de R$ 1, 5, 10 ou 100. Para baixo só quando a margem continua dentro da tolerância (alvo) ou no mínimo (piso); senão, para cima. A escolha fica lembrada neste navegador. |
 | 7 | `#dx-desc` | digitar (sugestão: "Exame de treinamento") | **Nome do exame** — Nome que aparece nas listas, tabelas e PDFs. |
 | 8 | `#pop-dxsetor` | ver | **Setor** — O setor define a margem alvo e as etapas padrão (coleta, triagem). |
 | 9 | `#dx-origem` | ver | **Origem** — Interno é feito no LAMIC; Apoio é enviado a outro laboratório. |
 | 10 | `#dx-anexos` | ver · condicional | **Anexos** — Links (Drive, PDF, formulário) da instrução do exame. Vão para o catálogo de instruções e aparecem clicáveis para os apoiados no L2L. Os anexos que já estão no catálogo entram sozinhos. |
-| 11 | `#gaveta [onclick="gravarDadosExame()"]` | clique · avança se deu certo | **Salvar** — Clique em Salvar. A ficha do exame novo abre em seguida. |
-| 12 | — (cartão central) | ver | **Pronto!** — O exame foi criado na simulação e já aparece na lista. Ao encerrar o treinamento ele é descartado. |
+| 11 | `#gaveta [onclick="gravarDadosExame()"]` | clique · avança se deu certo | **Salvar** — Clique em Salvar. |
+| 12 | `#modal .modal-card` | ver · condicional | **Proposta ou publicar** — Com preço praticado, uma janela pergunta como ele passa a valer. Enviar como proposta (já marcado): vale depois da aprovação, e o exame fica sem preço até lá. Publicar direto (só quem aprova): vale na hora, sem revisão. |
+| 13 | `#modal [data-r="1"]` | clique · condicional · avança se deu certo | **Confirmar** — Clique em Enviar proposta. A ficha do exame novo abre em seguida. |
+| 14 | — (cartão central) | ver | **Pronto!** — O exame foi criado na simulação e já aparece na lista. Ao encerrar o treinamento ele é descartado. |
 
 ### Rascunho de exames
 

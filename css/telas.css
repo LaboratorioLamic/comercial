@@ -416,6 +416,7 @@ td.hier-bad { color: var(--red); font-weight: 600; background: var(--red-bg); }
 .btn.rx-tem { border-color: var(--amber); color: var(--amber); background: var(--amber-bg); animation: rx-pulso 1.6s ease-out 2; }
 .btn.rx-tem .gx-n { background: var(--amber); }
 @keyframes rx-pulso { 0% { box-shadow: 0 0 0 0 rgba(232, 145, 58, .45); } 100% { box-shadow: 0 0 0 10px rgba(232, 145, 58, 0); } }
+#modal .dx-pmodo { margin: 4px 0 16px; text-align: left; }
 .rx-q + .rx-q { margin-top: 14px; }
 .rx-q .pp-ex .rx-ck { font-size: 14px; vertical-align: -1px; margin-left: 4px; }
 .rx-q tr.rx-off td { opacity: .5; }
