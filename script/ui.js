@@ -62,13 +62,22 @@ function confirmar({ titulo = 'Confirmar', texto = '', botao = 'Confirmar', peri
 
 // ── Campos ────────────────────────────────────────────────────
 // Campo numérico com prefixo/sufixo
-function campo(id, rotulo, valor, { suf = '', pre = '', icone = '', dica = '', aoMudar = '', passo = 'any', tipo = 'number', ph = '', desab = false } = {}) {
+// moeda: campo de valor em R$ com vírgula automática (os dígitos entram pelos centavos: 5000 → 50,00)
+function campo(id, rotulo, valor, { suf = '', pre = '', icone = '', dica = '', aoMudar = '', passo = 'any', tipo = 'number', ph = '', desab = false, moeda = false } = {}) {
+  if (moeda) { tipo = 'text'; valor = typeof valor === 'number' ? fmtMoedaCampo(valor) : valor; aoMudar = `mascaraMoeda(this);${aoMudar}`; }
   return `<div class="field"><label for="${id}">${icone ? `<i class="fa-solid ${icone}"></i>` : ''}${rotulo}</label>
-    <div class="inp">${pre ? `<span class="pre">${pre}</span>` : ''}<input id="${id}" class="${tipo === 'text' || tipo === 'password' ? 'txt' : ''}" type="${tipo}" step="${passo}" value="${esc(valor)}" placeholder="${esc(ph)}" ${aoMudar ? `oninput="${aoMudar}"` : ''} ${desab ? 'disabled' : ''}>${suf ? `<span class="suf">${suf}</span>` : ''}</div>
+    <div class="inp">${pre ? `<span class="pre">${pre}</span>` : ''}<input id="${id}" class="${moeda ? 'moeda' : tipo === 'text' || tipo === 'password' ? 'txt' : ''}" type="${tipo}" ${moeda ? 'inputmode="numeric" autocomplete="off"' : `step="${passo}"`} value="${esc(valor)}" placeholder="${esc(ph)}" ${aoMudar ? `oninput="${aoMudar}"` : ''} ${desab ? 'disabled' : ''}>${suf ? `<span class="suf">${suf}</span>` : ''}</div>
     ${dica ? `<span class="hint">${dica}</span>` : ''}</div>`;
 }
 const valorCampo = id => document.getElementById(id)?.value ?? '';
-const numCampo = id => parseFloat(String(valorCampo(id)).replace(',', '.'));
+// "1.234,56" (campo com máscara de moeda) ou "1234.56" (campo numérico) → número
+const numBR = v => { let s = String(v ?? '').trim(); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); return parseFloat(s); };
+const numCampo = id => numBR(valorCampo(id));
+const fmtMoedaCampo = v => v == null || v === '' || isNaN(v) ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function mascaraMoeda(el) {
+  const d = el.value.replace(/\D/g, '').replace(/^0+/, '');
+  el.value = d ? fmtMoedaCampo(parseInt(d, 10) / 100) : '';
+}
 
 // Interruptor
 const chave = (ligado, aoClicar, desab = false) =>

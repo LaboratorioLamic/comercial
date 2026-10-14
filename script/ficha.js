@@ -198,7 +198,8 @@ const mudancasDadosFicha = () => !_fx ? [] : Object.keys(CAMPOS_FICHA).filter(c 
 
 // Clique fora, botão de fechar ou Esc: com preço alterado na ficha, pergunta se fecha ou guarda no rascunho
 async function clicarForaGaveta() {
-  const precos = document.getElementById('fx-rodape') && (pode('exames', 'editar') || pode('tabelas', 'editar')) ? mudancasPrecoFicha() : [];
+  if (!document.getElementById('fx-rodape')) return fecharGaveta();   // outra gaveta (não a ficha)
+  const precos = document.getElementById('fx-rodape') &&(pode('exames', 'editar') || pode('tabelas', 'editar')) ? mudancasPrecoFicha() : [];
   if (!rascMudouFicha(precos)) return fecharGaveta();
   if (!precos.length) return salvarFicha('rascunho');
   const v = x => x != null ? fmt(x) : 'fora';
@@ -237,7 +238,7 @@ function desenharRodapeFicha() {
     ${editar ? '' : '<button class="btn" onclick="fecharGaveta()">Fechar</button>'}
     ${dados ? `<button class="btn" onclick="salvarFicha('dados')" title="Salva custos e controles agora; os preços continuam pendentes"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>` : ''}
     ${!editar ? '' : mud ? `<button class="btn" onclick="salvarFicha('rascunho')" title="Guarda os preços no seu rascunho de cada tabela, para revisar e enviar depois"><i class="fa-solid fa-pen-to-square"></i>${aprova ? (dados ? '' : 'Rascunho') : 'Salvar no rascunho'}</button>
-        <button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('proposta')" title="Envia todos os preços alterados para aprovação, numa proposta por tabela (mesmo lote)"><i class="fa-solid fa-paper-plane"></i>${aprova ? (dados ? '' : 'Enviar proposta') : 'Enviar proposta'}</button>
+        <button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('confirmar')" title="Guarda os preços no rascunho e abre o rascunho de exames para conferir e confirmar o envio"><i class="fa-solid fa-paper-plane"></i>${aprova ? (dados ? '' : 'Enviar proposta') : 'Enviar proposta'}</button>
         ${aprova ? `<button class="btn pri" onclick="salvarFicha('publicar')" title="Publica os preços agora"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : ''}`
       : `<button class="btn pri" onclick="salvarFicha()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>`}`;
 }
@@ -470,7 +471,8 @@ const CAMPOS_FICHA = {
   foraDoSistema: v => v[1] ? 'Marcado como fora do sistema' : 'Encontrado no sistema'
 };
 
-// modo: undefined (só dados) | 'dados' (só dados, ficha continua aberta com os preços pendentes) | 'rascunho' (preços no rascunho) | 'enviar' (proposta para aprovação) | 'publicar' (aprova e publica)
+// modo: undefined (só dados) | 'dados' (só dados, ficha continua aberta com os preços pendentes) | 'rascunho' (preços no rascunho)
+//   | 'confirmar' (preços no rascunho e abre o rascunho de exames para confirmar o envio) | 'publicar' (aprova e publica, com confirmação)
 async function salvarFicha(modo) {
   const e = _fx, o = _fxOrig, k = _fxId;
   const mud = mudancasDadosFicha();
@@ -482,6 +484,8 @@ async function salvarFicha(modo) {
   if (modo === 'publicar' && !pode('tabelas', 'aprovar')) return toast('Seu grupo não pode publicar preços', 'erro');
   if (precos.some(m => m.alvo === 'particular') && !pode('exames', 'editar')) return toast('Seu grupo não pode alterar o preço praticado', 'erro');
   if (precos.some(m => m.alvo !== 'particular') && !pode('tabelas', 'editar')) return toast('Seu grupo não pode alterar tabelas de preço', 'erro');
+  if (modo === 'publicar' && precos.length && await confirmarPublicarSemRevisao({ n: precos.length, tabelas: precos.map(m => m.nome),
+    ab: precos.filter(m => m.para != null && calcular(e, m.para, m.alvo === 'particular' ? null : ESTADO.tabelas[m.alvo]).status === 'r').length }) !== true) return;
   const u = usuarioAtual();
 
   // dados do exame (custos, controles…)
@@ -506,7 +510,7 @@ async function salvarFicha(modo) {
   }
 
   // preços no rascunho de cada tabela (substitui o que já havia lá para este exame)
-  if (modo === 'rascunho') {
+  if (modo === 'rascunho' || modo === 'confirmar') {
     for (const m of precos) {
       await carregarRascunho(m.alvo);
       definirRasc(ctxAlvo(m.alvo), k, m.para);
@@ -514,8 +518,11 @@ async function salvarFicha(modo) {
     }
     // valor devolvido ao publicado: sai do rascunho
     for (const a of desfeitos) { definirRasc(ctxAlvo(a), k, undefined); await gravarRasc(a); }
+    // Enviar proposta: abre o rascunho de exames já neste exame, para conferir e confirmar
+    if (modo === 'confirmar' && precos.length) return abrirRascunhoExames(k, (e.justificativa || '').trim());
     fecharGaveta();
     if (document.getElementById('gr-body')) desenharGrade();
+    atualizarBotaoRascExames();
     return toast(precos.length ? `${e.mn}: ${precos.length} preço(s) no rascunho` : desfeitos.length ? `${e.mn}: retirado do rascunho` : `${e.mn} salvo`);
   }
 
@@ -532,6 +539,7 @@ async function salvarFicha(modo) {
   // publicado ou enviado: o rascunho deste exame deixa de valer
   for (const a of new Set([...precos.map(m => m.alvo), ...desfeitos])) { await carregarRascunho(a); definirRasc(ctxAlvo(a), k, undefined); await gravarRasc(a); }
   fecharGaveta();
+  atualizarBotaoRascExames();
   toast(!precos.length ? `${e.mn} salvo` : modo === 'publicar' ? `${e.mn}: ${precos.length} preço(s) publicados` : `${e.mn}: ${precos.length} proposta(s) enviadas para aprovação`);
 }
 
@@ -565,7 +573,8 @@ async function excluirExame() {
 let _dx = null;
 function abrirDadosExame(id) {
   const e = id ? ESTADO.exames[id] : null;
-  _dx = { id: id || null, setorId: e?.setorId || '', origem: e?.origem || origemLembrada(), ativo: e ? e.ativo !== false : true, negociado: false, auditar: false, fora: false, checks: { site: false, unilab: false, revisado: false } };
+  _dx = { id: id || null, setorId: e?.setorId || '', origem: e?.origem || origemLembrada(), ativo: e ? e.ativo !== false : true, negociado: false, auditar: false, fora: false, checks: { site: false, unilab: false, revisado: false },
+    mnUlt: '', mnDup: null, auto: {}, anexos: [], anexosAuto: false };
   const novo = !id;
   // Exame novo: instrução cadastrada junto (catálogo de instruções)
   const comIns = !id && pode('instrucoes', 'editar');
@@ -574,9 +583,12 @@ function abrirDadosExame(id) {
     sobre: id ? e.mn : 'Novo exame', titulo: id ? 'Dados do exame' : 'Cadastrar exame',
     corpo: `<div class="form-col">
       <div class="fgrid sem-pad" ${novo ? 'style="grid-template-columns:1.2fr 1fr 1fr"' : ''}>
-        ${campo('dx-mn', 'Mnemônico', e?.mn || '', { tipo: 'text', desab: !!id, dica: id ? 'não pode ser alterado' : 'igual ao do sistema', ph: 'Ex.: GLI', aoMudar: comIns ? 'preencherDoCatalogo()' : '' })}
-        ${campo('dx-preco', 'Preço praticado', e?.precoPraticado ?? '', { pre: 'R$', passo: '0.01', desab: !!id, dica: id ? 'altere na ficha' : '', aoMudar: novo ? 'previaDadosExame()' : '' })}
-        ${novo ? campo('dx-custo', 'Custo do teste', '', { pre: 'R$', passo: '0.01', ph: '0,00', dica: 'manual', aoMudar: 'previaDadosExame()' }) : ''}
+        ${id ? campo('dx-mn', 'Mnemônico', e.mn, { tipo: 'text', desab: true, dica: 'não pode ser alterado' })
+          : `<div class="field"><label for="dx-mn">Mnemônico</label><div class="inp" id="dx-mn-w"><input id="dx-mn" class="txt" type="text" placeholder="Ex.: GLI" autocomplete="off"
+              onblur="verificarMnDx()" onkeydown="if(event.key==='Enter'){event.preventDefault();verificarMnDx()}"></div>
+            <span class="hint" id="dx-mn-hint">igual ao do sistema · conferido ao sair do campo</span></div>`}
+        ${campo('dx-preco', 'Preço praticado', e?.precoPraticado ?? '', { pre: 'R$', moeda: true, ph: '0,00', desab: !!id, dica: id ? 'altere na ficha' : '', aoMudar: novo ? 'previaDadosExame()' : '' })}
+        ${novo ? campo('dx-custo', 'Custo do teste', '', { pre: 'R$', moeda: true, ph: '0,00', dica: 'manual', aoMudar: 'previaDadosExame()' }) : ''}
       </div>
       ${novo ? '<div class="dx-prev" id="dx-calc"></div>' : ''}
       ${campo('dx-desc', 'Nome do exame', e?.descricao || '', { tipo: 'text', ph: 'Ex.: Glicose' })}
@@ -591,7 +603,9 @@ function abrirDadosExame(id) {
       ${comIns ? `<div class="field"><label><i class="fa-solid fa-book-medical"></i>Instrução do exame</label>
         <textarea id="dx-ins" class="txt-grande" style="min-height:170px" placeholder="Jejum, preparo, coleta, conservação, critérios de rejeição…"></textarea>
         <div class="dx-checks" id="dx-checks"></div>
-        <span class="hint" id="dx-cat-hint">Vai para o catálogo de instruções. Opcional.</span></div>` : ''}
+        <span class="hint" id="dx-cat-hint">Vai para o catálogo de instruções. Opcional.</span></div>
+      <div class="field"><label><i class="fa-solid fa-paperclip"></i>Anexos</label><div id="dx-anexos"></div>
+        <span class="hint">Links (Drive, PDF, formulário) da instrução do exame: aparecem clicáveis para os laboratórios apoiados no L2L.</span></div>` : ''}
       ${novo ? '<div class="sec-t"><i class="fa-solid fa-sliders"></i>Controles</div>' : ''}
       <div class="casc">
         ${novo ? `<div class="casc-r" id="dx-neg-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">cadastra o item na tabela do apoio, com o custo informado, e vincula o exame</div></div></div>${chave(false, '_dx.negociado=!_dx.negociado;this.classList.toggle(\'on\');atualizarControlesDx()')}</div>
@@ -607,7 +621,7 @@ function abrirDadosExame(id) {
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-eye"></i><div>Exame ativo<div class="s">inativo sai das listas e das tabelas</div></div></div>${chave(_dx.ativo, '_dx.ativo=!_dx.ativo;this.classList.toggle(\'on\')')}</div></div>
     </div>`,
     rodape: `<button class="btn" onclick="${id ? `abrirFicha('${id}')` : 'fecharGaveta()'}">${id ? '<i class="fa-solid fa-arrow-left"></i>Voltar' : 'Cancelar'}</button>
-      <button class="btn pri" onclick="gravarDadosExame()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>`
+      <button class="btn pri" id="dx-salvar" onclick="gravarDadosExame()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>`
   });
   criarPop('pop-dxsetor', {
     rotulo: 'Setor', titulo: 'Setor do exame', icone: 'fa-sitemap', busca: 'Buscar setor…', padrao: '',
@@ -622,6 +636,25 @@ function abrirDadosExame(id) {
   POPS['pop-dxsetor'].valor = _dx.setorId; desenharBotaoPop('pop-dxsetor');
   atualizarControlesDx();
   desenharChecksDx();
+  desenharAnexosDx();
+}
+
+// Mnemônico conferido ao sair do campo (Tab, clique fora) ou no Enter, não a cada tecla.
+// Já cadastrado → bloqueia o Salvar. Mudou → os campos preenchidos pelo catálogo acompanham.
+function verificarMnDx() {
+  if (!_dx || _dx.id || !document.getElementById('dx-mn')) return;
+  const mn = valorCampo('dx-mn').trim();
+  if (mn === _dx.mnUlt) return;
+  _dx.mnUlt = mn;
+  const dup = mn ? lista(ESTADO.exames).find(x => String(x.mn || '').toUpperCase() === mn.toUpperCase()) : null;
+  _dx.mnDup = dup ? dup.id : null;
+  document.getElementById('dx-mn-w')?.classList.toggle('erro', !!dup);
+  const hint = document.getElementById('dx-mn-hint'), bt = document.getElementById('dx-salvar');
+  if (hint) hint.innerHTML = dup
+    ? `<span class="dx-mn-dup"><i class="fa-solid fa-ban"></i> Já existe o exame <b>${esc(dup.mn)}</b>${dup.descricao ? ` (${esc(dup.descricao)})` : ''}: use outro mnemônico · <a href="#" onclick="abrirFicha('${esc(dup.id)}');return false">abrir ficha</a></span>`
+    : 'igual ao do sistema · conferido ao sair do campo';
+  if (bt) { bt.disabled = !!dup; bt.title = dup ? 'Mnemônico já cadastrado' : ''; }
+  preencherDoCatalogo();
 }
 
 // Cadastro novo: "negociado" só vale para apoio; prévia de custo e margem
@@ -656,25 +689,34 @@ function previaDadosExame() {
     + bloco('fa-tag', 'Preço sugerido', c.sugerido != null ? fmt(c.sugerido) : '—', preco > 0 && c.sugerido != null ? `praticado ${preco >= c.sugerido ? 'acima' : 'abaixo'} do sugerido` : 'pela margem alvo')
     + bloco('fa-chart-simple', 'Margem', c.margem != null ? pct(c.margem) : '—', c.margem != null ? `lucro ${fmt(c.lucro)}` : 'informe o preço', `style="--c:${cor}"`)
     + `<div class="dp-acts"><div class="dp-top"><span class="dp-l"><i class="fa-solid fa-wand-magic-sparkles"></i>Precificar</span>
-          <span class="dp-arr" title="Arredonda para cima o preço dos botões Piso e Alvo"><span class="dp-arr-l">Arredondar</span>${ARRED_DX.map(a => `<button type="button" class="${a === arredDx() ? 'on' : ''}" onclick="definirArredDx(${a})">R$ ${a},00</button>`).join('')}</span></div>
-        ${btnPrecificarDx('fa-shield-halved', 'Piso', arredondarDx(c.minimo), c.min, preco)}${btnPrecificarDx('fa-bullseye', 'Alvo', arredondarDx(c.sugerido), c.alvo, preco)}</div>`;
+          <span class="dp-arr" title="Arredonda o preço dos botões Piso e Alvo ao múltiplo mais próximo; para baixo só se a margem não sair da tolerância"><span class="dp-arr-l">Arredondar</span>${ARRED_DX.map(a => `<button type="button" class="${a === arredDx() ? 'on' : ''}" onclick="definirArredDx(${a})">R$ ${a},00</button>`).join('')}</span></div>
+        ${btnPrecificarDx('fa-shield-halved', 'Piso', precoArredDx(c, 'piso'), c.min, preco)}${btnPrecificarDx('fa-bullseye', 'Alvo', precoArredDx(c, 'alvo'), c.alvo, preco)}</div>`;
 }
-// Arredondamento (para cima) dos preços de piso e alvo: múltiplos de R$ 1, 5 ou 10; a escolha fica lembrada neste navegador
-const ARRED_DX = [1, 5, 10];
+// Arredondamento dos preços de piso e alvo (múltiplo mais próximo, ver precoArredDx): múltiplos de R$ 1, 5, 10 ou 100; a escolha fica lembrada neste navegador
+const ARRED_DX = [1, 5, 10, 100];
 function arredDx() {
   let a = 1;
   try { a = +localStorage.getItem('prec-arred-exame'); } catch (e) {}
   return ARRED_DX.includes(a) ? a : 1;
 }
-const arredondarDx = (v, a = arredDx()) => v == null ? null : Math.ceil(v / a - 1e-9) * a;
+// Preço de piso ou alvo arredondado ao múltiplo mais próximo: para baixo só quando a margem continua
+// dentro da tolerância da Particular (alvo) ou no mínimo (piso); senão, para cima
+function precoArredDx(c, tipo, a = arredDx()) {
+  const m = tipo === 'piso' ? c.min : c.alvo, div = 1 - parametro('imposto') - m;
+  if (c.custo == null || m == null || div <= 0) return null;
+  const exato = c.custo / div, cima = Math.ceil(exato / a - 1e-9) * a, baixo = Math.floor(exato / a + 1e-9) * a;
+  const tol = tipo === 'alvo' ? ESTADO.particular?.tolerancia || 0 : 0;
+  const ok = baixo > 0 && 1 - parametro('imposto') - c.custo / baixo >= m - tol - 1e-9;
+  return ok && exato - baixo <= cima - exato ? baixo : cima;
+}
 function definirArredDx(a) {
   const antes = arredDx(), preco = numCampo('dx-preco'), custo = numCampo('dx-custo'), el = document.getElementById('dx-preco');
   try { localStorage.setItem('prec-arred-exame', a); } catch (e) {}
   // preço que veio de um dos botões acompanha o novo arredondamento
   if (el && preco > 0 && custo >= 0) {
     const c = calcular({ setorId: _dx.setorId || null, origem: _dx.origem, custoTeste: custo, precoPraticado: null });
-    const base = [c.sugerido, c.minimo].find(v => v != null && arredondarDx(v, antes) === preco);
-    if (base != null) el.value = arredondarDx(base, a);
+    const tipo = ['alvo', 'piso'].find(t => precoArredDx(c, t, antes) === preco);
+    if (tipo) el.value = fmtMoedaCampo(precoArredDx(c, tipo, a));
   }
   previaDadosExame();
 }
@@ -686,7 +728,7 @@ function btnPrecificarDx(ic, rot, valor, margem, preco) {
 function precificarDx(valor) {
   const el = document.getElementById('dx-preco');
   if (!el) return;
-  el.value = valor;
+  el.value = fmtMoedaCampo(valor);
   previaDadosExame();
 }
 
@@ -701,16 +743,62 @@ function desenharChecksDx() {
   }).join('');
 }
 
-// Mnemônico já existe no catálogo de instruções → preenche os campos vazios
+// Mnemônico no catálogo de instruções → preenche os campos vazios. Trocar o mnemônico troca também
+// o que veio do catálogo anterior (_dx.auto: campo → valor preenchido); o que foi digitado à mão fica.
 function preencherDoCatalogo() {
-  const r = ESTADO.catalogo?.[chaveExame(valorCampo('dx-mn'))], hint = document.getElementById('dx-cat-hint');
+  const hint = document.getElementById('dx-cat-hint');
   if (!hint) return;
-  if (!r) { hint.textContent = 'Vai para o catálogo de instruções. Opcional.'; return; }
-  Object.keys(CHECKS).forEach(k => { _dx.checks[k] = !!r[k]; });
-  desenharChecksDx();
-  const encher = (id, v) => { const el = document.getElementById(id); if (el && !el.value.trim() && v != null && v !== '') el.value = v; };
-  encher('dx-desc', r.nome); encher('dx-mat', r.material); encher('dx-dias', r.prazoDias); encher('dx-ins', r.instrucao);
-  hint.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ${esc(r.mn)} já está no catálogo${r.revisado ? ' (instrução revisada)' : ''}: campos vazios preenchidos.`;
+  const mn = valorCampo('dx-mn').trim(), r = mn ? ESTADO.catalogo?.[chaveExame(mn)] : null;
+  const encher = (id, v) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const atual = el.value.trim(), auto = id in _dx.auto;
+    if (atual && !(auto && atual === _dx.auto[id])) { delete _dx.auto[id]; return; }   // digitado à mão
+    const nv = v != null && v !== '' ? String(v) : '';
+    el.value = nv;
+    if (nv) _dx.auto[id] = nv; else delete _dx.auto[id];
+  };
+  encher('dx-desc', r?.nome); encher('dx-mat', r?.material); encher('dx-dias', r?.prazoDias); encher('dx-ins', r?.instrucao);
+  if (r || _dx.auto.checks) {
+    Object.keys(CHECKS).forEach(k => { _dx.checks[k] = !!r?.[k]; });
+    _dx.auto.checks = !!r;
+    if (!r) delete _dx.auto.checks;
+    desenharChecksDx();
+  }
+  // anexos da instrução: entram se a lista está vazia ou ainda é a que veio do catálogo
+  if (!_dx.anexos.some(a => a.nome || a.url) || _dx.anexosAuto) {
+    _dx.anexos = anexosDe(r).map(a => ({ nome: a.nome || '', url: a.url || '' }));
+    _dx.anexosAuto = _dx.anexos.length > 0;
+    desenharAnexosDx();
+  }
+  hint.innerHTML = r ? `<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> ${esc(r.mn)} já está no catálogo${r.revisado ? ' (instrução revisada)' : ''}: campos preenchidos${anexosDe(r).length ? `, com ${anexosDe(r).length} anexo(s)` : ''}.`
+    : 'Vai para o catálogo de instruções. Opcional.';
+}
+
+// Anexos da instrução no cadastro (links nome + URL, como no editor de instruções)
+function desenharAnexosDx() {
+  const el = document.getElementById('dx-anexos');
+  if (!el) return;
+  el.innerHTML = _dx.anexos.map((a, i) => `<div class="anx-r">
+      <div class="inp"><span class="pre"><i class="fa-solid fa-tag"></i></span><input class="txt" value="${esc(a.nome)}" placeholder="Nome do anexo" oninput="_dx.anexos[${i}].nome=this.value;_dx.anexosAuto=false"></div>
+      <div class="inp"><span class="pre"><i class="fa-solid fa-link"></i></span><input class="txt" value="${esc(a.url)}" placeholder="https://…" oninput="_dx.anexos[${i}].url=this.value;_dx.anexosAuto=false"></div>
+      ${urlValida(a.url) ? `<a class="icon-btn" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="Abrir o link"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>` : ''}
+      <button type="button" class="icon-btn" title="Remover anexo" onclick="_dx.anexos.splice(${i},1);_dx.anexosAuto=false;desenharAnexosDx()"><i class="fa-solid fa-trash"></i></button></div>`).join('')
+    + `<div class="anx-ac"><button type="button" class="btn sm" id="dx-anx-add" onclick="adicionarAnexoDx()"><i class="fa-solid fa-plus"></i>Adicionar anexo</button></div>`;
+}
+function adicionarAnexoDx() {
+  _dx.anexos.push({ nome: '', url: '' });
+  _dx.anexosAuto = false;
+  desenharAnexosDx();
+  [...document.querySelectorAll('#dx-anexos .anx-r')].pop()?.querySelector('input')?.focus();
+}
+// Anexos preenchidos e válidos → lista limpa; link inválido → mensagem de erro
+function anexosValidosDx() {
+  const anexos = _dx.anexos.map(a => ({ nome: String(a.nome || '').trim(), url: String(a.url || '').trim() })).filter(a => a.nome || a.url);
+  const ruim = anexos.find(a => !urlValida(a.url));
+  if (ruim) return { erro: `Anexo ${ruim.nome || 'sem nome'}: o link precisa começar com http:// ou https://` };
+  anexos.forEach(a => { a.nome ||= 'Anexo'; });
+  return { anexos };
 }
 
 // Grava nome, material, prazo e instrução no catálogo (mantém o checklist de publicação)
@@ -719,10 +807,10 @@ async function gravarCatalogoNovoExame(id, mn, nome) {
   const r = ESTADO.catalogo?.[id] || await DB.ler(`catalogo/${id}`) || {};
   const instrucao = valorCampo('dx-ins').trim() || null, dias = parseInt(valorCampo('dx-dias'), 10);
   const material = valorCampo('dx-mat').trim() || null;
-  const marcou = Object.keys(CHECKS).some(k => _dx.checks[k] !== !!r[k]);
-  if (!instrucao && !material && isNaN(dias) && !r.mn && !marcou) return;
+  const marcou = Object.keys(CHECKS).some(k => _dx.checks[k] !== !!r[k]), anexos = anexosValidosDx().anexos || [];
+  if (!instrucao && !material && isNaN(dias) && !r.mn && !marcou && !anexos.length) return;
   const u = usuarioAtual(), dados = { mn, cadastro: true, nome: r.nome || nome, material: material ?? r.material ?? null, prazo: isNaN(dias) ? (r.prazo ?? null) : null,
-    prazoDias: isNaN(dias) ? (r.prazoDias ?? null) : Math.max(0, dias), instrucao: r.instrucao ?? null, atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+    prazoDias: isNaN(dias) ? (r.prazoDias ?? null) : Math.max(0, dias), instrucao: r.instrucao ?? null, anexos: anexos.length ? anexos : null, atualizadoEm: DB.agora(), atualizadoPor: u.nome };
   // texto digitado vai para os campos por categoria (secoes.js)
   if (instrucao && instrucao !== (r.instrucao || '')) Object.assign(dados, dadosInstrucao(instrucao));
   // texto diferente do revisado → volta a precisar de revisão
@@ -745,10 +833,13 @@ async function gravarDadosExame() {
     material: valorCampo('dx-mat').trim() || null, prazoDias: isNaN(dias) ? null : Math.max(0, dias), atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome };
   let id = _dx.id;
   if (!id) {
+    verificarMnDx();
     const mn = valorCampo('dx-mn').trim();
     if (!mn) return toast('Informe o mnemônico', 'erro');
     id = chaveExame(mn);
-    if (ESTADO.exames[id]) return toast(`Já existe o exame ${mn}`, 'erro');
+    if (ESTADO.exames[id] || _dx.mnDup) return toast(`Já existe o exame ${mn}: use outro mnemônico`, 'erro');
+    const anx = document.getElementById('dx-anexos') ? anexosValidosDx() : {};
+    if (anx.erro) return toast(anx.erro, 'erro');
     const preco = numCampo('dx-preco');
     const custo = numCampo('dx-custo');
     if (!isNaN(custo) && custo < 0) return toast('Custo do teste inválido', 'erro');

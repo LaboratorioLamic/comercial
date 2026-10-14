@@ -5,6 +5,8 @@
 // Reajuste: aplica uma regra (percentual, levar ao piso, margem desejada,
 //   sugerido, desconto sobre a referência) aos preços salvos de uma tabela,
 //   mostra o impacto e leva o resultado ao rascunho do usuário (→ proposta).
+// Comparar tabelas: duas tabelas lado a lado (diferentes, maior/menor, ausentes em uma),
+//   cada lado com sua regra de ajuste e edição manual; cada lado gera o próprio rascunho.
 // Proposta para laboratório (antiga aba 01.LAB da Lamic-to-Lab): preço
 //   proposto × volume mensal por exame, filtro por prazo, margem ponderada e
 //   viabilidade pelo piso da tabela. Simulações ficam em simulacoes/{id}.
@@ -35,17 +37,20 @@ function renderSimulador() {
     <div class="h-row"><div><h2>Simulador</h2><p>Veja o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada.</p></div></div>
     <div class="subnav-row"><div class="subnav" data-grupo="simulador">
       <button data-p="reajuste" class="${simAba === 'reajuste' ? 'on' : ''}"><i class="fa-solid fa-arrow-trend-up"></i>Reajuste de tabela</button>
+      <button data-p="cmp" class="${simAba === 'cmp' ? 'on' : ''}"><i class="fa-solid fa-code-compare"></i>Comparar tabelas</button>
       <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta comercial${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
       <button data-p="cli" class="${simAba === 'cli' ? 'on' : ''}"><i class="fa-solid fa-user"></i>Proposta cliente${salvasCli ? `<span class="n-sub">${salvasCli}</span>` : ''}</button>
       <button data-p="med" class="${simAba === 'med' ? 'on' : ''}"><i class="fa-solid fa-user-doctor"></i>Proposta médico${salvasMed ? `<span class="n-sub">${salvasMed}</span>` : ''}</button>
     </div>
     <button class="btn so-lab" onclick="_pdfModo=['cli','med'].includes(simAba)?simAba:'lab';abrirModeloPdf()" title="Texto padrão do PDF da aba (proposta comercial, orçamento de cliente ou proposta ao médico)"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
     <div class="pane ${simAba === 'reajuste' ? 'on' : ''}" id="simulador-reajuste"></div>
+    <div class="pane ${simAba === 'cmp' ? 'on' : ''}" id="simulador-cmp"></div>
     <div class="pane ${simAba === 'lab' ? 'on' : ''}" id="simulador-lab"></div>
     <div class="pane ${simAba === 'cli' ? 'on' : ''}" id="simulador-cli"></div>
     <div class="pane ${simAba === 'med' ? 'on' : ''}" id="simulador-med"></div>`;
   iniciarSubnav();
   if (simAba === 'reajuste') desenharSimReajuste();
+  else if (simAba === 'cmp') desenharSimCmp();
   else if (simAba === 'cli') desenharSimCli();
   else if (simAba === 'med') desenharSimMed();
   else desenharSimLab();
@@ -143,30 +148,35 @@ function desenharFormReajuste() {
 }
 
 // ── Margem desejada e desconto: da tabela, única ou escalonada (faixas pelo custo total, como em faixas.js) ──
-// k = 'm' (margem; campo margemSugerida) ou 'd' (desconto; campo descontoRef) · estado em rj[k], rj[k+'fx'], rj[k+'tab']
+// k = 'm' (margem; campo margemSugerida) ou 'd' (desconto; campo descontoRef) · estado em E[k], E[k+'fx'], E[k+'tab']
+// st = dono do estado: 'rj' (Reajuste) ou 'a'/'b' (lado da comparação)
 const CAMPO_RJ = { m: 'margemSugerida', d: 'descontoRef' }, ROT_RJ = { m: 'Margem', d: 'Desconto' };
+const estRj = st => st === 'rj' ? rj : cmp[st];
+const caminhoRj = st => st === 'rj' ? 'rj' : `cmp.${st}`;
+const recalcRj = st => st === 'rj' ? 'recalcReajuste()' : 'recalcCmp()';
+const redesenharRj = st => { if (st === 'rj') desenharFormReajuste(); else { desenharLadoCmp(st); recalcCmp(); } };
 const faixasTabRj = (cx, k) => faixasDe(cx.tab || ESTADO.particular, CAMPO_RJ[k]).filter(f => f.v != null);
 const valorTabRj = (cx, k) => k === 'm' ? (cx.base ? regraTab(null, 'margemSugerida') ?? parametro('margemAlvo') : cx.margemSug) : cx.descRef;
 const tabRjOk = (cx, k) => k === 'm' ? cx.base || (cx.msugTxt && cx.msugTxt !== '—') : faixasTabRj(cx, 'd').length > 1 || cx.descRef > 0;
-const valorRj = (k, custo) => { const fx = rj[k + 'fx']; return !fx || custo == null ? rj[k] || 0 : (fx.find(f => f.ate == null || custo <= f.ate)?.v ?? rj[k]) || 0; };
+const valorRj = (k, custo, E = rj) => { const fx = E[k + 'fx']; return !fx || custo == null ? E[k] || 0 : (fx.find(f => f.ate == null || custo <= f.ate)?.v ?? E[k]) || 0; };
 
-function htmlParamRj(cx, k) {
-  const fx = rj[k + 'fx'], tab = rj[k + 'tab'], ok = tabRjOk(cx, k);
-  const seg = `<div class="seg" style="margin-bottom:8px"><button class="${tab ? 'on' : ''}" ${ok ? '' : `disabled title="Tabela sem ${k === 'm' ? 'sugestão de margem' : 'desconto de referência'}: defina em Configurar"`} onclick="modoRj('${k}','tab')" title="${ROT_RJ[k]} configurado na tabela, por faixa de custo quando houver"><i class="fa-solid fa-table-list"></i>Da tabela</button><button class="${!tab && !fx ? 'on' : ''}" onclick="modoRj('${k}','unica')"><i class="fa-solid fa-percent"></i>Única</button><button class="${fx && !tab ? 'on' : ''}" onclick="modoRj('${k}','fx')" title="${ROT_RJ[k]} escalonado por faixa de custo total"><i class="fa-solid fa-chart-line"></i>Escalonada</button></div>`;
-  const corpo = tab ? htmlTabRj(cx, k) : fx ? htmlFxRj(k)
-    : `<div class="inp" style="width:130px"><input type="number" step="0.5" value="${rj[k]}" oninput="rj.${k}=parseFloat(this.value)||0;recalcReajuste()"><span class="suf">%</span></div>`;
+function htmlParamRj(cx, k, st = 'rj') {
+  const E = estRj(st), fx = E[k + 'fx'], tab = E[k + 'tab'], ok = tabRjOk(cx, k);
+  const seg = `<div class="seg" style="margin-bottom:8px"><button class="${tab ? 'on' : ''}" ${ok ? '' : `disabled title="Tabela sem ${k === 'm' ? 'sugestão de margem' : 'desconto de referência'}: defina em Configurar"`} onclick="modoRj('${k}','tab','${st}')" title="${ROT_RJ[k]} configurado na tabela, por faixa de custo quando houver"><i class="fa-solid fa-table-list"></i>Da tabela</button><button class="${!tab && !fx ? 'on' : ''}" onclick="modoRj('${k}','unica','${st}')"><i class="fa-solid fa-percent"></i>Única</button><button class="${fx && !tab ? 'on' : ''}" onclick="modoRj('${k}','fx','${st}')" title="${ROT_RJ[k]} escalonado por faixa de custo total"><i class="fa-solid fa-chart-line"></i>Escalonada</button></div>`;
+  const corpo = tab ? htmlTabRj(cx, k) : fx ? htmlFxRj(k, st)
+    : `<div class="inp" style="width:130px"><input ${st === 'rj' ? '' : `id="cmp-${k}${st}" `}type="number" step="0.5" value="${E[k]}" oninput="${caminhoRj(st)}.${k}=parseFloat(this.value)||0;${recalcRj(st)}"><span class="suf">%</span></div>`;
   return seg + corpo + (fx && !tab ? `<span class="hint">Faixas pelo custo total do exame: começam em R$ 0 e a última vale para todo custo acima</span>` : '');
 }
-function htmlFxRj(k) {
-  const fx = rj[k + 'fx'];
+function htmlFxRj(k, st = 'rj') {
+  const fx = estRj(st)[k + 'fx'], cam = `${caminhoRj(st)}.${k}fx`, rec = recalcRj(st);
   return `<div class="mfx"><div class="mfx-h"><span>Custo total</span><span>${ROT_RJ[k]}</span><span></span></div>${fx.map((f, i) => {
     const de = i ? fx[i - 1].ate : 0, ult = i === fx.length - 1;
     return `<div class="mfx-l">${ult ? `<span class="mfx-de">acima de <b>${de != null ? fmt(de) : '…'}</b></span>`
-        : `<div class="inp"><span class="pre">até R$</span><input type="number" step="0.01" min="0" value="${f.ate ?? ''}" oninput="rj.${k}fx[${i}].ate=this.value.trim()===''?null:parseFloat(this.value);recalcReajuste()" onchange="desenharFormReajuste()" onfocus="this.select()"></div>`}
-      <div class="inp"><input type="number" step="0.5" value="${f.v}" oninput="rj.${k}fx[${i}].v=parseFloat(this.value)||0;recalcReajuste()" onfocus="this.select()"><span class="suf">%</span></div>
-      ${ult ? '<span></span>' : `<button type="button" class="rg-x" title="Remover faixa" onclick="removerFxRj('${k}',${i})"><i class="fa-solid fa-xmark"></i></button>`}</div>`;
+        : `<div class="inp"><span class="pre">até R$</span><input type="number" step="0.01" min="0" value="${f.ate ?? ''}" oninput="${cam}[${i}].ate=this.value.trim()===''?null:parseFloat(this.value);${rec}" onchange="redesenharRj('${st}')" onfocus="this.select()"></div>`}
+      <div class="inp"><input type="number" step="0.5" value="${f.v}" oninput="${cam}[${i}].v=parseFloat(this.value)||0;${rec}" onfocus="this.select()"><span class="suf">%</span></div>
+      ${ult ? '<span></span>' : `<button type="button" class="rg-x" title="Remover faixa" onclick="removerFxRj('${k}',${i},'${st}')"><i class="fa-solid fa-xmark"></i></button>`}</div>`;
   }).join('')}
-  <button type="button" class="btn sm" onclick="adicionarFxRj('${k}')"><i class="fa-solid fa-plus"></i>Adicionar faixa</button></div>`;
+  <button type="button" class="btn sm" onclick="adicionarFxRj('${k}','${st}')"><i class="fa-solid fa-plus"></i>Adicionar faixa</button></div>`;
 }
 // Valor configurado na tabela, só leitura (faixas pelo custo total quando houver)
 function htmlTabRj(cx, k) {
@@ -178,28 +188,29 @@ function htmlTabRj(cx, k) {
     return `<div class="mfx-l"><span class="mfx-de">${ult ? `acima de <b>${fmt(de)}</b>` : `até <b>${fmt(f.ate)}</b>`}</span>${caixa(f.v)}<span></span></div>`;
   }).join('')}</div>`;
 }
-function modoRj(k, modo) {
-  rj[k + 'tab'] = modo === 'tab';
-  if (modo === 'unica' && rj[k + 'fx']) { rj[k] = rj[k + 'fx'][0].v; rj[k + 'fx'] = null; }
-  if (modo === 'fx' && !rj[k + 'fx']) {
+function modoRj(k, modo, st = 'rj') {
+  const E = estRj(st);
+  E[k + 'tab'] = modo === 'tab';
+  if (modo === 'unica' && E[k + 'fx']) { E[k] = E[k + 'fx'][0].v; E[k + 'fx'] = null; }
+  if (modo === 'fx' && !E[k + 'fx']) {
     // começa pelas faixas configuradas na tabela, quando houver
-    const fx = faixasTabRj(ctxAlvo(rj.alvo), k);
-    rj[k + 'fx'] = fx.length > 1 ? fx.map((f, i) => ({ ate: i === fx.length - 1 ? null : f.ate, v: Math.round(f.v * 1000) / 10 }))
-      : [{ ate: 100, v: rj[k] ?? 0 }, { ate: null, v: rj[k] ?? 0 }];
+    const fx = faixasTabRj(ctxAlvo(E.alvo), k);
+    E[k + 'fx'] = fx.length > 1 ? fx.map((f, i) => ({ ate: i === fx.length - 1 ? null : f.ate, v: Math.round(f.v * 1000) / 10 }))
+      : [{ ate: 100, v: E[k] ?? 0 }, { ate: null, v: E[k] ?? 0 }];
   }
-  desenharFormReajuste();
+  redesenharRj(st);
 }
 // Nova faixa entra antes da última ("acima de")
-function adicionarFxRj(k) {
-  const fx = rj[k + 'fx'], ant = fx[fx.length - 2]?.ate;
+function adicionarFxRj(k, st = 'rj') {
+  const fx = estRj(st)[k + 'fx'], ant = fx[fx.length - 2]?.ate;
   fx.splice(fx.length - 1, 0, { ate: ant ? ant * 2 : 100, v: fx[fx.length - 1].v });
-  desenharFormReajuste();
+  redesenharRj(st);
 }
-function removerFxRj(k, i) {
-  const fx = rj[k + 'fx'];
+function removerFxRj(k, i, st = 'rj') {
+  const E = estRj(st), fx = E[k + 'fx'];
   fx.splice(i, 1);
-  if (fx.length < 2) { rj[k] = fx[0].v; rj[k + 'fx'] = null; }
-  desenharFormReajuste();
+  if (fx.length < 2) { E[k] = fx[0].v; E[k + 'fx'] = null; }
+  redesenharRj(st);
 }
 
 // Novo preço de um exame pela regra escolhida (undefined = não muda)
@@ -367,6 +378,303 @@ async function levarReajuste(enviar) {
   irParaGrade(rj.alvo);
   if (enviar) abrirEnvioProposta();
   else toast(`${alt.length} preço(s) no seu rascunho`);
+}
+
+// ═══ Comparar tabelas ════════════════════════════════════════
+// Dois lados (a, b), cada um com tabela, regra de ajuste e valores à mão (man: chave → preço; vale sobre a regra).
+// A comparação (filtros) e o escopo da regra usam os preços salvos hoje; as colunas Novo mostram o ajuste.
+// escopo: em quais exames a regra mexe · ausentes: inclui os exames que só a outra tabela tem (partindo do preço dela)
+// m/d: margem desejada e desconto (mtab/dtab = os configurados na tabela; mfx/dfx = escalonados à mão, como no Reajuste)
+const ladoCmp = alvo => ({ alvo, tipo: 'nada', p: 0, m: null, mfx: null, mtab: true, d: null, dfx: null, dtab: true, escopo: 'dif', ausentes: false, arred: '0', naoReduzir: false, man: {} });
+const cmp = { a: ladoCmp('particular'), b: ladoCmp(null), q: '', filtro: 'dif', pag: 1, ordem: 'dif', dir: -1 };
+const LADOS_CMP = { a: { letra: 'A', cor: 'var(--cyan)' }, b: { letra: 'B', cor: '#8b5cf6' } };
+const outroLado = s => s === 'a' ? 'b' : 'a';
+const bdgCmp = s => `<span class="cmp-l" style="--lc:${LADOS_CMP[s].cor}" title="${esc(ctxAlvo(cmp[s].alvo)?.nome || '')}">${LADOS_CMP[s].letra}</span>`;
+
+const TIPOS_CMP = {
+  nada:  { nome: 'Sem regra',         icone: 'fa-hand',        desc: 'Só os valores digitados à mão' },
+  outra: { nome: 'Pela outra tabela', icone: 'fa-right-left',  desc: 'Preço da outra ± percentual (0 = igualar)' },
+  pct: TIPOS_REAJUSTE.pct, piso: TIPOS_REAJUSTE.piso, marg: TIPOS_REAJUSTE.marg, sug: TIPOS_REAJUSTE.sug, desc: TIPOS_REAJUSTE.desc
+};
+const tiposCmp = cx => Object.keys(TIPOS_CMP).filter(t => !TIPOS_CMP[t].so || (TIPOS_CMP[t].so === 'base' ? cx.base : !cx.base && cx.ref));
+const ESCOPOS_CMP = {
+  dif:   { nome: 'Com valor diferente',      curto: 'Diferentes',   icone: 'fa-not-equal' },
+  maior: { nome: 'Mais caros que a outra',   curto: 'Mais caros',   icone: 'fa-arrow-up' },
+  menor: { nome: 'Mais baratos que a outra', curto: 'Mais baratos', icone: 'fa-arrow-down' },
+  todos: { nome: 'Todos com preço',          curto: 'Todos',        icone: 'fa-list' }
+};
+// Arredondamento para cima; clicar de novo no ativo desliga ('0' = centavos)
+const ARRED_CMP = ['1', '5', '10', '100'];
+
+function desenharSimCmp() {
+  const el = document.getElementById('simulador-cmp');
+  if (!ctxAlvo(cmp.a.alvo)) cmp.a.alvo = 'particular';
+  if (!ctxAlvo(cmp.b.alvo) || cmp.b.alvo === cmp.a.alvo) cmp.b.alvo = alvosSimulaveis().find(a => a !== cmp.a.alvo) || null;
+  if (!cmp.b.alvo) { el.innerHTML = `<div class="card">${vazio('fa-code-compare', 'Cadastre ao menos duas tabelas para comparar')}</div>`; return; }
+  el.innerHTML = `<div class="cmp-lados">
+      <div class="card cmp-lado" id="cmp-lado-a" style="--lc:${LADOS_CMP.a.cor}"></div>
+      <div class="card cmp-lado" id="cmp-lado-b" style="--lc:${LADOS_CMP.b.cor}"></div></div>
+    <div class="card sim-res">
+      <div class="impact" id="cmp-imp"></div>
+      <div class="toolbar">
+        <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="cmp-q" value="${esc(cmp.q)}" placeholder="Buscar exame…" oninput="cmp.q=this.value;cmp.pag=1;desenharResultadoCmp()"></div>
+        <div id="pop-cmpsetor"></div>
+        <div class="chips sem-pad" id="cmp-chips"></div>
+      </div>
+      <div class="tbl-wrap"><table class="cmp-tab"><thead id="cmp-head"></thead><tbody id="cmp-body"></tbody></table></div>
+      <div class="foot" id="cmp-foot"></div>
+    </div>`;
+  criarPop('pop-cmpsetor', {
+    rotulo: 'Setor', titulo: 'Setores comparados', icone: 'fa-bullseye', busca: 'Buscar setor…', limpavel: true, multi: true,
+    opcoes: () => opcoesSetorPop('Todos os setores', [{ valor: '__sem', rotulo: 'Sem setor', icone: 'fa-triangle-exclamation', cor: 'var(--amber)' }]),
+    aoMudar: () => { cmp.pag = 1; recalcCmp(); }
+  });
+  desenharLadoCmp('a');
+  desenharLadoCmp('b');
+  recalcCmp();
+}
+
+function desenharLadoCmp(s) {
+  const L = cmp[s], o = outroLado(s), el = document.getElementById('cmp-lado-' + s), cx = ctxAlvo(L.alvo), cxO = ctxAlvo(cmp[o].alvo);
+  if (!el || !cx || !cxO) return;
+  const tipos = tiposCmp(cx), T = LADOS_CMP[s], on = c => c ? 'on' : '';
+  if (!tipos.includes(L.tipo)) L.tipo = 'nada';
+  if (L.m == null) L.m = Math.round((cx.base ? parametro('margemAlvo') : cx.margemSug ?? cx.piso + 0.1) * 1000) / 10;
+  if (L.d == null) L.d = Math.round((cx.descRef || 0.1) * 1000) / 10;
+  ['m', 'd'].forEach(k => { if (L[k + 'tab'] && !tabRjOk(cx, k)) L[k + 'tab'] = false; });
+  const campo = (k, rot) => `<label class="cmp-param">${rot}<span class="inp"><input id="cmp-${k}${s}" type="number" step="0.5" value="${L[k]}" oninput="cmp.${s}.${k}=parseFloat(this.value)||0;recalcCmp()"><span class="suf">%</span></span></label>`;
+  const param = L.tipo === 'outra' ? campo('p', `Sobre ${esc(cxO.nome)}`)
+    : L.tipo === 'pct' ? campo('p', 'Percentual')
+    : L.tipo === 'marg' ? `<div class="cmp-fx">${htmlParamRj(cx, 'm', s)}</div>`
+    : L.tipo === 'desc' ? `<div class="cmp-fx">${htmlParamRj(cx, 'd', s)}</div>` : '';
+  const info = L.tipo === 'outra' ? 'Negativo fica abaixo da outra · 0 iguala'
+    : L.tipo === 'pct' ? 'Negativo reduz o preço'
+    : L.tipo === 'marg' ? `${L.mtab ? (cx.base ? 'Margem alvo da Particular · setor com alvo próprio prevalece · ' : 'Sugestão de margem da tabela · ') : ''}exames sem custo ficam de fora`
+    : L.tipo === 'desc' ? `${L.dtab ? 'Desconto de referência da tabela' : 'Desconto'} sobre ${esc(cx.ref?.nome || 'a referência')}`
+    : L.tipo === 'piso' ? `Exames abaixo de ${cx.pisoTxt} sobem até o ${cx.pisoNome}.`
+    : L.tipo === 'sug' ? 'Custo total ÷ (1 − imposto − margem alvo do setor).'
+    : `Digite os valores na coluna <b>Novo</b> de ${T.letra}.`;
+  const nomeTipo = t => t === 'piso' ? `Levar ao ${cx.pisoNome}` : t === 'desc' ? 'Desconto s/ referência' : TIPOS_CMP[t].nome;
+  const descTipo = t => t === 'piso' ? `Só os abaixo de ${cx.pisoTxt}` : t === 'desc' ? `${cx.ref?.nome || 'Referência'} menos o percentual` : TIPOS_CMP[t].desc;
+  const opcao = (k, icone, rot, desc) => `<button type="button" class="chip ${on(L[k])}" title="${esc(desc)}" onclick="cmp.${s}.${k}=!cmp.${s}.${k};desenharLadoCmp('${s}');recalcCmp()"><i class="fa-solid ${L[k] ? 'fa-square-check' : icone}"></i>${rot}</button>`;
+  el.innerHTML = `
+    <div class="cmp-lado-h"><span class="cmp-letra">${T.letra}</span><div id="pop-cmp${s}" class="block"></div></div>
+    <div class="cmp-row"><span class="cmp-rot">Ajuste</span>
+      <div class="cmp-tipos">${tipos.map(t => `<button type="button" class="chip ${on(L.tipo === t)}" data-tipo="${t}" title="${esc(descTipo(t))}" onclick="cmp.${s}.tipo='${t}';cmp.pag=1;desenharLadoCmp('${s}');recalcCmp()"><i class="fa-solid ${TIPOS_CMP[t].icone}"></i>${nomeTipo(t)}</button>`).join('')}</div></div>
+    <div class="cmp-row"><span class="cmp-rot"></span><div class="cmp-regra">${param}${info ? `<span class="hint"><i class="fa-solid fa-circle-info"></i> ${info}</span>` : ''}</div></div>
+    <div class="cmp-row cmp-escopo"><span class="cmp-rot">Aplicar em</span>
+      <div class="seg">${Object.entries(ESCOPOS_CMP).map(([k, E]) => `<button class="${on(L.escopo === k)}" title="${E.nome}" onclick="cmp.${s}.escopo='${k}';desenharLadoCmp('${s}');recalcCmp()"><i class="fa-solid ${E.icone}"></i>${E.curto}</button>`).join('')}</div></div>
+    <div class="cmp-row"><span class="cmp-rot">Arredondar</span>
+      <div class="seg">${ARRED_CMP.map(v => `<button class="${on(L.arred === v)}" title="Para cima, múltiplo de R$ ${v} · clique de novo para não arredondar" onclick="cmp.${s}.arred=cmp.${s}.arred==='${v}'?'0':'${v}';desenharLadoCmp('${s}');recalcCmp()">R$ ${v}</button>`).join('')}</div></div>
+    <div class="cmp-row"><span class="cmp-rot">Opções</span>
+      <div class="cmp-ops">${opcao('ausentes', 'fa-square-plus', 'Incluir ausentes', `Exames só de ${cxO.nome} entram com o preço dela`)}${opcao('naoReduzir', 'fa-shield', 'Não reduzir preços', 'Mantém o atual quando a regra daria menos')}</div></div>
+    ${pode('simulador', 'criar') ? `<div class="sim-acoes cmp-acoes" id="cmp-acoes-${s}"></div>`
+      : '<div class="hint sim-acoes"><i class="fa-solid fa-lock"></i> Seu grupo só pode visualizar simulações.</div>'}`;
+  delete POPS['pop-cmp' + s];          // o padrão é a tabela do lado (muda na troca entre A e B)
+  criarPop('pop-cmp' + s, {
+    rotulo: `Tabela ${T.letra}`, titulo: `Tabela ${T.letra}`, icone: 'fa-table-list', padrao: L.alvo, busca: 'Buscar tabela…',
+    opcoes: () => alvosSimulaveis().map(a => {
+      const c = ctxAlvo(a);
+      return { valor: a, rotulo: c.nome, icone: c.icone, cor: c.cor, grupo: c.conv ? 'Conveniados' : c.lab ? 'Laboratórios apoiados' : 'Tabelas',
+        desc: a === cmp[o].alvo ? `é a tabela ${LADOS_CMP[o].letra}: escolher troca os lados` : c.base ? 'Preço praticado' : `piso ${c.pisoTxt}` };
+    }),
+    aoMudar: a => trocarTabelaCmp(s, a)
+  });
+  desenharAcoesCmp();
+}
+
+// Escolher no lado s a tabela do outro lado troca A e B (cada um leva a sua regra)
+function trocarTabelaCmp(s, a) {
+  if (a === cmp[s].alvo) return;
+  if (a === cmp[outroLado(s)].alvo) [cmp.a, cmp.b] = [cmp.b, cmp.a];
+  else Object.assign(cmp[s], { alvo: a, man: {}, m: null, mfx: null, mtab: true, d: null, dfx: null, dtab: true });
+  cmp.pag = 1;
+  desenharLadoCmp('a');
+  desenharLadoCmp('b');
+  recalcCmp();
+}
+
+// Novo preço de um lado: { v, alt, man } · v null = exame fora da tabela
+function novoCmp(L, cx, e, atual, outro) {
+  const k = e.id;
+  if (k in L.man) return { v: L.man[k], man: true, alt: atual == null || Math.abs(L.man[k] - atual) >= 0.005 };
+  const fica = { v: atual, alt: false, man: false };
+  if (atual == null) { if (!L.ausentes || outro == null) return fica; }
+  else if (!{ todos: true, dif: outro != null && Math.abs(atual - outro) >= 0.005, maior: outro != null && atual > outro + 0.005, menor: outro != null && atual < outro - 0.005 }[L.escopo]) return fica;
+  const base = atual ?? outro, c = calcular(e, base, cx.tab), ref = cx.ref?.valor(k) ?? null;
+  let v;
+  if (L.tipo === 'outra') v = outro != null ? outro * (1 + (L.p || 0) / 100) : undefined;
+  else if (L.tipo === 'pct') v = base * (1 + (L.p || 0) / 100);
+  else if (L.tipo === 'piso') v = c.status === 'r' ? c.minimo : undefined;
+  else if (L.tipo === 'marg') v = precoParaMargem(c, L.mtab ? (cx.base ? c.alvo : c.margemSug) : valorRj('m', c.custo, L) / 100);
+  else if (L.tipo === 'sug') v = c.sugerido || undefined;
+  else if (L.tipo === 'desc') v = ref != null && !precoSimbolico(ref) ? ref * (1 - (L.dtab ? c.descRef || 0 : valorRj('d', c.custo, L) / 100)) : undefined;
+  v = v == null || isNaN(v) || v <= 0 ? undefined : arredSim(v, +L.arred || 0);
+  // ausente: entra pelo preço da outra quando a regra não dá valor
+  if (atual == null) return { v: v ?? arredSim(outro, +L.arred || 0), alt: true, man: false };
+  if (v === undefined || (L.naoReduzir && v < atual) || Math.abs(v - atual) < 0.005) return fica;
+  return { v, alt: true, man: false };
+}
+
+// Relação entre os preços de A e B
+const relCmp = (a, b) => a == null ? (b == null ? null : 'soB') : b == null ? 'soA' : Math.abs(a - b) < 0.005 ? 'igual' : a > b ? 'aMaior' : 'bMaior';
+const ORDEM_REL = { aMaior: 0, bMaior: 1, soA: 2, soB: 3, igual: 4 };
+const tagRelCmp = r => r === 'igual' ? tagSt('g', 'fa-equals', 'Iguais') : !r ? '—'
+  : `<span class="cmp-rel">${r === 'soA' || r === 'soB' ? `só em ${bdgCmp(r === 'soA' ? 'a' : 'b')}` : `${bdgCmp(r === 'aMaior' ? 'a' : 'b')} maior`}</span>`;
+const textoRelCmp = r => ({ aMaior: 'A maior', bMaior: 'B maior', soA: 'só em A', soB: 'só em B', igual: 'iguais' })[r] || '—';
+
+let _cmpLinhas = [], _cmpSimbolicos = 0;
+function calcularCmp() {
+  const cxA = ctxAlvo(cmp.a.alvo), cxB = ctxAlvo(cmp.b.alvo);
+  _cmpSimbolicos = 0;
+  _cmpLinhas = examesVisiveis().filter(e => e.ativo !== false)
+    .filter(e => passaPop('pop-cmpsetor', ESTADO.setores[e.setorId] ? e.setorId : '__sem'))
+    .map(e => {
+      const a0 = cxA.salvo(e.id), b0 = cxB.salvo(e.id);
+      if (a0 == null && b0 == null) return null;
+      if (precoSimbolico(a0) || precoSimbolico(b0)) { _cmpSimbolicos++; return null; }
+      const na = novoCmp(cmp.a, cxA, e, a0, b0), nb = novoCmp(cmp.b, cxB, e, b0, a0);
+      const x = { e, k: e.id, a0, b0, a1: na.v, b1: nb.v, altA: na.alt, altB: nb.alt, manA: na.man, manB: nb.man };
+      x.rel0 = relCmp(a0, b0); x.rel1 = relCmp(x.a1, x.b1);
+      x.dif0 = a0 && b0 ? b0 / a0 - 1 : null; x.dif1 = x.a1 && x.b1 ? x.b1 / x.a1 - 1 : null;
+      x.ca = x.a1 != null ? calcular(e, x.a1, cxA.tab) : null;
+      x.cb = x.b1 != null ? calcular(e, x.b1, cxB.tab) : null;
+      return x;
+    }).filter(Boolean);
+  return _cmpLinhas;
+}
+
+function recalcCmp() {
+  if (!document.getElementById('cmp-imp')) return;
+  const ls = calcularCmp();
+  const n0 = r => ls.filter(x => x.rel0 === r).length, n1 = r => ls.filter(x => x.rel1 === r).length;
+  const media = v => v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  const d0 = media(ls.filter(x => x.dif0 != null).map(x => x.dif0)), d1 = media(ls.filter(x => x.dif1 != null).map(x => x.dif1));
+  const dif0 = n0('aMaior') + n0('bMaior'), dif1 = n1('aMaior') + n1('bMaior');
+  const altA = ls.filter(x => x.altA).length, altB = ls.filter(x => x.altB).length, man = ls.filter(x => x.manA).length + ls.filter(x => x.manB).length;
+  const sinal = v => v == null ? '—' : `${v > 0 ? '+' : ''}${pct(v)}`, mudou = altA || altB;
+  const depois = (a, b) => mudou && a !== b ? `<span class="muted"> · depois <b>${num(b, 0)}</b></span>` : '';
+  const imp = (ic, rot, v, d, cls = '') => `<div class="imp"><div class="l"><i class="fa-solid ${ic}"></i>${rot}</div><div class="v">${v}</div><div class="d ${cls}">${d}</div></div>`;
+  document.getElementById('cmp-imp').innerHTML =
+    imp('fa-flask-vial', 'Exames comparados', num(ls.length, 0), `<span class="muted">${num(ls.filter(x => x.dif0 != null).length, 0)} nas duas tabelas</span>`)
+    + imp('fa-not-equal', 'Valores diferentes', num(dif0, 0), `<span class="muted">${bdgCmp('a')} maior ${n0('aMaior')} · ${bdgCmp('b')} maior ${n0('bMaior')}</span>${depois(dif0, dif1)}`)
+    + imp('fa-scale-unbalanced', `${bdgCmp('b')} sobre ${bdgCmp('a')} (média)`, sinal(mudou ? d1 : d0), mudou ? `<i class="fa-solid fa-clock-rotate-left"></i>antes ${sinal(d0)}` : '<span class="muted">nos exames das duas tabelas</span>', 'muted')
+    + imp('fa-circle-half-stroke', `Só em ${bdgCmp('a')}`, num(n0('soA'), 0), `<span class="muted">fora de ${esc(ctxAlvo(cmp.b.alvo).nome)}</span>${depois(n0('soA'), n1('soA'))}`)
+    + imp('fa-circle-half-stroke', `Só em ${bdgCmp('b')}`, num(n0('soB'), 0), `<span class="muted">fora de ${esc(ctxAlvo(cmp.a.alvo).nome)}</span>${depois(n0('soB'), n1('soB'))}`)
+    + imp('fa-pen', 'Ajustes', `${num(altA, 0)}<small> ${LADOS_CMP.a.letra}</small> · ${num(altB, 0)}<small> ${LADOS_CMP.b.letra}</small>`, `<span class="muted">${man ? `${man} manual(is)` : 'nenhum manual'}</span>`)
+    + (_cmpSimbolicos ? imp('fa-ban', 'Ignorados', num(_cmpSimbolicos, 0), `<span class="muted">preço abaixo de ${fmt(PRECO_MIN_VARIACAO)}</span>`) : '');
+  desenharResultadoCmp();
+  desenharAcoesCmp();
+}
+
+const FILTROS_CMP = {
+  dif:    { h: () => '<i class="fa-solid fa-not-equal"></i>Diferentes',       f: x => x.rel0 === 'aMaior' || x.rel0 === 'bMaior' },
+  aMaior: { h: () => `${bdgCmp('a')} maior`,                                   f: x => x.rel0 === 'aMaior' },
+  bMaior: { h: () => `${bdgCmp('b')} maior`,                                   f: x => x.rel0 === 'bMaior' },
+  soA:    { h: () => `Só em ${bdgCmp('a')}`,                                    f: x => x.rel0 === 'soA' },
+  soB:    { h: () => `Só em ${bdgCmp('b')}`,                                    f: x => x.rel0 === 'soB' },
+  igual:  { h: () => '<i class="fa-solid fa-equals"></i>Iguais',              f: x => x.rel0 === 'igual' },
+  alt:    { h: () => '<i class="fa-solid fa-pen"></i>Ajustados',             f: x => x.altA || x.altB },
+  todos:  { h: () => '<i class="fa-solid fa-list"></i>Todos',                f: () => true }
+};
+
+function desenharResultadoCmp() {
+  const body = document.getElementById('cmp-body');
+  if (!body) return;
+  const cxA = ctxAlvo(cmp.a.alvo), cxB = ctxAlvo(cmp.b.alvo), base = _cmpLinhas.filter(x => contem(x.e.mn + ' ' + x.e.descricao, cmp.q));
+  const nMan = Object.keys(cmp.a.man).length + Object.keys(cmp.b.man).length;
+  document.getElementById('cmp-chips').innerHTML = Object.entries(FILTROS_CMP).map(([k, F]) => {
+    const n = base.filter(F.f).length;
+    if (!n && k !== cmp.filtro && k !== 'dif' && k !== 'todos') return '';
+    return `<button class="chip ${cmp.filtro === k ? 'on' : ''}" onclick="cmp.filtro='${k}';cmp.pag=1;desenharResultadoCmp()">${F.h()} <b>${n}</b></button>`;
+  }).join('') + (nMan ? `<button class="btn qd" style="color:var(--amber);border-color:var(--amber)" onclick="limparManuaisCmp()" title="Desfazer ${nMan} edição(ões) manual(is): voltam à regra"><i class="fa-solid fa-rotate-left"></i></button>` : '')
+    + (pode('simulador', 'criar') ? `<button class="btn pri" id="cmp-ambos" onclick="levarCmp('ab')" title="Leva os ajustes de A e de B, cada um ao rascunho da sua tabela"><i class="fa-solid fa-pen"></i>Gerar os dois rascunhos</button>` : '');
+  const ls = base.filter(FILTROS_CMP[cmp.filtro].f);
+  const val = { mn: x => x.e.mn.toUpperCase(), desc: x => normalizar(x.e.descricao), a0: x => x.a0 ?? -1, a1: x => x.a1 ?? -1, b0: x => x.b0 ?? -1, b1: x => x.b1 ?? -1,
+    dif: x => x.dif1 != null ? Math.abs(x.dif1) : -1, rel: x => ORDEM_REL[x.rel1] ?? 9 }[cmp.ordem] || (x => x.e.mn);
+  ls.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * cmp.dir; });
+  const n = Math.max(1, Math.ceil(ls.length / SIM_POR_PAG));
+  if (cmp.pag > n) cmp.pag = n;
+  const th = (r, k, cls) => thOrdem(r, k, cmp.ordem, cmp.dir, 'ordenarCmp', cls), edita = pode('simulador', 'criar');
+  const grp = s => `<th colspan="2" class="cmp-g" style="--lc:${LADOS_CMP[s].cor}">${bdgCmp(s)} ${esc(ctxAlvo(cmp[s].alvo).nome)}</th>`;
+  document.getElementById('cmp-head').innerHTML = `<tr class="cmp-grp"><th colspan="2"></th>${grp('a')}${grp('b')}<th colspan="2"></th></tr>
+    <tr>${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Atual', 'a0', 'num')}${th('Novo', 'a1', 'num')}${th('Atual', 'b0', 'num')}${th('Novo', 'b1', 'num')}${th(`${LADOS_CMP.b.letra} vs ${LADOS_CMP.a.letra}`, 'dif', 'num')}${th('Comparação', 'rel')}</tr>`;
+  const atual = v => v != null ? fmt(v) : '<span class="cmp-aus">ausente</span>';
+  const novo = (x, s) => {
+    const K = s.toUpperCase(), v = x[s + '1'], man = x['man' + K], alt = x['alt' + K], c = x['c' + s];
+    const marg = c?.margem != null ? `<div class="sub-num" style="${c.status === 'r' ? 'color:var(--red)' : ''}">margem ${pct(c.margem)}</div>` : '';
+    if (!edita) return v == null ? '<span class="muted">—</span>' : `<b class="${alt ? '' : 'muted'}">${fmt(v)}</b>${marg}`;
+    return `<div class="rj-novo"><div class="price-in ${man ? 'on' : alt ? 'alt' : ''}" title="${man ? 'Valor digitado à mão: a regra não mexe nele' : 'Digite para definir o valor à mão'}"><span>R$</span><input type="number" step="0.01" min="0" data-l="${s}" data-k="${esc(x.k)}" value="${v != null ? v.toFixed(2) : ''}" placeholder="${x[s + '0'] == null ? 'incluir' : ''}" onchange="editarNovoCmp(this)" onkeydown="teclaCmp(event)" onfocus="this.select()"></div>${
+      man ? `<button class="rj-desf" title="Voltar ao valor da regra" onclick="desfazerNovoCmp('${s}','${esc(x.k)}')"><i class="fa-solid fa-rotate-left"></i></button>` : ''}</div>${marg}`;
+  };
+  body.innerHTML = ls.slice((cmp.pag - 1) * SIM_POR_PAG, cmp.pag * SIM_POR_PAG).map(x => `<tr>
+      <td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha('${esc(x.k)}');return false">${esc(x.e.mn)}</a></td>
+      <td class="desc" title="${esc(x.e.descricao)}">${esc(x.e.descricao)}</td>
+      <td class="num muted">${atual(x.a0)}</td>
+      <td class="num">${novo(x, 'a')}</td>
+      <td class="num muted">${atual(x.b0)}</td>
+      <td class="num">${novo(x, 'b')}</td>
+      <td class="num">${x.dif1 != null ? `<b>${x.dif1 > 0 ? '+' : ''}${pct(x.dif1)}</b><div class="sub-num">${x.b1 - x.a1 > 0 ? '+' : ''}${fmt(x.b1 - x.a1)}</div>` : '<span class="muted">—</span>'}${
+        x.dif0 != null && x.dif1 != null && Math.abs(x.dif1 - x.dif0) > 0.00005 ? `<div class="sub-num">antes ${x.dif0 > 0 ? '+' : ''}${pct(x.dif0)}</div>` : ''}</td>
+      <td>${tagRelCmp(x.rel1)}${x.rel1 !== x.rel0 ? `<div class="sub-num">antes: ${textoRelCmp(x.rel0)}</div>` : ''}</td></tr>`).join('')
+    || `<tr><td colspan="8">${vazio('fa-code-compare', _cmpLinhas.length ? 'Nenhum exame com esse filtro' : `Nenhum exame com preço em ${esc(cxA.nome)} ou ${esc(cxB.nome)} neste escopo`)}</td></tr>`;
+  document.getElementById('cmp-foot').innerHTML = paginacao(ls.length, cmp.pag, SIM_POR_PAG, 'paginaCmp');
+}
+function paginaCmp(p) { cmp.pag = p; desenharResultadoCmp(); }
+function ordenarCmp(k) { cmp.dir = cmp.ordem === k ? -cmp.dir : (k === 'dif' ? -1 : 1); cmp.ordem = k; desenharResultadoCmp(); }
+
+// Valor digitado à mão num lado: vale sobre a regra; vazio volta à regra (no ausente, vazio = não incluir)
+function editarNovoCmp(inp) {
+  const L = cmp[inp.dataset.l], k = inp.dataset.k, txt = inp.value.trim(), v = txt === '' ? null : Math.round(parseFloat(txt) * 100) / 100;
+  if (v == null || isNaN(v) || v <= 0) delete L.man[k];
+  else L.man[k] = v;
+  recalcCmp();
+}
+function desfazerNovoCmp(s, k) { delete cmp[s].man[k]; recalcCmp(); }
+function limparManuaisCmp() {
+  const n = Object.keys(cmp.a.man).length + Object.keys(cmp.b.man).length;
+  cmp.a.man = {}; cmp.b.man = {};
+  recalcCmp();
+  toast(`${n} edição(ões) manual(is) desfeita(s)`);
+}
+// Enter / ↑ ↓ confirmam o valor e passam para o preço vizinho da mesma coluna
+function teclaCmp(ev) {
+  if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(ev.key)) return;
+  ev.preventDefault();
+  const s = ev.target.dataset.l, col = () => [...document.querySelectorAll(`#cmp-body input[data-l="${s}"]`)];
+  const ins = col(), i = ins.indexOf(ev.target), k = ins[ev.key === 'ArrowUp' ? i - 1 : i + 1]?.dataset.k;
+  editarNovoCmp(ev.target);           // redesenha a tabela
+  if (k != null) col().find(x => x.dataset.k === k)?.focus();
+}
+
+function desenharAcoesCmp() {
+  ['a', 'b'].forEach(s => {
+    const el = document.getElementById('cmp-acoes-' + s), cx = ctxAlvo(cmp[s].alvo);
+    if (!el || !cx) return;
+    const n = _cmpLinhas.filter(x => x['alt' + s.toUpperCase()]).length;
+    el.innerHTML = `<button class="btn ${n ? 'pri' : ''}" ${n ? '' : 'disabled'} onclick="levarCmp('${s}')"><i class="fa-solid fa-pen"></i>Gerar rascunho${n ? ` (${n})` : ''}</button>
+      <button class="btn" onclick="irParaGrade('${esc(cx.alvo)}')" title="Abrir a grade de ${esc(cx.nome)} no filtro do rascunho"><i class="fa-solid fa-table-list"></i>Abrir rascunho</button>`;
+  });
+}
+
+// Leva os ajustes de um lado ('a' | 'b') ou dos dois ('ab') ao rascunho da respectiva tabela
+async function levarCmp(qual) {
+  const feitos = [];
+  let algum = false;
+  for (const s of qual === 'ab' ? ['a', 'b'] : [qual]) {
+    const K = s.toUpperCase(), alt = _cmpLinhas.filter(x => x['alt' + K]);
+    if (!alt.length) continue;
+    algum = true;
+    const L = cmp[s], cx = ctxAlvo(L.alvo), cxO = ctxAlvo(cmp[outroLado(s)].alvo), nMan = alt.filter(x => x['man' + K]).length;
+    const regra = { outra: `${cxO.nome} ${L.p > 0 ? '+' : ''}${num(L.p, 1)}%`, pct: `${L.p > 0 ? '+' : ''}${num(L.p, 1)}%`, piso: `levar ao ${cx.pisoNome}`,
+      marg: L.mtab ? 'margem da tabela' : L.mfx ? 'margem escalonada' : `margem ${num(L.m, 1)}%`, sug: 'sugerido',
+      desc: L.dtab ? 'desconto da tabela' : L.dfx ? 'desconto escalonado' : `desconto ${num(L.d, 1)}%` }[L.tipo];
+    const partes = [nMan && `${nMan} valor(es) manual(is)`, regra, L.ausentes && 'inclui ausentes'].filter(Boolean);
+    const ok = await levarAoRascunho(L.alvo, Object.fromEntries(alt.map(x => [x.k, x[s + '1']])), `comparação com ${cxO.nome}${partes.length ? ` (${partes.join(' + ')})` : ''}`);
+    if (ok) feitos.push(`${alt.length} em ${cx.nome}`);
+  }
+  if (feitos.length) toast(`Rascunho gerado: ${feitos.join(' · ')}`);
+  else if (!algum) toast(qual === 'ab' ? 'Nenhum preço muda nas duas tabelas' : 'Nenhum preço muda nesta tabela', 'erro');
 }
 
 // ═══ Proposta para laboratório (01.LAB) ═══════════════════════

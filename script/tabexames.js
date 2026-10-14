@@ -239,11 +239,11 @@ function htmlLinhaGx(cx, e) {
   const teto = !cx.base && pAlvo != null && pLivre != null && pAlvo < pLivre - 0.005;
   const sug = (a, v, sub, dica) => `<div class="gx-s gx-dyn">${v == null ? '' : `<button class="${preco != null && Math.abs(preco - v) < 0.005 ? 'on' : ''}" title="${esc(dica)}" onclick="gxAcao(this,'${a}')"><b>${fmt(v)}</b><small>${sub}</small></button>`}</div>`;
   // margem e desconto com o mesmo peso; desconto âmbar acima do de referência, vermelho acima do máximo ou se o preço passa dela
-  const dmax = acimaDescMax(x.desc, x.descMax);
+  const dmax = acimaDescMax(x.desc, x.descMax, x.descTol);
   const margem = c.semCusto ? `<button class="gx-sc" title="Exame sem custo: clique para informar" onclick="gxCusto(this)"><i class="fa-solid fa-plus"></i>custo</button>`
     : preco == null ? '<span class="gx-nd">—</span>' : `<b class="${c.status === 'r' ? 'r' : 'g'}" title="Custo ${fmt(c.custo)} · ${cx.pisoNome} ${pct(c.min, 0)}">${pct(c.margem)}</b>`;
   const dsc = x.desc, desconto = !ref || preco == null ? '<span class="gx-nd">—</span>'
-    : `<b class="${dmax || dsc < -0.0005 ? 'r' : dsc > x.descRef + 0.0005 && !cx.lab ? 'a' : ''}" title="${dmax ? 'Acima do desconto máximo · ' : ''}Sobre ${esc(cx.ref.nome)} (${fmt(ref)})${cx.lab ? '' : ` · referência ${pct(x.descRef, 0)}`}${x.descMax != null ? ` · máximo ${pct(x.descMax, 0)}` : ''}">${dmax ? '<i class="fa-solid fa-ban"></i> ' : ''}${pct(dsc)}</b>`;
+    : `<b class="${dmax || dsc < -0.0005 ? 'r' : acimaDescRef(dsc, x.descRef, x.descTol) && !cx.lab ? 'a' : ''}" title="${dmax ? 'Acima do desconto máximo · ' : ''}Sobre ${esc(cx.ref.nome)} (${fmt(ref)})${cx.lab ? '' : ` · referência ${pct(x.descRef, 0)}`}${x.descMax != null ? ` · máximo ${pct(x.descMax, 0)}` : ''}">${dmax ? '<i class="fa-solid fa-ban"></i> ' : ''}${pct(dsc)}</b>`;
   // Coluna de referência: Unilab na Particular; valor da Particular editável (rascunho dela) nas tabelas que a usam
   const vRef = cx.base ? x.sist : ref;
   const part = !cxP ? `<div class="gx-p" title="${cx.base ? 'Preço no Unilab' : esc(cx.ref?.nome || 'Referência')}">${vRef != null ? fmt(vRef) : '<span class="gx-nd">—</span>'}</div>`

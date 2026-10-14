@@ -157,7 +157,9 @@ function calcular(e, preco = e.precoPraticado, tab = null) {
   const min = regraTab(tab, 'piso', custo);
   const alvo = tab ? alvoExame(e) : ESTADO.setores[e.setorId]?.margemAlvo ?? regraTab(null, 'margemSugerida', custo) ?? parametro('margemAlvo');
   // min, descRef, descMax e margemSug: regras da tabela já resolvidas para a faixa de custo deste exame
-  const r = { fx, extras, fixo, somaExtras, alvo, min, descRef: regraTab(tab, 'descontoRef', custo), descMax: tab ? regraTab(tab, 'descontoMax', custo) : null, margemSug: regraTab(tab, 'margemSugerida', custo),
+  // descTol: tolerância de desconto da tabela (pontos acima do de referência e do máximo que não geram alerta)
+  // margTol: tolerância de margem da tabela (pontos abaixo da sugestão de margem ainda aceitos no preço sugerido)
+  const r = { fx, extras, fixo, somaExtras, alvo, min, descRef: regraTab(tab, 'descontoRef', custo), descMax: tab ? regraTab(tab, 'descontoMax', custo) : null, descTol: tab?.toleranciaDesc || 0, margTol: tab?.toleranciaMargem || 0, margemSug: regraTab(tab, 'margemSugerida', custo),
     preco: preco || null, teste: ct, semCusto: !ct };
   if (r.semCusto) { r.status = 'x'; return r; }
   r.custo = custo;

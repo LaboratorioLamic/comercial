@@ -16,14 +16,16 @@ const CTRL_EXAME = {
   vsis: { rotulo: 'Valor não atualizado', icone: 'fa-clock-rotate-left', cor: 'var(--red)', desc: 'Valor pendente de atualização no sistema', f: e => valorDesatualizado(e.id) },
   sist: { rotulo: 'Fora do sistema',      icone: 'fa-plug-circle-xmark',       cor: 'var(--text-muted)', desc: 'Mnemônico não existe no catálogo',     f: e => !!e.foraDoSistema },
   efet: { rotulo: 'Não efetua na Particular', icone: 'fa-ban',                 cor: 'var(--text-muted)', desc: 'Efetua = N na tabela Particular do Unilab', f: e => !!e.inativoNoSistema },
-  nneg: { rotulo: 'Apoio não negociado',  icone: 'fa-handshake-slash',         cor: 'var(--red)',        desc: 'Exame de apoio sem valor negociado',   f: e => e.origem === 'apoio' && !negociadoExame(e) }
+  nneg: { rotulo: 'Apoio não negociado',  icone: 'fa-handshake-slash',         cor: 'var(--red)',        desc: 'Exame de apoio sem valor negociado',   f: e => e.origem === 'apoio' && !negociadoExame(e) },
+  rasc: { rotulo: 'No meu rascunho',      icone: 'fa-pen-to-square',           cor: 'var(--cyan)',       desc: 'Preço alterado na ficha, ainda não enviado', f: e => emRascExame(e.id) }
 };
 const iconesExame = e =>
   (e.auditar ? ' <i class="fa-solid fa-magnifying-glass-dollar flag" style="color:var(--amber)" title="Valor a auditar"></i>' : '') +
   (e.origem !== 'apoio' ? '' : negociadoExame(e) ? ' <i class="fa-solid fa-handshake flag" style="color:var(--green)" title="Apoio com negociação"></i>'
     : ' <i class="fa-solid fa-handshake-slash flag" style="color:var(--red)" title="Apoio sem valor negociado"></i>') +
   (valorDesatualizado(e.id) ? ' <i class="fa-solid fa-clock-rotate-left flag" style="color:var(--red)" title="Valor não atualizado no sistema"></i>' : '') +
-  (e.foraDoSistema ? ' <i class="fa-solid fa-plug-circle-xmark flag" style="color:var(--text-muted)" title="Fora do sistema"></i>' : '');
+  (e.foraDoSistema ? ' <i class="fa-solid fa-plug-circle-xmark flag" style="color:var(--text-muted)" title="Fora do sistema"></i>' : '') +
+  (emRascExame(e.id) ? ' <i class="fa-solid fa-pen-to-square flag" style="color:var(--cyan)" title="Preço no seu rascunho, ainda não enviado"></i>' : '');
 
 function opcoesSetorPop(rotuloTodos, extras = [], contar = null) {
   const n = id => contar ? contar(id) : null;
@@ -39,7 +41,7 @@ function renderExames() {
   const el = document.getElementById('s-exames');
   el.innerHTML = `
     <div class="h-row"><div><h2>Exames</h2><p>Clique em um exame para ver a composição do preço</p></div>
-      <div style="display:flex;gap:8px">${pode('exames', 'editar') ? `<button class="btn" onclick="abrirImportExames()"><i class="fa-solid fa-file-csv"></i>Importar CSV</button>` : ''}${pode('tabelas') ? `<button class="btn" onclick="tabAba='propostas';irPara('tabelas')"><i class="fa-solid fa-stamp"></i>Propostas</button>` : ''}${pode('exames', 'criar') ? `<button class="btn pri" onclick="abrirDadosExame()"><i class="fa-solid fa-plus"></i>Novo exame</button>` : ''}</div></div>
+      <div style="display:flex;gap:8px">${pode('exames', 'editar') ? `<button class="btn" onclick="abrirImportExames()"><i class="fa-solid fa-file-csv"></i>Importar CSV</button>` : ''}${pode('exames', 'editar') || pode('tabelas', 'editar') ? `<button class="btn" id="ex-rasc" onclick="abrirRascunhoExames()" title="Rascunho de exames"><i class="fa-solid fa-pen-to-square"></i>Rascunho<b class="gx-n" id="ex-rasc-n" hidden></b></button>` : ''}${pode('tabelas') ? `<button class="btn" onclick="tabAba='propostas';irPara('tabelas')"><i class="fa-solid fa-stamp"></i>Propostas</button>` : ''}${pode('exames', 'criar') ? `<button class="btn pri" onclick="abrirDadosExame()"><i class="fa-solid fa-plus"></i>Novo exame</button>` : ''}</div></div>
     <div class="subnav" data-grupo="exst">
       <button data-p="ativos" class="${exF.inativos ? '' : 'on'}"><i class="fa-solid fa-play"></i>Ativos<span class="n-sub neutro" id="ex-n-ativos"></span></button>
       <button data-p="inativos" class="${exF.inativos ? 'on' : ''}"><i class="fa-solid fa-pause"></i>Inativos<span class="n-sub neutro" id="ex-n-inativos"></span></button>
@@ -81,6 +83,7 @@ function renderExames() {
     aoMudar: () => { exF.pag = 1; desenharExames(); }
   });
   desenharExames();
+  atualizarBotaoRascExames();
 }
 
 function linhasExames() {

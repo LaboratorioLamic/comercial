@@ -10,7 +10,7 @@ function abrirConfigTabela(id) {
   const t = id ? ESTADO.tabelas[id] : null;
   _tbEd = {
     id: id || null, nome: t?.nome || '', tipo: t?.tipo || 'convenio', cor: t?.cor || PALETA[4], icone: t?.icone || 'fa-id-card',
-    descontoRef: t?.descontoRef ?? 0.2, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null, ativa: t ? t.ativa !== false : true,
+    descontoRef: t?.descontoRef ?? 0.2, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null, tolDesc: t?.toleranciaDesc != null ? +(t.toleranciaDesc * 100).toFixed(2) : null, tolMarg: t?.toleranciaMargem != null ? +(t.toleranciaMargem * 100).toFixed(2) : null, ativa: t ? t.ativa !== false : true,
     perfil: { ...(t?.perfil || {}) }, inicial: 'vazia', copiar: ''
   };
   iniciarRegras(t, { piso: parametro('margemMinima'), descontoRef: 0.2, descontoMax: null, margemSugerida: null });
@@ -37,6 +37,14 @@ function desenharConfigTabela() {
     <div class="field"><label>Tipo</label><div class="opt-cards">${Object.entries(TIPOS_TABELA).map(([k, x]) => oc('_tbEd.tipo', k, x.nome, x.desc, x.icone, e.tipo === k)).join('')}</div></div>
     ${_rg.piso.fx || _rg.descontoRef.fx ? htmlRegra('piso') + htmlRegra('descontoRef') : `<div class="fgrid sem-pad">${htmlRegra('piso')}${htmlRegra('descontoRef')}</div>`}
     ${_rg.descontoMax.fx || _rg.margemSugerida.fx ? htmlRegra('descontoMax') + htmlRegra('margemSugerida') : `<div class="fgrid sem-pad">${htmlRegra('descontoMax')}${htmlRegra('margemSugerida')}</div>`}
+    <div class="fgrid sem-pad">
+    ${campo('tb-toldesc', 'Tolerância de desconto', e.tolDesc ?? '', { icone: 'fa-sliders', suf: 'p.p.', passo: '0.1', ph: 'Sem tolerância',
+      dica: 'pontos acima do desconto de referência e do máximo que ainda não geram alerta (ex.: preço arredondado) · vazio = alerta a partir de qualquer excesso',
+      aoMudar: "_tbEd.tolDesc=this.value.trim()===''?null:parseFloat(this.value.replace(',','.'))" })}
+    ${campo('tb-tolmarg', 'Tolerância de margem', e.tolMarg ?? '', { icone: 'fa-sliders', suf: 'p.p.', passo: '0.1', ph: 'Sem tolerância',
+      dica: 'pontos abaixo da sugestão de margem ainda aceitos: o preço sugerido arredonda para baixo quando a margem fica dentro · vazio = sempre para cima',
+      aoMudar: "_tbEd.tolMarg=this.value.trim()===''?null:parseFloat(this.value.replace(',','.'))" })}
+    </div>
     <div class="field"><label><i class="fa-solid fa-calculator"></i>Perfil de custo</label>
       <div class="casc">${fixos.map(f => `<div class="casc-r"><div class="lft"><i class="fa-solid ${f.icone || 'fa-coins'}"></i><div>${esc(f.nome)}<div class="s">padrão ${fmt(f.valor)}${f.etapa ? ` · só com ${f.etapa}` : ''}</div></div></div>
         <div style="display:flex;gap:6px;align-items:center">
@@ -76,7 +84,9 @@ async function gravarConfigTabela() {
   if (lista(ESTADO.tabelas).some(t => t.id !== e.id && normalizar(t.nome) === normalizar(e.nome)) || normalizar(e.nome) === 'particular') return toast('Já existe uma tabela com esse nome', 'erro');
   const erro = validarRegras();
   if (erro) return toast(erro, 'erro');
-  const dados = { nome: e.nome, tipo: e.tipo, cor: e.cor, icone: e.icone, ...dadosRegras(),
+  if (e.tolDesc != null && (isNaN(e.tolDesc) || e.tolDesc < 0 || e.tolDesc >= 100)) return toast('Tolerância de desconto inválida', 'erro');
+  if (e.tolMarg != null && (isNaN(e.tolMarg) || e.tolMarg < 0 || e.tolMarg >= 100)) return toast('Tolerância de margem inválida', 'erro');
+  const dados = { nome: e.nome, tipo: e.tipo, cor: e.cor, icone: e.icone, ...dadosRegras(), toleranciaDesc: e.tolDesc ? Math.round(e.tolDesc * 100) / 10000 : null, toleranciaMargem: e.tolMarg ? Math.round(e.tolMarg * 100) / 10000 : null,
     ativa: e.ativa, perfil: Object.keys(e.perfil).length ? e.perfil : null, atualizadoEm: DB.agora() };
   let id = e.id;
   if (id) {

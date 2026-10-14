@@ -201,7 +201,7 @@ function statsAlvo(cx) {
     if (c.margem != null) { st.sm += c.margem; st.km++; }
     const ref = cx.ref?.valor(e.id);
     if (ref && !precoSimbolico(ref) && !precoSimbolico(p)) { st.sd += 1 - p / ref; st.kd++; }
-    if (cx.tabela && !precoSimbolico(p) && acimaDescMax(ref && 1 - p / ref, c.descMax)) st.dm++;
+    if (cx.tabela && !precoSimbolico(p) && acimaDescMax(ref && 1 - p / ref, c.descMax, c.descTol)) st.dm++;
     const s = cx.sistema(e.id);
     if (s != null && Math.abs(s - p) > 0.004) st.div++;
   });
@@ -288,7 +288,7 @@ function htmlCabGrade(cx) {
   const t = cx.tab, l = cx.lab ? cx.ent : null;
   const sub = cx.base ? `Tabela base: o valor editado aqui é o preço praticado do exame · mínimo ${cx.pisoTxt} · alvo do setor ou ${textoAlvoParticular()}`
     : cx.lab ? `${[l.razaoSocial, l.cnpj ? 'CNPJ ' + l.cnpj : '', l.codConvenio ? 'convênio ' + l.codConvenio : ''].filter(Boolean).map(esc).join(' · ') || cx.rotulo}<br>${cx.conv ? `Tabela base <b>${esc(cx.ref.nome)}</b>: exame sem valor diferenciado segue o preço dela · ` : ''}Margem pelo perfil da ${esc(t?.nome || 'Particular')}: ${cx.pisoNome} ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · ${resumoPerfil(t)}`
-    : `Piso ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · desconto de referência ${cx.descTxt}${cx.dmaxTxt ? ` e máximo ${cx.dmaxTxt}` : ''} sobre a Particular · ${resumoPerfil(t)}`;
+    : `Piso ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · desconto de referência ${cx.descTxt}${cx.dmaxTxt ? ` e máximo ${cx.dmaxTxt}` : ''} sobre a Particular${t.toleranciaDesc ? ` (tolerância ${num(t.toleranciaDesc * 100, 1)} p.p.)` : ''}${t.toleranciaMargem ? ` · tolerância de margem ${num(t.toleranciaMargem * 100, 1)} p.p.` : ''} · ${resumoPerfil(t)}`;
   const bts = [];
   if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportUnilabParticular()" title="CSV da tabela Particular exportado do Unilab"><i class="fa-solid fa-file-import"></i>Importar do Unilab</button>`);
   if (cx.tabela && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportTabela('${cx.id}')"><i class="fa-solid fa-file-import"></i>Importar do Unilab</button>`);
@@ -311,11 +311,13 @@ function linhaGrade(cx, e) {
   // desconto sobre a referência (negativo = preço acima dela); descRef = desconto de referência da tabela
   const c = calcular(e, preco, cx.tab);
   return { e, k, preco, c, ed: editado(cx, k), salvo: cx.salvo(k), ref, sist: cx.sistema(k), hier, pend: propPendente(cx.alvo, k),
-    desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.lab || cx.base ? 0 : c.descRef, descMax: cx.tabela && !precoSimbolico(preco) ? c.descMax : null };
+    desc: ref && preco != null ? 1 - preco / ref : null, descRef: cx.lab || cx.base ? 0 : c.descRef, descMax: cx.tabela && !precoSimbolico(preco) ? c.descMax : null, descTol: cx.tabela ? c.descTol : 0 };
 }
 
-// Desconto acima do máximo da tabela (sem máximo configurado = sem limite)
-const acimaDescMax = (desc, max) => max != null && desc != null && desc !== 0 && desc > max + 0.0005;
+// Desconto acima do máximo da tabela (sem máximo configurado = sem limite) e acima do de referência.
+// tol: tolerância de desconto da tabela (pontos acima que ainda não geram alerta, ex.: preço arredondado)
+const acimaDescMax = (desc, max, tol = 0) => max != null && desc != null && desc !== 0 && desc > max + (tol || 0) + 0.0005;
+const acimaDescRef = (desc, ref, tol = 0) => ref != null && desc != null && desc > ref + (tol || 0) + 0.0005;
 
 // "Na tabela" e "Fora da tabela" seguem o preço publicado: alterar o rascunho não tira o exame da lista em que ele está
 const FILTROS_GRADE = {
@@ -327,8 +329,8 @@ const FILTROS_GRADE = {
   x:    { nome: 'Sem custo',        icone: 'fa-circle-question',     f: x => x.preco != null && x.c.semCusto, cor: 'var(--gray)' },
   div:  { nome: 'Diverge do Unilab', icone: 'fa-code-compare',       f: x => x.sist != null && x.preco != null && Math.abs(x.sist - x.preco) > 0.004, cor: 'var(--amber)' },
   funi: { nome: 'Fora do Unilab',   icone: 'fa-plug-circle-xmark',   f: x => x.salvo != null && x.sist == null && temUnilabGrade(), cor: 'var(--red)' },
-  dref: { nome: 'Desconto referência', icone: 'fa-percent',          f: x => x.desc != null && x.desc > x.descRef + 0.0005, cor: 'var(--amber)' },
-  dmax: { nome: 'Acima do desc. máximo', icone: 'fa-ban',          f: x => acimaDescMax(x.desc, x.descMax), cor: 'var(--red)' },
+  dref: { nome: 'Desconto referência', icone: 'fa-percent',          f: x => acimaDescRef(x.desc, x.descRef, x.descTol), cor: 'var(--amber)' },
+  dmax: { nome: 'Acima do desc. máximo', icone: 'fa-ban',          f: x => acimaDescMax(x.desc, x.descMax, x.descTol), cor: 'var(--red)' },
   dneg: { nome: 'Desconto negativo', icone: 'fa-arrow-trend-up',     f: x => x.desc != null && x.desc < -0.0005, cor: 'var(--red)' },
   hier: { nome: 'Quebra hierarquia', icone: 'fa-stairs',            f: x => x.hier.length > 0, cor: 'var(--amber)' },
   ed:   { nome: 'No rascunho',      icone: 'fa-pen',                 f: x => x.ed, cor: 'var(--cyan)' }
@@ -421,7 +423,7 @@ function htmlLinhaGrade(cx, x, edit) {
   const delta = !ed ? '' : salvo == null ? `<span class="delta-dn">${cx.lab ? 'novo valor' : 'entra na tabela'}</span>`
     : preco == null ? `<span class="delta-up">${cx.lab ? 'remover valor' : 'sai da tabela'}</span>`
     : Math.abs(d) > 0.004 ? `<span class="${d > 0 ? 'delta-dn' : 'delta-up'}">${d > 0 ? '+' : ''}${fmt(d)} (${d > 0 ? '+' : ''}${pct(d / salvo)})</span>` : '';
-  const desc = ref && preco != null ? 1 - preco / ref : null, dmax = acimaDescMax(desc, x.descMax);
+  const desc = ref && preco != null ? 1 - preco / ref : null, dmax = acimaDescMax(desc, x.descMax, x.descTol);
   const divg = sist != null && preco != null && Math.abs(sist - preco) > 0.004;
   const b = (a, ic, t, off) => `<button title="${t}" ${off ? 'disabled' : ''} onclick="acaoLinha(this,'${a}')"><i class="fa-solid ${ic}"></i></button>`;
   const acoes = !edit ? '' : x.pend ? (ed ? b('desf', 'fa-rotate-left', 'Tirar do rascunho') : '') : (cx.base ? b('sug', 'fa-wand-magic-sparkles', `Preço sugerido (alvo ${pct(c.alvo)})`, !c.sugerido)
@@ -486,7 +488,11 @@ function teclaGrade(ev) {
 }
 
 // Preço que atinge a margem m: custo total ÷ (1 − imposto − m), arredondado para cima
-const precoParaMargem = (c, m) => m == null || c.semCusto || 1 - parametro('imposto') - m <= 0 ? undefined : Math.ceil(c.custo / (1 - parametro('imposto') - m));
+// Na sugestão de margem da tabela vale a tolerância de margem dela: arredonda para baixo se a margem ainda fica dentro
+const precoParaMargem = (c, m) => {
+  if (m == null || c.semCusto || 1 - parametro('imposto') - m <= 0) return undefined;
+  return c.margTol && c.margemSug != null && Math.abs(m - c.margemSug) < 1e-9 ? precoAlvo(c.custo, m, 1, c.margTol) : Math.ceil(c.custo / (1 - parametro('imposto') - m));
+};
 
 // Preço alvo fora da Particular nunca passa do valor da Particular do exame
 function tetoParticular(cx, x, v) {
@@ -579,7 +585,7 @@ function resumoRasc(cx) {
     if (o == null) s.novos++; else if (v == null) s.sai++; else if (v > o) s.sobe++; else s.desce++;
     if (b?.status === 'r') s.ab++;
     const ref = cx.tabela ? cx.ref.valor(k) : null;
-    if (b && !precoSimbolico(v) && acimaDescMax(ref && 1 - v / ref, b.descMax)) s.dm++;
+    if (b && !precoSimbolico(v) && acimaDescMax(ref && 1 - v / ref, b.descMax, b.descTol)) s.dm++;
     if (a?.margem != null && b?.margem != null) { s.m0 += a.margem; s.m1 += b.margem; s.k++; }
   });
   return s;

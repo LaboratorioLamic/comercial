@@ -42,7 +42,7 @@ function linhaProposta(cx, k, de, para) {
   const refPub = cx && !cx.base ? cx.ref?.valor(k) ?? null : null;
   const pend = cx && (cx.tabela || (cx.conv && !cx.tab)) ? partPendente(k) : null, ref = pend ? pend.para : refPub;
   const desc = ref && para != null && !precoSimbolico(ref) && !precoSimbolico(para) ? 1 - para / ref : null;
-  return { k, e, mn: e?.mn, de, para, c, c0, ref, refPub, pend, desc, descRef: cx?.tabela ? c?.descRef ?? null : null, descMax: cx?.tabela ? c?.descMax ?? null : null };
+  return { k, e, mn: e?.mn, de, para, c, c0, ref, refPub, pend, desc, descRef: cx?.tabela ? c?.descRef ?? null : null, descMax: cx?.tabela ? c?.descMax ?? null : null, descTol: cx?.tabela ? c?.descTol ?? 0 : 0 };
 }
 
 const ppVar = x => {
@@ -58,7 +58,7 @@ function ppAplicarAlvo(el) {
   inp.dispatchEvent(new Event('input'));
 }
 const ppDesc = x => x.desc == null ? '<span class="muted">—</span>'
-  : `<b class="${acimaDescMax(x.desc, x.descMax) || x.desc < -0.0005 ? 'r' : x.descRef != null && x.desc > x.descRef + 0.0005 ? 'a' : ''}"${acimaDescMax(x.desc, x.descMax) ? ` title="Acima do desconto máximo (${pct(x.descMax, 0)})"` : ''}>${pct(x.desc)}</b>${x.descRef != null ? ppAlvo(x.ref != null ? Math.round(x.ref * (1 - x.descRef)) : null, `ref. ${pct(x.descRef, 0)}`, 'Aplicar o desconto de referência') : ''}${x.pend ? `<small style="color:var(--amber)" title="Particular com proposta pendente: desconto sobre ${fmt(x.pend.para)} (publicado hoje: ${x.refPub != null ? fmt(x.refPub) : '—'})"><i class="fa-solid fa-hourglass-half"></i> Part. ${fmt(x.pend.para)}</small>` : ''}`;
+  : `<b class="${acimaDescMax(x.desc, x.descMax, x.descTol) || x.desc < -0.0005 ? 'r' : acimaDescRef(x.desc, x.descRef, x.descTol) ? 'a' : ''}"${acimaDescMax(x.desc, x.descMax, x.descTol) ? ` title="Acima do desconto máximo (${pct(x.descMax, 0)})"` : ''}>${pct(x.desc)}</b>${x.descRef != null ? ppAlvo(x.ref != null ? Math.round(x.ref * (1 - x.descRef)) : null, `ref. ${pct(x.descRef, 0)}`, 'Aplicar o desconto de referência') : ''}${x.pend ? `<small style="color:var(--amber)" title="Particular com proposta pendente: desconto sobre ${fmt(x.pend.para)} (publicado hoje: ${x.refPub != null ? fmt(x.refPub) : '—'})"><i class="fa-solid fa-hourglass-half"></i> Part. ${fmt(x.pend.para)}</small>` : ''}`;
 // Margem do valor de hoje, sob ele (vermelha abaixo do piso)
 const ppMrg0 = x => x.c0?.margem == null ? '' : `<small${x.c0.status === 'r' ? ' style="color:var(--red)"' : ''} title="Margem do valor de hoje · lucro ${fmt(x.c0.lucro)}">margem ${pct(x.c0.margem)}</small>`;
 const ppMrg = x => {
@@ -99,8 +99,8 @@ function ppSemTransicao(f) {
 
 // Clique no exame: abre a ficha dele, com a mesma volta
 function ppFicha(el, aba) {
-  const k = el.closest('tr').dataset.k, envio = !!document.getElementById('pp-just');
-  const volta = { envio, id: _propId, txt: valorCampo(envio ? 'pp-just' : 'pp-motivo'), rev: { ..._propRev } };
+  const k = el.closest('tr').dataset.k, rx = !!document.getElementById('rx-lista'), envio = !!document.getElementById('pp-just');
+  const volta = rx ? { rx: { ..._rx, sel: new Set(_rx.sel) }, txt: valorCampo('rx-just') } : { envio, id: _propId, txt: valorCampo(envio ? 'pp-just' : 'pp-motivo'), rev: { ..._propRev } };
   if (!ESTADO.exames[k]) return;
   ppFantasma();
   abrirFicha(k, aba);
@@ -118,10 +118,12 @@ fecharGaveta = function () {
   setTimeout(async () => {
     const g = document.getElementById('gaveta');
     g.style.transition = 'none';
-    if (v.envio) await abrirEnvioProposta(); else abrirProposta(v.id);
+    if (v.rx) { _rxVolta = v.rx; await abrirRascunhoExames(null, v.txt); }
+    else if (v.envio) await abrirEnvioProposta(); else abrirProposta(v.id);
     void g.offsetWidth;
     g.style.transition = '';
     ppTirarFantasma();
+    if (v.rx) return;
     const campo = document.getElementById(v.envio ? 'pp-just' : 'pp-motivo');
     if (campo) campo.value = v.txt;
     Object.entries(v.rev).forEach(([k, val]) => {
@@ -139,7 +141,7 @@ function htmlKpisProposta(cx, ls) {
     if (x.c0?.margem != null) { s0 += x.c0.margem; k0++; }
     if (x.desc != null) { sd += x.desc; kd++; }
   });
-  const dm = ls.filter(x => acimaDescMax(x.desc, x.descMax)).length;
+  const dm = ls.filter(x => acimaDescMax(x.desc, x.descMax, x.descTol)).length;
   const kp = (rot, v, cls, sub) => `<div><span>${rot}</span><b class="${cls}">${v}</b><small>${sub}</small></div>`;
   return kp('Margem média', km ? pct(sm / km) : '—', ab ? 'r' : km ? 'g' : '',
       [`${cx.pisoNome} ${cx.pisoTxt}`, cx.margemSug != null ? `ref. ${cx.msugTxt}` : '', k0 ? `antes ${pct(s0 / k0)}` : ''].filter(Boolean).join(' · '))
@@ -253,8 +255,26 @@ function envVs(k, v) {
   document.querySelector(`[data-vs="${CSS.escape(k)}"] .switch`)?.classList.toggle('on', _envVs[k]);
 }
 const envVsTodos = v => Object.keys(_envVs).forEach(k => envVs(k, v ?? !_envVs[k]));
+// "Aprovar e publicar" direto do rascunho (sem passar pela aprovação de outra pessoa): pede confirmação
+function confirmarPublicarSemRevisao({ n, tabelas = [], ab = 0, dm = 0 }) {
+  const li = (ic, t, cor = '') => `<span${cor ? ` style="color:${cor}"` : ''}><i class="fa-solid ${ic}"${cor ? ` style="color:${cor}"` : ''}></i>${t}</span>`;
+  return confirmar({
+    titulo: 'Publicar sem revisão?', icone: 'fa-stamp', tom: 'pausa', botao: 'Publicar sem revisão', cancelar: 'Voltar',
+    texto: `Os preços passam a valer <b>agora</b>, sem passar pela aprovação de outra pessoa.
+      <span class="modal-li">${li('fa-tag', `<span><b>${n} preço(s)</b> em ${tabelas.map(esc).join(', ')}</span>`)}
+        ${ab ? li('fa-circle-xmark', `${ab} abaixo do piso de margem`, 'var(--red)') : ''}
+        ${dm ? li('fa-ban', `${dm} acima do desconto máximo`, 'var(--red)') : ''}
+        ${li('fa-clock-rotate-left', 'Fica no histórico do exame com o seu nome')}</span>
+      <small>Para alguém revisar antes, use <b>Enviar para aprovação</b>.</small>`
+  });
+}
+
 async function enviarProposta(publicar) {
   const cx = ctxAtual(), r = rasc(cx.alvo), u = usuarioAtual();
+  if (publicar) {
+    const s = resumoRasc(cx);
+    if (await confirmarPublicarSemRevisao({ n: s.n, tabelas: [cx.nome], ab: s.ab, dm: s.dm }) !== true) return;
+  }
   const just = valorCampo('pp-just').trim();
   const itens = {};
   Object.entries(r).forEach(([k, v]) => {
