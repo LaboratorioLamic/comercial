@@ -34,5 +34,7 @@ const prazoDe = r => !r ? '' : prazoTexto(r.prazoDias) || r.prazo || '';
 const dataHora = ts => ts ? new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
 // Objeto {id: item} → lista ordenada
+// Dois preços diferem? (null/undefined = ausente; tolerância de meio centavo)
+const precoDifere = (a, b) => a == null || b == null ? (a ?? null) !== (b ?? null) : Math.abs(a - b) > 0.004;
 const lista = (obj, ordem = (a, b) => 0) => Object.entries(obj || {}).map(([id, v]) => ({ id, ...v })).sort(ordem);
 const porNome = (a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR');

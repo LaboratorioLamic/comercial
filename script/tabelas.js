@@ -291,7 +291,7 @@ function htmlCabGrade(cx) {
     : `Piso ${cx.pisoTxt}${cx.margemSug != null ? ` · sugestão de margem ${cx.msugTxt}` : ''} · desconto de referência ${cx.descTxt}${cx.dmaxTxt ? ` e máximo ${cx.dmaxTxt}` : ''} sobre a Particular · ${resumoPerfil(t)}`;
   const bts = [];
   if (cx.base && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportUnilabParticular()" title="CSV da tabela Particular exportado do Unilab"><i class="fa-solid fa-file-import"></i>Importar do Unilab</button>`);
-  if (cx.tabela && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportTabela('${cx.id}')"><i class="fa-solid fa-file-import"></i>Importar</button>`);
+  if (cx.tabela && pode('tabelas', 'editar')) bts.push(`<button class="btn sm" onclick="abrirImportTabela('${cx.id}')"><i class="fa-solid fa-file-import"></i>Importar do Unilab</button>`);
   if (cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="${cx.conv ? 'exportarConveniado' : 'exportarLaboratorio'}('${cx.id}')"><i class="fa-solid fa-file-csv"></i>Exportar lista</button>`);
   if (!cx.lab && pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="exportarTabelaUnilab('${cx.alvo}')"><i class="fa-solid fa-file-csv"></i>Exportar p/ Unilab</button>`);
   if (pode('tabelas', 'exportar')) bts.push(`<button class="btn sm" onclick="abrirPdfTabela('${cx.alvo}')" title="PDF com os preços publicados"><i class="fa-solid fa-file-pdf"></i>PDF</button>`);
@@ -326,13 +326,16 @@ const FILTROS_GRADE = {
   a:    { nome: 'Abaixo do alvo',   icone: 'fa-circle-exclamation',  f: x => x.c.status === 'a', cor: 'var(--amber)' },
   x:    { nome: 'Sem custo',        icone: 'fa-circle-question',     f: x => x.preco != null && x.c.semCusto, cor: 'var(--gray)' },
   div:  { nome: 'Diverge do Unilab', icone: 'fa-code-compare',       f: x => x.sist != null && x.preco != null && Math.abs(x.sist - x.preco) > 0.004, cor: 'var(--amber)' },
+  funi: { nome: 'Fora do Unilab',   icone: 'fa-plug-circle-xmark',   f: x => x.salvo != null && x.sist == null && temUnilabGrade(), cor: 'var(--red)' },
   dref: { nome: 'Desconto referência', icone: 'fa-percent',          f: x => x.desc != null && x.desc > x.descRef + 0.0005, cor: 'var(--amber)' },
   dmax: { nome: 'Acima do desc. máximo', icone: 'fa-ban',          f: x => acimaDescMax(x.desc, x.descMax), cor: 'var(--red)' },
   dneg: { nome: 'Desconto negativo', icone: 'fa-arrow-trend-up',     f: x => x.desc != null && x.desc < -0.0005, cor: 'var(--red)' },
   hier: { nome: 'Quebra hierarquia', icone: 'fa-stairs',            f: x => x.hier.length > 0, cor: 'var(--amber)' },
   ed:   { nome: 'No rascunho',      icone: 'fa-pen',                 f: x => x.ed, cor: 'var(--cyan)' }
 };
-const filtrosDe = cx => cx.base ? ['', 'r', 'a', 'x', 'div', 'hier', 'ed'] : cx.lab ? ['', 'r', 'x', 'dneg', 'ed'] : ['tab', '', 'fora', 'r', 'x', 'div', 'dref', 'dmax', 'dneg', 'hier', 'ed'];
+// Só há o que comparar se a tabela tem preços do Unilab importados (Particular: sempre)
+const temUnilabGrade = () => grade.alvo === 'particular' || !!ESTADO.tabelas[grade.alvo]?.sistema;
+const filtrosDe = cx => cx.base ? ['', 'r', 'a', 'x', 'div', 'funi', 'hier', 'ed'] : cx.lab ? ['', 'r', 'x', 'dneg', 'ed'] : ['tab', '', 'fora', 'r', 'x', 'div', 'funi', 'dref', 'dmax', 'dneg', 'hier', 'ed'];
 
 // Opções do popover de filtro: visão e alertas (o rascunho tem botão próprio), com a contagem da última grade desenhada
 function opcoesFiltroGrade(cx) {

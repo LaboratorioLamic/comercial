@@ -44,6 +44,7 @@ function confirmar({ titulo = 'Confirmar', texto = '', botao = 'Confirmar', peri
   return new Promise(resolve => {
     const m = document.getElementById('modal');
     m.innerHTML = `<div class="modal-card" role="dialog" aria-modal="true">
+        <button class="modal-x" data-x title="Fechar"><i class="fa-solid fa-xmark"></i></button>
         <div class="modal-ic ${perigo ? 'perigo' : tom}"><i class="fa-solid ${icone || (perigo ? 'fa-triangle-exclamation' : 'fa-circle-question')}"></i></div>
         <h3>${esc(titulo)}</h3><p>${texto}</p>
         <div class="modal-acoes"><button class="btn" data-r="0">${esc(cancelar)}</button><button class="btn ${perigo ? 'perigo' : 'pri'}" data-r="1">${esc(botao)}</button></div>
@@ -52,6 +53,7 @@ function confirmar({ titulo = 'Confirmar', texto = '', botao = 'Confirmar', peri
     const fim = r => { m.classList.remove('open'); document.removeEventListener('keydown', tecla); resolve(r); };
     const tecla = e => { if (e.key === 'Escape') fim(null); if (e.key === 'Enter') fim(true); };
     m.querySelectorAll('[data-r]').forEach(b => b.onclick = () => fim(b.dataset.r === '1'));
+    m.querySelector('[data-x]').onclick = () => fim(null);
     m.onclick = e => { if (e.target === m) fim(null); };
     document.addEventListener('keydown', tecla);
     m.querySelector('[data-r="1"]').focus();

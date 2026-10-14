@@ -121,10 +121,10 @@ async function excluirTabela(id) {
 // ── Importação ────────────────────────────────────────────────
 // Aceita: aba da planilha (cartões/convênios: 📑MN + 💲 FINAL; Lamic-to-Lab: 📑MN,
 // 💲 Cheia, 💲 L2L = preço no Unilab, 💲 Proposta = rascunho) ou o CSV do Unilab.
-const tbi = { id: null, texto: null, nome: '', analise: null, erro: '', modo: 'substituir', usarSistema: false };
+const tbi = { id: null, texto: null, nome: '', analise: null, erro: '', modo: 'substituir', usarSistema: '' }; // usarSistema: '' (só referência) | 'novos' | 'todos'
 
 function abrirImportTabela(id) {
-  Object.assign(tbi, { id, texto: null, nome: '', analise: null, erro: '', modo: Object.keys(ESTADO.tabelas[id]?.precos || {}).length ? 'mesclar' : 'substituir', usarSistema: false });
+  Object.assign(tbi, { id, texto: null, nome: '', analise: null, erro: '', modo: Object.keys(ESTADO.tabelas[id]?.precos || {}).length ? 'mesclar' : 'substituir', usarSistema: '' });
   abrirGaveta({ sobre: 'Importar preços', titulo: ESTADO.tabelas[id].nome, corpo: '<div id="tbi-corpo"></div>', rodape: '<div id="tbi-rodape" style="display:contents"></div>' });
   desenharImportTabela();
 }
@@ -195,14 +195,34 @@ function analisarImportTabela() {
     const atuais = t.precos || {};
     a.nPrecos = Object.keys(a.precos).length; a.nSistema = Object.keys(a.sistema).length; a.nProposta = Object.keys(a.proposta).length;
     a.mudam = Object.entries(a.precos).filter(([k, v]) => atuais[k] != null && Math.abs(atuais[k] - v) > 0.004).length;
+    a.iguais = Object.entries(a.precos).filter(([k, v]) => !precoDifere(atuais[k], v)).length;
+    const sis0 = t.sistema || {};
+    a.sisMudam = [...new Set([...Object.keys(a.sistema), ...Object.keys(sis0)])].filter(k => precoDifere(sis0[k], a.sistema[k])).length;
     a.novos = Object.keys(a.precos).filter(k => atuais[k] == null).length;
     a.saem = Object.keys(atuais).filter(k => a.precos[k] == null).length;
     a.abaixo = Object.entries(a.precos).filter(([k, v]) => calcular(ESTADO.exames[k], v, t).status === 'r').length;
     a.propDif = Object.entries(a.proposta).filter(([k, v]) => Math.abs(v - (a.precos[k] ?? atuais[k] ?? -1)) > 0.004).length;
+    // proposta igual ao preço que fica na tabela não vai ao rascunho
+    a.proposta = Object.fromEntries(Object.entries(a.proposta).filter(([k, v]) => Math.abs(v - (a.precos[k] ?? atuais[k] ?? -1)) > 0.004));
     if (!a.nPrecos && !a.nSistema && !a.nProposta) throw new Error('Nenhum preço encontrado no arquivo.');
     tbi.analise = a;
   } catch (e) { tbi.erro = e.message; }
   desenharImportTabela();
+}
+
+// Unilab × tabela atual: o que muda nos preços e na referência do Unilab
+function resumoUnilabTbi(a, t) {
+  const atuais = t.precos || {}, s0 = t.sistema || {}, ks = Object.keys(a.sistema);
+  return {
+    precoMuda: ks.filter(k => atuais[k] != null && precoDifere(atuais[k], a.sistema[k])).length,
+    precoEntra: ks.filter(k => atuais[k] == null).length,
+    precoIgual: ks.filter(k => atuais[k] != null && !precoDifere(atuais[k], a.sistema[k])).length,
+    refNova: ks.filter(k => s0[k] == null).length,
+    refNovaComPreco: ks.filter(k => s0[k] == null && atuais[k] != null).length,
+    refMuda: ks.filter(k => s0[k] != null && precoDifere(s0[k], a.sistema[k])).length,
+    refSai: Object.keys(s0).filter(k => a.sistema[k] == null).length,
+    semUnilab: Object.keys(atuais).filter(k => a.sistema[k] == null).length
+  };
 }
 
 function desenharImportTabela() {
@@ -217,9 +237,9 @@ function desenharImportTabela() {
     ${tbi.erro ? `<div class="alert r" style="margin-top:12px"><i class="fa-solid fa-circle-xmark"></i><div>${esc(tbi.erro)}</div></div>` : ''}
     ${a ? `<div class="sec-t" style="margin-top:16px"><i class="fa-solid fa-magnifying-glass"></i>${esc(a.tipo)}</div>
       <div class="sumgrid">
-        ${a.nPrecos ? kp('fa-tag', 'var(--cyan)', 'Preços', a.nPrecos, `${a.novos} novos · ${a.mudam} mudam`) : ''}
+        ${a.nPrecos ? kp('fa-tag', 'var(--cyan)', 'Preços', a.nPrecos, `${a.novos} novos · ${a.mudam} mudam · ${a.iguais} iguais`) : ''}
         ${a.nPrecos && a.saem ? kp('fa-circle-minus', 'var(--gray)', 'Saem da tabela', a.saem, 'só no modo substituir') : ''}
-        ${a.nSistema ? kp('fa-desktop', 'var(--text-muted)', 'Preço no Unilab', a.nSistema, a.blocoUnilab ? 'do bloco Unilab da aba' : a.unilab ? 'efetua = S' : 'coluna 💲 L2L') : ''}
+        ${a.nSistema ? kp('fa-desktop', 'var(--text-muted)', 'Preço no Unilab', a.nSistema, `${(r => [r.refNova && `${r.refNova} novos${r.refNovaComPreco ? ` (${r.refNovaComPreco} já na tabela)` : ''}`, r.refMuda && `${r.refMuda} mudam`, r.refSai && `${r.refSai} saem`].filter(Boolean).join(' · ') || 'nada muda')(resumoUnilabTbi(a, t))} · ${a.blocoUnilab ? 'bloco Unilab da aba' : a.unilab ? 'efetua = S' : 'coluna 💲 L2L'}`) : ''}
         ${a.nProposta ? kp('fa-pen', 'var(--amber)', 'Proposta', a.nProposta, `${a.propDif} diferentes do preço → rascunho`) : ''}
         ${a.nPrecos ? kp('fa-circle-xmark', 'var(--red)', 'Abaixo do piso', a.abaixo, `piso ${pct(t.piso ?? parametro('margemMinima'), 0)}`) : ''}
         ${kp('fa-circle-question', 'var(--amber)', 'Não cadastrados', a.semExame.length, 'mnemônico fora da base')}
@@ -230,7 +250,19 @@ function desenharImportTabela() {
         <div class="opt-cards" id="tbi-modo">
           ${[['substituir', 'Substituir a tabela', 'Exames que não estão no arquivo saem da tabela', 'fa-arrows-rotate'], ['mesclar', 'Atualizar e incluir', 'Mantém os exames que não estão no arquivo', 'fa-code-merge']].map(([v, tt, d, ic]) =>
             `<button type="button" class="oc ${tbi.modo === v ? 'on' : ''}" onclick="tbi.modo='${v}';marcarOc('tbi-modo', this)"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${tt}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`).join('')}</div>` : ''}
-      ${a.unilab ? `<div class="casc" style="margin-top:12px"><div class="casc-r"><div class="lft"><i class="fa-solid fa-copy"></i><div>Usar também como preço da tabela<div class="s">para os exames que ainda não têm preço nesta tabela</div></div></div>${chave(tbi.usarSistema, 'tbi.usarSistema=!tbi.usarSistema;this.classList.toggle(\'on\')')}</div></div>` : ''}
+      ${a.unilab ? (() => {
+        const r = resumoUnilabTbi(a, t), nNovos = r.precoEntra, nMudam = r.precoMuda;
+        return `<div class="sec-t" style="margin-top:14px"><i class="fa-solid fa-tag"></i>Preços da tabela</div>
+        <div class="opt-cards" id="tbi-usar">
+          ${(() => {
+            const j = (...p) => p.filter(Boolean).join(' · ') || 'nada muda';
+            const ref = [r.refNova && `${r.refNova} referência(s) nova(s)${r.refNovaComPreco ? ` (${r.refNovaComPreco} já com preço)` : ''}`, r.refMuda && `${r.refMuda} referência(s) mudam`];
+            return [['', 'Só referência do Unilab', `Os preços da tabela não mudam: ${j(...ref)}`, 'fa-lock'],
+              ['novos', 'Incluir os que faltam', `${j(nNovos && `${nNovos} entram na tabela`, ...ref)}`, 'fa-plus'],
+              ['todos', 'Alterar preço na tabela', `Preços passam a ser os do Unilab: ${j(nMudam && `${nMudam} mudam`, nNovos && `${nNovos} entram`, r.precoIgual && `${r.precoIgual} já iguais`, ...ref)}`, 'fa-arrows-rotate']];
+          })().map(([v, tt, d, ic]) =>
+            `<button type="button" class="oc ${tbi.usarSistema === v ? 'on' : ''}" onclick="tbi.usarSistema='${v}';marcarOc('tbi-usar', this)"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${tt}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`).join('')}</div>`;
+      })() : ''}
       ${a.propDif ? `<div class="alert a" style="margin-top:12px"><i class="fa-solid fa-pen"></i><div>A coluna <b>Proposta</b> vai para o <b>seu rascunho</b> (${a.propDif} preços): revise na tabela e envie para aprovação.</div></div>` : ''}` : ''}`;
   r.innerHTML = `<button class="btn" style="margin-right:auto" onclick="fecharGaveta()">Cancelar</button>
     <button class="btn pri" ${a ? '' : 'disabled'} onclick="gravarImportTabela()"><i class="fa-solid fa-check"></i>Importar</button>`;
@@ -239,32 +271,54 @@ function desenharImportTabela() {
 async function gravarImportTabela() {
   const a = tbi.analise, id = tbi.id, t = ESTADO.tabelas[id];
   if (a.nPrecos && tbi.modo === 'substituir' && Object.keys(t.precos || {}).length) {
-    const ok = await confirmar({ titulo: 'Substituir os preços?', texto: `Os ${Object.keys(t.precos).length} preços atuais de ${esc(t.nome)} serão trocados pelos ${a.nPrecos} do arquivo.`, botao: 'Substituir', perigo: true });
+    const ok = await confirmar({ titulo: 'Substituir os preços?', texto: `${esc(t.nome)} fica igual ao arquivo: ${a.novos} entram, ${a.mudam} mudam e ${a.saem} saem. Os ${a.iguais} iguais não são regravados.`, botao: 'Substituir', perigo: true });
     if (!ok) return;
   }
-  const upd = {};
+  // grava só o que muda: preços iguais aos atuais não são reescritos
+  const upd = {}, P = `${CAMINHOS.tabelas}/${id}/precos`, atuais = t.precos || {};
+  let nGrav = 0;
+  const gravaPreco = (k, v) => { if (precoDifere(atuais[k], v)) { upd[`${P}/${k}`] = v; nGrav++; } };
   if (a.nPrecos) {
-    if (tbi.modo === 'substituir') upd[`${CAMINHOS.tabelas}/${id}/precos`] = a.precos;
-    else Object.entries(a.precos).forEach(([k, v]) => { upd[`${CAMINHOS.tabelas}/${id}/precos/${k}`] = v; });
+    Object.entries(a.precos).forEach(([k, v]) => gravaPreco(k, v));
+    if (tbi.modo === 'substituir') Object.keys(atuais).forEach(k => { if (a.precos[k] == null) gravaPreco(k, null); });
   }
-  if (a.unilab && tbi.usarSistema) Object.entries(a.sistema).forEach(([k, v]) => { if (t.precos?.[k] == null && a.precos[k] == null) upd[`${CAMINHOS.tabelas}/${id}/precos/${k}`] = v; });
-  if (a.nSistema) upd[`${CAMINHOS.tabelas}/${id}/sistema`] = a.sistema;
+  // Unilab → preço da tabela: só os que faltam, ou todos (publica direto, sem aprovação)
+  if (a.unilab && tbi.usarSistema === 'todos') {
+    const r = resumoUnilabTbi(a, t), li = (n, txt) => n ? `<span><b>${num(n, 0)}</b><i>${txt}</i></span>` : '';
+    const ok = await confirmar({ titulo: 'Alterar os preços da tabela?', botao: 'Alterar preços', perigo: true,
+      texto: `${esc(t.nome)} passa a usar os valores do Unilab, publicados agora (sem proposta).
+        <span class="fx-conf fx-lista">${li(r.precoMuda, 'preço(s) mudam')}${li(r.precoEntra, 'exame(s) entram na tabela')}${li(r.precoIgual, 'preço(s) já iguais: não regravados')}
+          ${li(r.refNovaComPreco, 'com preço na tabela e sem Unilab antes: recebem a referência')}${li(r.refMuda, 'referência(s) do Unilab mudam')}
+          ${li(r.semUnilab, 'na tabela e fora do arquivo: continuam como estão')}</span>` });
+    if (ok !== true) return;
+  }
+  if (a.unilab && tbi.usarSistema) Object.entries(a.sistema).forEach(([k, v]) => {
+    if (a.precos[k] != null) return;
+    if (tbi.usarSistema === 'todos' || t.precos?.[k] == null) { gravaPreco(k, v); a.precos[k] = v; }
+  });
+  let nSis = 0;
+  if (a.nSistema) {
+    const s0 = t.sistema || {};
+    [...new Set([...Object.keys(a.sistema), ...Object.keys(s0)])].forEach(k => {
+      if (precoDifere(s0[k], a.sistema[k])) { upd[`${CAMINHOS.tabelas}/${id}/sistema/${k}`] = a.sistema[k] ?? null; nSis++; }
+    });
+  }
   upd[`${CAMINHOS.tabelas}/${id}/importadoEm`] = DB.agora();
   upd[`${CAMINHOS.tabelas}/${id}/arquivo`] = tbi.nome;
   await DB.mesclar('/', upd);
   // atualiza o estado local antes de montar o rascunho (o ouvinte chega depois)
-  ESTADO.tabelas[id] = { ...t, precos: tbi.modo === 'substituir' && a.nPrecos ? a.precos : { ...(t.precos || {}), ...a.precos }, sistema: a.nSistema ? a.sistema : t.sistema };
+  ESTADO.tabelas[id] = { ...t, precos: tbi.modo === 'substituir' && a.nPrecos ? { ...a.precos } : { ...atuais, ...a.precos }, sistema: a.nSistema ? a.sistema : t.sistema };
   let nr = 0;
-  if (a.nProposta) {
+  if (Object.keys(a.proposta).length) {
     await carregarRascunho(id);
     nr = await substituirRasc(id, { ...rasc(id), ...a.proposta });
   }
-  registrar('tabelas', `${t.nome}: importação de ${tbi.nome} (${a.nPrecos} preços, ${a.nSistema} no Unilab${nr ? `, ${nr} no rascunho` : ''})`, { modo: tbi.modo });
+  registrar('tabelas', `${t.nome}: importação de ${tbi.nome} (${nGrav} preço(s) alterados, ${nSis} no Unilab${nr ? `, ${nr} no rascunho` : ''}; iguais ignorados)`, { modo: tbi.modo });
   fecharGaveta();
   grade.alvo = null;
   if (nr) grade.proxFiltro = 'ed';
   renderTabelas();
-  toast(`${t.nome}: ${a.nPrecos || a.nSistema} preço(s) importados${nr ? ` · ${nr} no rascunho` : ''}`);
+  toast(nGrav || nSis || nr ? `${t.nome}: ${nGrav} preço(s) alterados · ${nSis} no Unilab${nr ? ` · ${nr} no rascunho` : ''}` : `${t.nome}: nada mudou, tudo já estava igual`);
 }
 
 // ── Exportação no formato do Unilab ───────────────────────────

@@ -159,6 +159,13 @@ function refTabFicha(id) {
   definirTabFicha(id, Math.round(part * (1 - calcular(_fx, null, t).descRef)), true);
 }
 
+// Valor atual no Unilab (sistema do laboratório) comparado ao publicado: verde se bate, âmbar se difere
+function unilabFicha(sist, publicado, temSistema = true) {
+  if (!temSistema) return '<span class="muted" title="Tabela sem preços do Unilab importados">Unilab —</span>';
+  const ok = sist == null ? publicado == null : publicado != null && Math.abs(sist - publicado) < 0.005;
+  return `<span style="color:${ok ? 'var(--green)' : 'var(--amber)'}" title="${ok ? 'Igual ao publicado' : 'Diferente do publicado: atualizar o Unilab'}"><i class="fa-solid ${ok ? 'fa-check' : 'fa-code-compare'}"></i> Unilab ${sist != null ? fmt(sist) : 'sem valor'}</span>`;
+}
+
 // Margem, piso, desconto e delta de cada tabela (sem recriar os campos)
 function atualizarTabsFicha() {
   const part = _fx.precoPraticado;
@@ -166,8 +173,9 @@ function atualizarTabsFicha() {
     const sEl = document.getElementById('fxt-s-' + t.id);
     if (!sEl) return;
     const p = precoTabFicha(t.id), c = p != null ? calcular(_fx, p, t) : null, salvo = t.precos?.[_fxId] ?? null, ed = t.id in _fxTab;
-    sEl.innerHTML = p == null ? `fora da tabela${part && calcular(_fx, null, t).descRef ? ` · ref. ${fmt(Math.round(part * (1 - calcular(_fx, null, t).descRef)))}` : ''}`
+    sEl.innerHTML = p == null ? (part && calcular(_fx, null, t).descRef ? `ref. ${fmt(Math.round(part * (1 - calcular(_fx, null, t).descRef)))}` : '')
       : `${c.semCusto ? 'sem custo' : `<span style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">margem ${pct(c.margem)}</span>`} · piso ${pct(c.min, 0)}${part ? ` · desc. ${pct(1 - p / part)}` : ''}`;
+    sEl.innerHTML += `<div>${unilabFicha(t.sistema?.[_fxId] ?? null, salvo, !!t.sistema)}</div>`;
     document.getElementById('fxt-pi-' + t.id).className = `price-in ${ed ? 'on' : ''}`;
     const d = ed && p != null && salvo != null ? p - salvo : 0;
     document.getElementById('fxt-d-' + t.id).innerHTML = !ed ? '' : salvo == null ? '<span class="delta-dn">entra na tabela</span>' : p == null ? '<span class="delta-up">sai da tabela</span>'
@@ -228,7 +236,8 @@ function desenharRodapeFicha() {
     ${pode('exames', 'editar') ? `<button class="btn" style="margin-right:auto" onclick="abrirDadosExame('${_fxId}')" title="Dados do exame: nome, setor, material, prazo"><i class="fa-solid fa-pen-to-square"></i>${mud ? '' : 'Dados'}</button>` : '<span style="margin-right:auto"></span>'}
     ${editar ? '' : '<button class="btn" onclick="fecharGaveta()">Fechar</button>'}
     ${dados ? `<button class="btn" onclick="salvarFicha('dados')" title="Salva custos e controles agora; os preços continuam pendentes"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>` : ''}
-    ${!editar ? '' : mud ? `<button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('rascunho')" title="Guarda os preços no seu rascunho de cada tabela, para revisar e enviar depois"><i class="fa-solid fa-pen-to-square"></i>${aprova ? (dados ? '' : 'Rascunho') : 'Salvar no rascunho'}</button>
+    ${!editar ? '' : mud ? `<button class="btn" onclick="salvarFicha('rascunho')" title="Guarda os preços no seu rascunho de cada tabela, para revisar e enviar depois"><i class="fa-solid fa-pen-to-square"></i>${aprova ? (dados ? '' : 'Rascunho') : 'Salvar no rascunho'}</button>
+        <button class="btn ${aprova ? '' : 'pri'}" onclick="salvarFicha('proposta')" title="Envia todos os preços alterados para aprovação, numa proposta por tabela (mesmo lote)"><i class="fa-solid fa-paper-plane"></i>${aprova ? (dados ? '' : 'Enviar proposta') : 'Enviar proposta'}</button>
         ${aprova ? `<button class="btn pri" onclick="salvarFicha('publicar')" title="Publica os preços agora"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : ''}`
       : `<button class="btn pri" onclick="salvarFicha()"><i class="fa-solid fa-floppy-disk"></i>Salvar</button>`}`;
 }
@@ -272,8 +281,8 @@ function atualizarFicha() {
     <div class="m muted">${c.minimo ? `mínimo viável ${fmt(c.minimo)}` : 'precisa de custo'}</div>
     ${c.sugerido && pode('exames', 'editar') ? `<button class="btn sm" style="margin-top:8px" onclick="usarSugerido(${c.sugerido})"><i class="fa-solid fa-arrow-right"></i>Usar sugerido</button>` : ''}</div>`;
   document.getElementById('fx-st').innerHTML = tagStatus(c.status);
-  document.getElementById('fx-sist').innerHTML = e.precoSistema != null && preco && Math.abs(e.precoSistema - preco) > 0.004
-    ? `<div class="alert a" style="margin-top:10px"><i class="fa-solid fa-code-compare"></i><div>Preço no sistema do laboratório: <b>${fmt(e.precoSistema)}</b>. Diferente do praticado: atualizar o sistema após publicar.</div></div>` : '';
+  const pub = _fxOrig.precoPraticado || null;
+  document.getElementById('fx-sist').innerHTML = `<div class="hint" style="margin-top:8px"><i class="fa-solid fa-server"></i> Valor atual no Unilab (Particular): ${unilabFicha(e.precoSistema ?? null, pub, !e.inativoNoSistema || e.precoSistema != null)}${e.inativoNoSistema ? ' <span class="muted">· efetua = N</span>' : ''}</div>`;
 
   // Valores: variação do praticado, tabelas, hierarquia, abas e rodapé
   const o = _fxOrig.precoPraticado, d = preco && o ? preco - o : 0;
@@ -430,6 +439,7 @@ function desenharControles() {
       ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">automático: vinculado à tabela importada</div></div></div><span class="badge-s ok"><i class="fa-solid fa-lock"></i>sim</span></div>`
       : `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:${e.negociado ? 'var(--green)' : 'inherit'}"></i><div>Valor negociado com o apoio<div class="s">marcação manual (sem vínculo com tabela importada)</div></div></div>${chave(e.negociado, '_fx.negociado=!_fx.negociado;this.classList.toggle(\'on\')', !editar)}</div>`) : ''}
     <div class="casc-r"><div class="lft"><i class="fa-solid fa-magnifying-glass-dollar" style="color:var(--amber)"></i><div>Valor precisa ser auditado<div class="s">controle interno</div></div></div>${chave(e.auditar, '_fx.auditar=!_fx.auditar;this.classList.toggle(\'on\')', !editar)}</div>
+    <div class="casc-r"><div class="lft"><i class="fa-solid fa-rotate" style="color:var(--green)"></i><div>Valor atualizado no sistema<div class="s">automático: marcado quando o valor publicado bate com o sistema do laboratório</div></div></div>${chave(!valorDesatualizado(_fxId), 'atualizarSistemaFicha()', !editar || !valorDesatualizado(_fxId))}</div>
     <div class="casc-r"><div class="lft"><i class="fa-solid fa-plug-circle-xmark"></i><div>Fora do sistema do laboratório<div class="s">mnemônico não existe no catálogo</div></div></div>${chave(e.foraDoSistema, '_fx.foraDoSistema=!_fx.foraDoSistema;this.classList.toggle(\'on\');atualizarFicha()', !editar)}</div>
   </div>`;
 }
@@ -510,19 +520,35 @@ async function salvarFicha(modo) {
   }
 
   // preços: uma proposta por tabela
-  const just = (e.justificativa || '').trim() || null;
+  const just = (e.justificativa || '').trim() || null, lote = precos.length > 1 ? DB.novaChave('propostas') : null;
   for (const m of precos) {
     const id = DB.novaChave('propostas');
     const p = { alvo: m.alvo, alvoNome: m.nome, itens: { [k]: { mn: e.mn, de: m.de ?? null, para: m.para ?? null } }, n: 1,
-      justificativa: just, autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente', origem: 'ficha' };
+      justificativa: just, autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente', origem: 'ficha', lote };
     await DB.gravar(`propostas/${id}`, { ...p, em: DB.agora() });
     if (modo === 'publicar') await aplicarProposta(id, p);
     else registrar('tabelas', `${m.nome}: proposta de preço de ${e.mn} enviada (ficha do exame)`, { proposta: id });
   }
-  // publicado direto: o rascunho deste exame deixa de valer
-  if (modo === 'publicar') for (const a of new Set([...precos.map(m => m.alvo), ...desfeitos])) { await carregarRascunho(a); definirRasc(ctxAlvo(a), k, undefined); await gravarRasc(a); }
+  // publicado ou enviado: o rascunho deste exame deixa de valer
+  for (const a of new Set([...precos.map(m => m.alvo), ...desfeitos])) { await carregarRascunho(a); definirRasc(ctxAlvo(a), k, undefined); await gravarRasc(a); }
   fecharGaveta();
   toast(!precos.length ? `${e.mn} salvo` : modo === 'publicar' ? `${e.mn}: ${precos.length} preço(s) publicados` : `${e.mn}: ${precos.length} proposta(s) enviadas para aprovação`);
+}
+
+// Marcar "Valor atualizado no sistema": grava o valor publicado como preço do sistema
+async function atualizarSistemaFicha() {
+  const k = _fxId, ds = divergenciasSistema(k);
+  if (!ds.length) return;
+  const v = x => x != null ? fmt(x) : 'fora';
+  const ok = await confirmar({ titulo: 'Atualizar a tabela do sistema?', icone: 'fa-database', botao: 'Atualizar sistema',
+    texto: `Confirme que o valor já foi lançado no sistema do laboratório. A tabela do sistema <b>no banco de dados</b> passa a ter o valor publicado:`
+      + `<span class="fx-conf">${ds.map(d => `<span><b>${esc(d.nome)}</b><i>${v(d.sist)} → <b>${v(d.salvo)}</b></i></span>`).join('')}</span>` });
+  if (ok !== true) return atualizarFicha();
+  const u = usuarioAtual(), upd = {};
+  ds.forEach(d => { upd[caminhoSistema(d.alvo, k)] = d.salvo; });
+  upd[`historicoExames/${k}/${DB.novaChave('historicoExames')}`] = { descricao: `Sistema atualizado: ${ds.map(d => `${d.nome} ${v(d.sist)} → ${v(d.salvo)}`).join(' · ')}`, usuario: u.nome, usuarioId: u.id, em: DB.agora() };
+  await DB.mesclar('/', upd);
+  toast('Tabela do sistema atualizada');
 }
 
 async function excluirExame() {

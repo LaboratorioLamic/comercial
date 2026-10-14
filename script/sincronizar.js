@@ -61,6 +61,7 @@ function htmlSinc() {
   }
 
   if (sinc.passo === 1) {
+    foraCatalogoSinc();
     const us = sinc.arqs.filter(x => x.a), part = us.find(x => x.alvo === 'particular')?.a.part;
     const tot = k => us.reduce((s, x) => s + x.a[k], 0), cria = pode('exames', 'criar'), edita = pode('tabelas', 'editar');
     const op = (v, t, d, ic) => `<button type="button" class="oc ${sinc.precos === v ? 'on' : ''}" onclick="sinc.precos='${v}';desenharSinc()"><span class="po-ic"><i class="fa-solid ${ic}"></i></span><span><b>${t}</b><small>${d}</small></span><i class="fa-solid fa-circle-check ck"></i></button>`;
@@ -89,7 +90,7 @@ function htmlSinc() {
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-desktop"></i><div>Atualizar o preço no Unilab em ${us.length} tabela(s)<div class="s">referência das divergências; substitui a importação anterior</div></div></div><span class="badge-s ok">sempre</span></div>
         ${part ? sw('novos', `Particular: cadastrar os ${part.novosS.length} exames novos`, cria ? 'preço = valor do Unilab; sem custo e sem setor (entram em Pendências)' : 'seu grupo não pode criar exames', 'fa-plus', !cria || !part.novosS.length)
           + sw('novosN', `Particular: cadastrar também os ${part.novosN.length} com efetua = N`, 'entram inativos, sem preço', 'fa-ban', !cria || !part.novosN.length)
-          + sw('fora', `Particular: marcar ${part.fora.length} exame(s) como fora do sistema`, 'ativos na base que não estão no arquivo', 'fa-plug-circle-xmark', !part.fora.length) : ''}
+          + sw('fora', `Particular: marcar ${part.fora.length} exame(s) como fora do catálogo`, 'ativos na base que não estão em nenhuma tabela do Unilab', 'fa-plug-circle-xmark', !part.fora.length) : ''}
         ${us.some(x => x.alvo !== 'particular') ? sw('incluir', `Incluir nas tabelas os ${soTab} exame(s) que só têm preço no Unilab`, edita ? 'o valor do Unilab vira o preço da tabela (sem passar por aprovação)' : 'seu grupo não pode editar tabelas', 'fa-copy', !edita || !soTab) : ''}
       </div>
       ${sinc.erro ? `<div class="alert r" style="margin-top:12px"><i class="fa-solid fa-circle-xmark"></i><div>${esc(sinc.erro)}</div></div>` : ''}`;
@@ -171,7 +172,18 @@ function analisarArqSinc(x) {
   x.a.div = x.a.divs.length; x.a.so = x.a.sos.length;
 }
 
+// Fora do catálogo da Particular: tira os que aparecem nos outros arquivos desta sincronização
+function foraCatalogoSinc() {
+  const outros = new Set(sinc.arqs.filter(x => x.a?.sistema).flatMap(x => Object.keys(x.a.sistema)));
+  const p = sinc.arqs.find(x => x.alvo === 'particular' && x.a)?.a;
+  if (!p?.part) return;
+  p.part.fora = p.part.fora.filter(k => !outros.has(k));
+  p.part.desmarcar = [...new Set([...(p.part.desmarcar || []), ...Object.keys(ESTADO.exames).filter(k => ESTADO.exames[k].foraDoSistema && outros.has(k))])];
+  p.fora = p.part.fora.length;
+}
+
 async function gravarSinc() {
+  foraCatalogoSinc();
   const us = sinc.arqs.filter(x => x.a);
   const rep = us.find((x, i) => us.findIndex(y => y.alvo === x.alvo) !== i);
   if (rep) { sinc.erro = `Dois arquivos apontam para a mesma tabela (${ctxAlvo(rep.alvo).nome}): escolha "Não importar" em um deles.`; return desenharSinc(); }
@@ -188,7 +200,8 @@ async function gravarSinc() {
       return;
     }
     const base = `${CAMINHOS.tabelas}/${x.alvo}`;
-    upd[`${base}/sistema`] = a.sistema;
+    const s0 = ESTADO.tabelas[x.alvo]?.sistema || {};
+    [...new Set([...Object.keys(a.sistema), ...Object.keys(s0)])].forEach(k => { if (precoDifere(s0[k], a.sistema[k])) upd[`${base}/sistema/${k}`] = a.sistema[k] ?? null; });
     upd[`${base}/importadoEm`] = agora;
     upd[`${base}/arquivo`] = x.nome;
     if (sinc.incluir && edita) a.sos.forEach(k => { upd[`${base}/precos/${k}`] = a.sistema[k]; r.incluidos++; });

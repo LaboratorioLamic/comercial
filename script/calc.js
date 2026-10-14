@@ -185,6 +185,25 @@ function composicaoCusto(c) {
 const celulaCusto = c => c.semCusto ? '—'
   : `<span title="${esc(composicaoCusto(c))}">${fmt(c.custo)}</span><div class="sub-num">teste ${fmt(c.teste.valor)}</div>`;
 
+// Valor publicado × sistema do laboratório: Particular (precoSistema) e tabelas com preços do sistema importados.
+// Só compara tabelas que têm "sistema" (sem importação não há o que comparar).
+const sistemaSuportado = cx => !!cx && (cx.base || (cx.tabela && !!cx.tab?.sistema));
+function divergenciasSistema(k) {
+  const e = ESTADO.exames[k], r = [];
+  if (!e || e.ativo === false) return r;
+  const dif = (a, b) => a == null || b == null ? a !== b : Math.abs(a - b) > 0.004;
+  if (e.precoPraticado && e.precoSistema != null && dif(e.precoPraticado, e.precoSistema)) r.push({ alvo: 'particular', nome: 'Particular', salvo: e.precoPraticado, sist: e.precoSistema });
+  Object.entries(ESTADO.tabelas || {}).forEach(([id, t]) => {
+    if (!t.sistema) return;
+    const salvo = t.precos?.[k] ?? null, sist = t.sistema[k] ?? null;
+    if (dif(salvo, sist)) r.push({ alvo: id, nome: t.nome, salvo, sist });
+  });
+  return r;
+}
+const valorDesatualizado = k => divergenciasSistema(k).length > 0;
+// Caminho do preço do sistema de um exame num alvo
+const caminhoSistema = (alvo, k) => alvo === 'particular' ? `${CAMINHOS.exames}/${k}/precoSistema` : `${CAMINHOS.tabelas}/${alvo}/sistema/${k}`;
+
 // Pendências de um exame (usadas na tela Pendências e nos ícones da lista)
 const PENDENCIAS = {
   custo:  { nome: 'Sem custo',           icone: 'fa-circle-question',          desc: 'Sem custo do teste: margem desconhecida.' },

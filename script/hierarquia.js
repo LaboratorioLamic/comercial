@@ -171,10 +171,11 @@ async function enviarHier(publicar) {
   const ok = await confirmar({ titulo: publicar ? 'Publicar os valores?' : 'Enviar para aprovação?',
     texto: `${n} valor(es) em ${eds.map(([a]) => esc(nomeAlvoHier(a))).join(', ')}. ${publicar ? 'Os preços passam a valer agora.' : 'Os preços só valem depois de aprovados.'}`, botao: publicar ? 'Publicar' : 'Enviar' });
   if (!ok) return;
+  const lote = eds.length > 1 ? DB.novaChave('propostas') : null;
   for (const [a, l] of eds) {
     const cx = ctxAlvo(a), itens = Object.fromEntries(l.map(([k, v]) => [k, { mn: ESTADO.exames[k].mn, de: cx.salvo(k) ?? null, para: v }]));
     const id = DB.novaChave('propostas');
-    const p = { alvo: a, alvoNome: cx.nome, itens, n: l.length, justificativa: 'Correção de hierarquia', autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente' };
+    const p = { alvo: a, alvoNome: cx.nome, itens, n: l.length, justificativa: 'Correção de hierarquia', autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente', lote };
     await DB.gravar(`propostas/${id}`, { ...p, em: DB.agora() });
     if (publicar) await aplicarProposta(id, p);
     else registrar('tabelas', `${cx.nome}: proposta com ${l.length} preço(s) enviada (hierarquia)`, { proposta: id });

@@ -47,18 +47,30 @@ function mapaMnemonicos() {
 }
 
 // Compara a tabela Particular do Unilab (analisarSistema) com os exames cadastrados
-function analiseUnilabParticular(sis) {
+// Exames com preço do Unilab em alguma tabela além da Particular (+ chaves de outros arquivos da mesma sincronização)
+function emOutrasTabelasUnilab(extras = []) {
+  const s = new Set(extras);
+  Object.values(ESTADO.tabelas || {}).forEach(t => Object.keys(t.sistema || {}).forEach(k => s.add(k)));
+  return s;
+}
+function analiseUnilabParticular(sis, extras = []) {
   const porMn = mapaMnemonicos();
-  const a = { linhas: Object.keys(sis).length, atualizar: [], divergentes: [], novosS: [], novosN: [], inativos: 0, fora: [] };
+  const a = { linhas: Object.keys(sis).length, atualizar: [], iguais: 0, divergentes: [], novosS: [], novosN: [], inativos: 0, fora: [] };
   Object.values(sis).forEach(s => {
     const k = porMn[s.mn.toUpperCase()];
     if (!k) { (s.efetua && s.ch > 0 ? a.novosS : a.novosN).push(s); return; }
     const e = ESTADO.exames[k];
-    a.atualizar.push({ k, s });
+    // só entra se algo muda: preço no Unilab, efetua S/N ou marca de fora do sistema
+    if (precoDifere(e.precoSistema, s.efetua ? s.ch : null) || !!e.inativoNoSistema === !!s.efetua || e.foraDoSistema) a.atualizar.push({ k, s });
+    else a.iguais++;
     if (!s.efetua) a.inativos++;
     if (s.efetua && s.ch > 0 && Math.abs((e.precoPraticado || 0) - s.ch) > 0.004) a.divergentes.push({ k, e, de: e.precoPraticado || null, para: s.ch });
   });
-  a.fora = Object.keys(porMn).filter(m => !sis[m]).map(m => porMn[m]).filter(k => ESTADO.exames[k].ativo !== false);
+  // fora do catálogo = não existe em nenhuma tabela do Unilab (Particular nem demais); fora só da Particular não conta
+  const noUnilab = emOutrasTabelasUnilab(extras);
+  a.fora = Object.keys(porMn).filter(m => !sis[m]).map(m => porMn[m]).filter(k => ESTADO.exames[k].ativo !== false && !ESTADO.exames[k].foraDoSistema && !noUnilab.has(k));
+  // marcados como fora, mas presentes em outra tabela do Unilab: desmarca
+  a.desmarcar = Object.keys(porMn).filter(m => !sis[m]).map(m => porMn[m]).filter(k => ESTADO.exames[k].foraDoSistema && noUnilab.has(k));
   if (!a.linhas) throw new Error('Nenhum exame encontrado no arquivo.');
   return a;
 }
@@ -77,11 +89,11 @@ function desenharImportUnilab() {
     ${pui.erro ? `<div class="alert r" style="margin-top:12px"><i class="fa-solid fa-circle-xmark"></i><div>${esc(pui.erro)}</div></div>` : ''}
     ${a ? `<div class="sumgrid" style="margin-top:14px">
         ${kp('fa-list', 'var(--text-muted)', 'Linhas no arquivo', a.linhas)}
-        ${kp('fa-arrows-rotate', 'var(--cyan)', 'Já cadastrados', a.atualizar.length, `${a.inativos} com efetua = N`)}
+        ${kp('fa-arrows-rotate', 'var(--cyan)', 'Mudam no Unilab', a.atualizar.length, `${num(a.iguais, 0)} iguais: ignorados`)}
         ${kp('fa-code-compare', 'var(--amber)', 'Preço diferente', a.divergentes.length, 'Unilab × praticado')}
         ${kp('fa-plus', 'var(--green)', 'Novos (efetua S)', a.novosS.length, 'com preço no Unilab')}
         ${kp('fa-ban', 'var(--gray)', 'Novos (efetua N)', a.novosN.length, 'não efetuados pela Particular')}
-        ${kp('fa-plug-circle-xmark', 'var(--red)', 'Fora do Unilab', a.fora.length, 'na base, não no arquivo')}
+        ${kp('fa-plug-circle-xmark', 'var(--red)', 'Fora do catálogo', a.fora.length, 'em nenhuma tabela do Unilab')}
       </div>
       ${a.divergentes.length ? `<div class="sec-t"><i class="fa-solid fa-code-compare"></i>Preços diferentes (${a.divergentes.length})</div>
         <div class="tbl-wrap card-in" style="max-height:220px;overflow-y:auto"><table><thead><tr><th>MN</th><th class="desc">Exame</th><th class="num">Praticado</th><th class="num">Unilab</th></tr></thead>
@@ -93,10 +105,10 @@ function desenharImportUnilab() {
         </div>` : ''}
       <div class="sec-t"><i class="fa-solid fa-sliders"></i>Ao importar</div>
       <div class="casc">
-        <div class="casc-r"><div class="lft"><i class="fa-solid fa-desktop"></i><div>Atualizar o preço no Unilab dos ${a.atualizar.length} exames cadastrados<div class="s">referência da divergência e situação efetua S/N</div></div></div><span class="badge-s ok">sempre</span></div>
+        <div class="casc-r"><div class="lft"><i class="fa-solid fa-desktop"></i><div>Atualizar o preço no Unilab de ${a.atualizar.length} exame(s)<div class="s">só os que mudaram (preço ou efetua S/N); ${num(a.iguais, 0)} iguais ficam como estão</div></div></div><span class="badge-s ok">sempre</span></div>
         ${sw('novos', `Cadastrar os ${a.novosS.length} exames novos`, cria ? 'preço = valor do Unilab; nome, material e prazo do catálogo de instruções; sem custo e sem setor' : 'seu grupo não pode criar exames', 'fa-plus', !cria || !a.novosS.length)}
         ${sw('novosN', `Cadastrar também os ${a.novosN.length} com efetua = N`, 'entram inativos, sem preço', 'fa-ban', !cria || !a.novosN.length)}
-        ${sw('fora', `Marcar ${a.fora.length} exame(s) como fora do sistema`, 'ativos na base que não estão no arquivo', 'fa-plug-circle-xmark', !a.fora.length)}
+        ${sw('fora', `Marcar ${a.fora.length} exame(s) como fora do catálogo`, 'ativos na base que não estão em nenhuma tabela do Unilab', 'fa-plug-circle-xmark', !a.fora.length)}
       </div>` : ''}`;
   r.innerHTML = `<button class="btn" style="margin-right:auto" onclick="fecharGaveta()">Cancelar</button>
     <button class="btn pri" ${a ? '' : 'disabled'} onclick="gravarImportUnilab()"><i class="fa-solid fa-check"></i>Importar</button>`;
@@ -114,6 +126,7 @@ function gravacoesUnilabParticular(a, op, upd) {
     upd[`${CAMINHOS.exames}/${k}/foraDoSistema`] = null;
   });
   if (op.fora) a.fora.forEach(k => { upd[`${CAMINHOS.exames}/${k}/foraDoSistema`] = true; });
+  (a.desmarcar || []).forEach(k => { upd[`${CAMINHOS.exames}/${k}/foraDoSistema`] = null; });
   // novos
   const novos = cria ? [...(op.novos ? a.novosS : []), ...(op.novosN ? a.novosN : [])] : [];
   novos.forEach(s => {

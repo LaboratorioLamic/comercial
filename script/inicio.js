@@ -36,9 +36,10 @@ function resumoProposta(p) {
 // Exames marcados no controle interno que também entram no sino
 const SINO_EXAMES = {
   aud:  { nome: 'A auditar', icone: 'fa-magnifying-glass-dollar', cor: 'var(--amber)', f: e => !!e.auditar, vazio: 'Nenhum exame marcado para auditoria.' },
-  sist: { nome: 'Fora do sistema', icone: 'fa-plug-circle-xmark', cor: 'var(--gray)', f: e => !!e.foraDoSistema, vazio: 'Nenhum exame marcado como fora do sistema.' }
+  vsis: { nome: 'Atualizar no UniLab', icone: 'fa-clock-rotate-left', cor: 'var(--red)', f: (e, id) => valorDesatualizado(id), vazio: 'Nenhum valor pendente de atualização no UniLab.' },
+  sist: { nome: 'Fora do catálogo', icone: 'fa-plug-circle-xmark', cor: 'var(--gray)', f: e => !!e.foraDoSistema, vazio: 'Nenhum exame marcado como fora do catálogo.' }
 };
-const sinoExames = k => Object.entries(ESTADO.exames || {}).filter(([, e]) => e.ativo !== false && SINO_EXAMES[k].f(e))
+const sinoExames = k => Object.entries(ESTADO.exames || {}).filter(([id, e]) => e.ativo !== false && SINO_EXAMES[k].f(e, id))
   .map(([id, e]) => ({ id, ...e })).sort((a, b) => (b.atualizadoEm || 0) - (a.atualizadoEm || 0));
 // Abas do sino conforme o acesso: propostas (tabelas) e controles dos exames
 function sinoAbas() {
@@ -47,18 +48,30 @@ function sinoAbas() {
   if (pode('exames')) Object.entries(SINO_EXAMES).forEach(([k, x]) => abas.push({ k, nome: x.nome, icone: x.icone, n: sinoExames(k).length }));
   return abas;
 }
-const sinoTotal = () => sinoAbas().reduce((s, a) => s + a.n, 0);
+// Abas silenciadas por usuário (preferência deste navegador): não contam no sino nem no resumo
+const _sinoMudoChave = () => `sinoMudo:${usuarioAtual()?.id || ''}`;
+function sinoMudo() { try { return new Set(JSON.parse(localStorage.getItem(_sinoMudoChave()) || '[]')); } catch { return new Set(); } }
+function alternarSinoMudo(k) {
+  const m = sinoMudo();
+  m.has(k) ? m.delete(k) : m.add(k);
+  try { localStorage.setItem(_sinoMudoChave(), JSON.stringify([...m])); } catch {}
+  atualizarSino?.();
+  const pan = document.getElementById('sino-pan');
+  if (pan) pan.innerHTML = sinoPainel();
+}
+const sinoTotal = () => { const m = sinoMudo(); return sinoAbas().filter(a => !m.has(a.k)).reduce((s, a) => s + a.n, 0); };
 let _sinoAba = '';
 const SINO_MAX = 60;
 
 function sinoPainel() {
-  const abas = sinoAbas(), total = abas.reduce((s, a) => s + a.n, 0);
+  const m = sinoMudo(), abas = sinoAbas().map(a => ({ ...a, mudo: m.has(a.k) })), total = abas.filter(a => !a.mudo).reduce((s, a) => s + a.n, 0);
   if (!abas.find(a => a.k === _sinoAba)) _sinoAba = (abas.find(a => a.n) || abas[0])?.k || '';
   return `
     <div class="sino-h"><span class="sino-ic"><i class="fa-solid fa-bell"></i></span>
-      <div><b>Notificações</b><span>${total ? abas.filter(a => a.n).map(a => `${num(a.n, 0)} ${a.nome.toLowerCase()}`).join(' · ') : 'Nada pendente'}</span></div>
+      <div><b>Notificações</b><span>${total ? abas.filter(a => a.n && !a.mudo).map(a => `${num(a.n, 0)} ${a.nome.toLowerCase()}`).join(' · ') : 'Nada pendente'}</span></div>
       <button class="pop-x" onclick="fecharSino()" title="Fechar"><i class="fa-solid fa-xmark"></i></button></div>
-    ${abas.length > 1 ? `<div class="sino-abas">${abas.map(a => `<button class="${a.k === _sinoAba ? 'on' : ''}" onclick="_sinoAba='${a.k}';document.getElementById('sino-pan').innerHTML=sinoPainel()"><i class="fa-solid ${a.icone}"></i>${a.nome}${a.n ? `<b>${a.n > 99 ? '99+' : a.n}</b>` : ''}</button>`).join('')}</div>` : ''}
+    ${abas.length > 1 ? `<div class="sino-abas">${abas.map(a => `<button class="${a.k === _sinoAba ? 'on' : ''}" onclick="_sinoAba='${a.k}';document.getElementById('sino-pan').innerHTML=sinoPainel()"><i class="fa-solid ${a.mudo ? 'fa-bell-slash' : a.icone}"></i>${a.nome}${a.n ? `<b class="${a.mudo ? 'mudo' : ''}">${a.n > 99 ? '99+' : a.n}</b>` : ''}</button>`).join('')}</div>` : ''}
+    ${_sinoAba ? `<div class="sino-mudo"><span><i class="fa-solid ${m.has(_sinoAba) ? 'fa-bell-slash' : 'fa-bell'}"></i>Notificar ${esc(abas.find(a => a.k === _sinoAba)?.nome.toLowerCase() || '')}</span>${chave(!m.has(_sinoAba), `alternarSinoMudo('${_sinoAba}')`)}</div>` : ''}
     ${_sinoAba === 'prop' ? sinoPainelPropostas() : _sinoAba ? sinoPainelExames(_sinoAba) : ''}`;
 }
 
