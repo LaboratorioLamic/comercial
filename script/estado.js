@@ -20,7 +20,8 @@
 //   config/hierarquia          hierarquia de valor: { definida, ordem: [idTabela…] } (Particular no topo)
 //   config/modeloProposta      textos padrão do PDF da proposta para laboratório
 //   config/modeloPropostaCli   textos padrão do PDF do orçamento (proposta para cliente)
-//   simulacoes/{id}            propostas para laboratório salvas no simulador (preço × volume)
+//   config/modeloPropostaMed   textos padrão do PDF da proposta de desconto ao médico
+//   simulacoes/{id}            propostas salvas no simulador; tipo: 'lab' (laboratório), 'cli' (cliente), 'med' (médico)
 //   rascunhos/{alvo}/{usuario}/{chave}  edições ainda não enviadas (-1 = retirar da tabela)
 //   l2l/acessos/{id}           login do site L2L: laboratório apoiado (ou 'lamic', interno), sal e hash da senha
 //   auth/usuarios/{id}         usuários
@@ -45,6 +46,7 @@ const ESTADO = {
   particular: null,
   modeloProposta: null,
   modeloPropostaCli: null,
+  modeloPropostaMed: null,
   catalogo: null,        // carregado sob demanda (textos de instrução são grandes)
   acessosL2L: {},
   usuarios: {},
@@ -69,6 +71,7 @@ const CAMINHOS = {
   particular: 'config/particular',
   modeloProposta: 'config/modeloProposta',
   modeloPropostaCli: 'config/modeloPropostaCli',
+  modeloPropostaMed: 'config/modeloPropostaMed',
   acessosL2L: 'l2l/acessos',
   usuarios: 'auth/usuarios',
   grupos: 'auth/grupos',

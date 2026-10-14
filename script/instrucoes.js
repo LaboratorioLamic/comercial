@@ -336,12 +336,12 @@ async function desenharCatalogoFicha(id) {
   el.innerHTML = !r ? `<div class="muted" style="font-size:12.5px"><i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)"></i> Exame fora do catálogo de instruções. ${pode('instrucoes', 'editar') ? `<a href="#" onclick="abrirInstrucao('${id}','${id}');return false">Cadastrar</a>` : ''}</div>`
     : `<div class="casc">
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-vial"></i><div>${esc(r.material || '—')}<div class="s">${esc(r.nome || '')}</div></div></div><span class="tag"><i class="fa-solid fa-clock"></i>${esc(prazoDe(r) || '—')}</span></div>
-      <div class="casc-r"><div class="lft"><i class="fa-solid fa-file-lines"></i><div class="sc-chips">${Object.keys(secoesDe(r)).map(k => `<span class="sc-chip" style="--c:${SECOES[k].cor}" title="${esc(secoesDe(r)[k].slice(0, 300))}"><i class="fa-solid ${SECOES[k].icone}"></i>${SECOES[k].nome}</span>`).join('') || '<span class="muted">sem instrução</span>'}</div></div></div>
-      ${anexosDe(r).length ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-paperclip"></i><div class="anx-links">${anexosDe(r).map(linkAnexo).join('')}</div></div></div>` : ''}
       <div class="casc-r"><div class="lft">${Object.entries(CHECKS).map(([k, c]) => `<span class="badge-s ${r[k] ? 'ok' : 'off'}"><i class="fa-solid ${r[k] ? 'fa-check' : c.icone}"></i>${c.nome}</span>`).join(' ')}</div>
         <span class="fx-ins-ac"><button class="btn sm bt-pdf" title="Gerar PDF do exame" onclick="abrirPdfInstrucao('${id}')"><i class="fa-solid fa-file-pdf"></i></button>
           <button class="btn sm" onclick="abrirInstrucao('${id}','${id}')"><i class="fa-solid fa-book-medical"></i>Abrir</button></span></div></div>
-      ${htmlSecoesFicha(r)}`;
+      ${Object.keys(secoesDe(r)).length ? htmlSecoesFicha(r) : '<div class="muted" style="font-size:12.5px;margin-top:8px">Sem instrução cadastrada.</div>'}
+      ${anexosDe(r).length ? `<div class="fx-sc"><div class="fx-sc-c" style="--c:var(--cyan)"><div class="fx-sc-h"><span class="ic"><i class="fa-solid fa-paperclip"></i></span><b>Anexos</b></div>
+        <div class="fx-sc-b on"><div class="anx-links">${anexosDe(r).map(linkAnexo).join('')}</div></div></div></div>` : ''}`;
 }
 
 // Seções da instrução em cartões compactos (texto em tópicos quando tem várias linhas)

@@ -10,6 +10,8 @@
 //   viabilidade pelo piso da tabela. Simulações ficam em simulacoes/{id}.
 // Proposta para cliente: exames incluídos pela busca × volume de exame, com um
 //   só atendimento dividido entre eles (simulacoes/{id} com tipo 'cli').
+// Proposta para médico: desconto aos pacientes encaminhados pelo médico. Custo normal de cada exame,
+//   volume = expectativa mensal de envio; exames pela busca ou todos da tabela (tipo 'med').
 
 const SIM_POR_PAG = 50;
 // aba lembrada ao recarregar a página
@@ -28,21 +30,24 @@ const OPCOES_ARRED = [
 
 function renderSimulador() {
   const el = document.getElementById('s-simulador');
-  const salvas = lista(ESTADO.simulacoes).filter(s => s.tipo !== 'cli').length, salvasCli = lista(ESTADO.simulacoes).filter(s => s.tipo === 'cli').length;
+  const nTipo = t => lista(ESTADO.simulacoes).filter(s => (s.tipo || 'lab') === t).length, salvas = nTipo('lab'), salvasCli = nTipo('cli'), salvasMed = nTipo('med');
   el.innerHTML = `
     <div class="h-row"><div><h2>Simulador</h2><p>Veja o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada.</p></div></div>
     <div class="subnav-row"><div class="subnav" data-grupo="simulador">
       <button data-p="reajuste" class="${simAba === 'reajuste' ? 'on' : ''}"><i class="fa-solid fa-arrow-trend-up"></i>Reajuste de tabela</button>
       <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta comercial${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
       <button data-p="cli" class="${simAba === 'cli' ? 'on' : ''}"><i class="fa-solid fa-user"></i>Proposta cliente${salvasCli ? `<span class="n-sub">${salvasCli}</span>` : ''}</button>
+      <button data-p="med" class="${simAba === 'med' ? 'on' : ''}"><i class="fa-solid fa-user-doctor"></i>Proposta médico${salvasMed ? `<span class="n-sub">${salvasMed}</span>` : ''}</button>
     </div>
-    <button class="btn so-lab" onclick="_pdfModo=simAba==='cli'?'cli':'lab';abrirModeloPdf()" title="Texto padrão do PDF da aba (proposta comercial ou orçamento de cliente)"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
+    <button class="btn so-lab" onclick="_pdfModo=['cli','med'].includes(simAba)?simAba:'lab';abrirModeloPdf()" title="Texto padrão do PDF da aba (proposta comercial, orçamento de cliente ou proposta ao médico)"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
     <div class="pane ${simAba === 'reajuste' ? 'on' : ''}" id="simulador-reajuste"></div>
     <div class="pane ${simAba === 'lab' ? 'on' : ''}" id="simulador-lab"></div>
-    <div class="pane ${simAba === 'cli' ? 'on' : ''}" id="simulador-cli"></div>`;
+    <div class="pane ${simAba === 'cli' ? 'on' : ''}" id="simulador-cli"></div>
+    <div class="pane ${simAba === 'med' ? 'on' : ''}" id="simulador-med"></div>`;
   iniciarSubnav();
   if (simAba === 'reajuste') desenharSimReajuste();
   else if (simAba === 'cli') desenharSimCli();
+  else if (simAba === 'med') desenharSimMed();
   else desenharSimLab();
 }
 
@@ -389,7 +394,7 @@ const textoPrazo = k => { const c = ESTADO.catalogo?.[k], e = ESTADO.exames[k]; 
 function ctxLabSim(o = pl) {
   const t = ESTADO.tabelas[o.tabelaId] || null, l = ESTADO.laboratorios[o.labId] || null;
   return {
-    t, l, tab: t ? { ...t, id: pl.tabelaId } : null, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null,
+    t, l, tab: t ? { ...t, id: o.tabelaId } : null, piso: t?.piso ?? parametro('margemMinima'), margemSug: t?.margemSugerida ?? null,
     // preço simbólico (abaixo de R$ 1,00) não serve de referência
     ref: k => { const v = t ? t.precos?.[k] ?? null : ESTADO.exames[k]?.precoPraticado || null; return precoSimbolico(v) ? null : v; },
     refNome: t?.nome || 'Particular'
@@ -491,8 +496,8 @@ function desenharSimLab() {
   });
   criarPop('pop-plsalvas', {
     rotulo: 'Salvas', titulo: 'Simulações salvas', icone: 'fa-folder-open', padrao: '', busca: 'Buscar…',
-    opcoes: () => [{ valor: '', rotulo: lista(ESTADO.simulacoes).some(s => s.tipo !== 'cli') ? 'Abrir…' : 'Nenhuma salva', icone: 'fa-folder-open' },
-      ...lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).filter(s => s.tipo !== 'cli').map(s => ({
+    opcoes: () => [{ valor: '', rotulo: lista(ESTADO.simulacoes).some(s => (s.tipo || 'lab') === 'lab') ? 'Abrir…' : 'Nenhuma salva', icone: 'fa-folder-open' },
+      ...lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).filter(s => (s.tipo || 'lab') === 'lab').map(s => ({
         valor: s.id, rotulo: s.nome || 'Sem nome', icone: 'fa-handshake', cor: '#8b5cf6',
         desc: `${s.resumo ? `${s.resumo.n} exames · ${num(s.resumo.vol, 0)}/mês · ${fmt(s.resumo.receita)}` : ''} · ${esc(s.autor || '')} ${dataHora(s.atualizadoEm || s.em)}` }))],
     aoMudar: id => { POPS['pop-plsalvas'].valor = ''; if (id) abrirSimLab(id); }
@@ -1215,4 +1220,429 @@ function exportarSimCli() {
     ...ls.map(x => [x.e.mn, q(x.e.descricao), q(textoPrazo(x.k)), dec(x.ref), dec(x.preco), x.desc != null ? pct(x.desc) : '', x.q, dec(x.total)].join(';')),
     ['', q('Total'), '', '', '', s.desc != null ? pct(s.desc) : '', s.un, dec(s.receita)].join(';')].join('\r\n') + '\r\n';
   baixarArquivo(`Proposta cliente - ${pc.nome || pc.cliente || 'sem nome'}.csv`, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+}
+
+// ═══ Proposta para médico ═════════════════════════════════════
+// Desconto aos pacientes que o médico encaminha ao laboratório. Cada exame com o custo normal
+// (todos os custos, sem dividir atendimento); o volume é a expectativa mensal de envio de pacientes.
+// Exames entram um a um pela busca ou todos da tabela de referência de uma vez (ou só de um setor).
+// itens: { chave: { v: volume esperado/mês, p: preço digitado } } (ordem de inclusão)
+// pdf: dados do PDF da proposta ao médico ou null
+const pm = { id: null, nome: '', medico: '', crm: '', tabelaId: '', base: 'desc', d: 10, itens: {}, pdf: null, sujo: false, filtro: 'todos', q: '', pag: 1, ordem: '', dir: 1 };
+// Rascunho no navegador: sobrevive ao recarregar a página até "Tirar todos"
+const RASCUNHO_MED = 'rascunhoPropostaMed';
+try { Object.assign(pm, JSON.parse(localStorage.getItem(RASCUNHO_MED)) || {}, { q: '', pag: 1 }); } catch {}
+function guardarRascunhoMed() {
+  try {
+    if (Object.keys(pm.itens).length || pm.nome || pm.medico) localStorage.setItem(RASCUNHO_MED, JSON.stringify(pm));
+  } catch {}
+}
+window.addEventListener('beforeunload', guardarRascunhoMed);
+let _pmSug = [], _pmHi = 0, _pmLinhas = [];
+
+const ctxMed = () => ctxLabSim(pm);
+function precoPadraoMed(cl, e, ref) {
+  if (pm.base === 'desc') return ref != null ? Math.round(ref * (1 - (pm.d || 0) / 100)) : null;
+  if (pm.base === 'msug') { const c = calcular(e, null, cl.tab); return precoParaMargem(c, c.margemSug ?? cl.margemSug ?? c.alvo) ?? null; }
+  return ref;
+}
+function linhaMed(cl, k) {
+  const e = { ...ESTADO.exames[k], id: k }, it = pm.itens[k] || {}, ref = cl.ref(k), padrao = precoPadraoMed(cl, e, ref);
+  const preco = it.p ?? padrao, vol = it.v || 0, c = calcular(e, preco, cl.tab);
+  return { e, k, ref, padrao, preco, man: it.p != null, vol, c, receita: preco != null ? preco * vol : 0, lucro: c.lucro != null ? c.lucro * vol : null,
+    prazo: diasPrazo(k), desc: ref && preco != null ? 1 - preco / ref : null };
+}
+const linhasMed = cl => Object.keys(pm.itens).filter(k => ESTADO.exames[k]).map(k => linhaMed(cl, k));
+
+// Margem e desconto ponderados pelo volume esperado; sem volume nenhum, cada exame pesa 1
+function resumoMed(cl, ls) {
+  const s = { n: ls.length, vol: 0, receita: 0, lucro: 0, semCusto: 0, ab: 0, semPreco: 0 };
+  const comVol = ls.some(x => x.vol > 0 && x.preco != null), peso = x => comVol ? x.vol : 1;
+  let recC = 0, lucC = 0, refT = 0, recR = 0;
+  ls.forEach(x => {
+    if (x.preco == null) { s.semPreco++; return; }
+    s.vol += x.vol; s.receita += x.receita;
+    if (x.c.semCusto) s.semCusto++;
+    else { s.lucro += x.lucro || 0; lucC += x.c.lucro * peso(x); recC += x.preco * peso(x); if (x.c.status === 'r') s.ab++; }
+    if (x.ref) { refT += x.ref * peso(x); recR += x.preco * peso(x); }
+  });
+  s.comVol = comVol;
+  s.margem = recC ? lucC / recC : null;
+  s.desc = refT ? 1 - recR / refT : null;
+  s.viavel = s.margem != null && s.margem >= cl.piso;
+  return s;
+}
+
+function desenharSimMed() {
+  const el = document.getElementById('simulador-med');
+  if (!el) return;
+  if (pm.tabelaId && !ESTADO.tabelas[pm.tabelaId]) pm.tabelaId = '';
+  const cria = pode('simulador', 'criar'), sv = pm.id ? ESTADO.simulacoes[pm.id] : null, cl = ctxMed();
+  el.innerHTML = `<div class="card">
+      <div class="sec-card-h"><span class="tc-ic" style="--c:#10b981"><i class="fa-solid fa-user-doctor"></i></span>
+        <div style="min-width:0;flex:1"><h3>${esc(pm.nome || 'Nova proposta')}${pm.sujo ? ' <span class="badge-s warn">não salva</span>' : sv ? ' <span class="badge-s ok">salva</span>' : ''}</h3>
+          <div class="sub">${sv ? `${esc(sv.autor)} · ${dataHora(sv.atualizadoEm || sv.em)}` : 'Desconto aos pacientes do médico · custo normal de cada exame × expectativa mensal de envio'}</div></div>
+        <div class="rt"><button class="btn qd" onclick="novaSimMed()" title="Nova proposta"><i class="fa-solid fa-plus" style="color:var(--cyan)"></i></button>
+          <div id="pop-pmsalvas"></div>
+          <button class="btn qd" onclick="exportarSimMed()" title="Exportar planilha"><i class="fa-solid fa-file-csv"></i></button>
+          <button class="btn qd" onclick="abrirPdfMed()" title="Proposta de desconto em PDF para o médico"><i class="fa-solid fa-file-pdf"></i></button>
+          ${sv && (usuarioAtual().admin || sv.autorId === usuarioAtual().id || pode('simulador', 'aprovar')) ? `<button class="btn qd perigo-txt" onclick="excluirSimMed()" title="Excluir proposta"><i class="fa-solid fa-trash"></i></button>` : ''}
+          ${cria ? `<button class="btn qd pri" onclick="salvarSimMed()" title="Salvar"><i class="fa-solid fa-floppy-disk"></i></button>` : ''}</div></div>
+      <div class="fgrid pl-dados">
+        ${campo('pm-nome', 'Nome da proposta', pm.nome, { tipo: 'text', ph: 'Ex.: Dr. Silva — out/2026', aoMudar: 'pm.nome=this.value;pm.sujo=true' })}
+        ${campo('pm-medico', 'Médico', pm.medico, { tipo: 'text', ph: 'Nome do médico', aoMudar: 'pm.medico=this.value;pm.sujo=true' })}
+        ${campo('pm-crm', 'CRM / especialidade', pm.crm, { tipo: 'text', ph: 'Ex.: CRM-CE 12345 · Endocrinologia', aoMudar: 'pm.crm=this.value;pm.sujo=true' })}
+        <div class="field"><label>Tabela de referência</label><div id="pop-pmtab" class="block"></div></div>
+        <div class="field"><label>Preço ao paciente</label><div id="pop-pmbase" class="block"></div></div>
+        ${pm.base === 'desc' ? campo('pm-d', 'Desconto', pm.d, { suf: '%', passo: '0.5', aoMudar: 'pm.d=parseFloat(this.value)||0;pm.sujo=true;desenharTabelaMed()' }) : ''}
+      </div>
+      <div class="impact" id="pm-imp" style="padding-top:0"></div>
+      <div class="toolbar">
+        <div class="gx-busca"><div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="pm-add" placeholder="Adicionar exame: mnemônico ou nome…" autocomplete="off"
+            oninput="buscarMed(this.value)" onfocus="buscarMed(this.value)" onkeydown="teclaBuscaMed(event)" onblur="setTimeout(fecharSugMed, 150)"></div>
+          <div class="gx-sug" id="pm-sug"></div></div>
+        <div id="pop-pmsetor"></div>
+        <button class="btn" id="pm-todos" onclick="incluirTodosMed()"></button>
+      </div>
+      <div class="toolbar" style="padding-top:0">
+        <div class="search"><i class="fa-solid fa-filter"></i><input id="pm-q" value="${esc(pm.q)}" placeholder="Filtrar na proposta…" oninput="pm.q=this.value;pm.pag=1;desenharTabelaMed()"></div>
+        <div class="chips" id="pm-chips" style="margin:0"></div>
+        <span class="hint"><i class="fa-solid fa-keyboard"></i> Enter / ↑ ↓ / Tab confirmam · Esc desfaz</span>
+      </div>
+      <div class="bulk on" id="pm-bulk"></div>
+      <div class="tbl-wrap"><table class="tab-edit"><thead id="pm-head"></thead><tbody id="pm-body"><tr><td colspan="12"><div class="vazio"><i class="fa-solid fa-circle-notch fa-spin"></i>Carregando…</div></td></tr></tbody></table></div>
+      <div class="foot" id="pm-foot"></div></div>`;
+  criarPop('pop-pmtab', {
+    rotulo: 'Tabela', titulo: 'Tabela de referência', icone: 'fa-table-list', padrao: '',
+    opcoes: () => [{ valor: '', rotulo: 'Particular', icone: 'fa-user', cor: '#00a8cc', grupo: 'Base', desc: 'Preço praticado e custos fixos padrão' },
+      ...tabelasLista().map(t => ({ valor: t.id, rotulo: t.nome, icone: t.icone, cor: t.cor, grupo: TIPOS_TABELA[t.tipo]?.nome, desc: `piso ${textoRegra(t, 'piso')} · ${resumoPerfil(t)}` }))],
+    aoMudar: v => { pm.tabelaId = v; pm.sujo = true; desenharSimMed(); }
+  });
+  POPS['pop-pmtab'].valor = pm.tabelaId; desenharBotaoPop('pop-pmtab');
+  criarPop('pop-pmbase', {
+    rotulo: 'Preço ao paciente', titulo: 'Preço dos exames não digitados', icone: 'fa-tag', padrao: 'desc',
+    opcoes: () => [{ valor: 'desc', rotulo: 'Desconto sobre a tabela', icone: 'fa-percent', desc: `${esc(cl.refNome)} menos o percentual, sem centavos` },
+      { valor: 'tab', rotulo: `Valor da ${cl.refNome}`, icone: 'fa-equals', desc: 'Sem desconto: ajuste exame a exame' },
+      { valor: 'msug', rotulo: 'Sugestão de margem', icone: 'fa-bullseye', desc: cl.margemSug != null ? `Preço que atinge ${pct(cl.margemSug, 0)}` : 'Preço que atinge a margem alvo' }],
+    aoMudar: v => { pm.base = v; pm.sujo = true; desenharSimMed(); }
+  });
+  POPS['pop-pmbase'].valor = pm.base; desenharBotaoPop('pop-pmbase');
+  criarPop('pop-pmsetor', {
+    rotulo: 'Setor', titulo: 'Setor: filtra a lista e o "incluir todos"', icone: 'fa-filter', busca: 'Buscar setor…', limpavel: true,
+    opcoes: () => opcoesSetorPop('Todos os setores'), aoMudar: () => { pm.pag = 1; desenharTabelaMed(); }
+  });
+  criarPop('pop-pmsalvas', {
+    rotulo: 'Salvas', titulo: 'Propostas de médico salvas', icone: 'fa-folder-open', padrao: '', busca: 'Buscar…',
+    opcoes: () => { const ss = lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).filter(s => s.tipo === 'med');
+      return [{ valor: '', rotulo: ss.length ? 'Abrir…' : 'Nenhuma salva', icone: 'fa-folder-open' },
+        ...ss.map(s => ({ valor: s.id, rotulo: s.nome || 'Sem nome', icone: 'fa-user-doctor', cor: '#10b981',
+          desc: `${s.medico ? s.medico + ' · ' : ''}${s.resumo ? `${s.resumo.n} exames · ${num(s.resumo.vol || 0, 0)}/mês · ${fmt(s.resumo.receita)}` : ''} · ${s.autor || ''} ${dataHora(s.atualizadoEm || s.em)}` }))]; },
+    aoMudar: id => { POPS['pop-pmsalvas'].valor = ''; if (id) abrirSimMed(id); }
+  });
+  garantirCatalogo().then(() => desenharTabelaMed());
+}
+
+const FILTROS_PM = {
+  todos: { nome: 'Todos',          f: () => true, icone: 'fa-list' },
+  vol:   { nome: 'Com volume',     f: x => x.vol > 0, icone: 'fa-cart-shopping' },
+  man:   { nome: 'Preço digitado', f: x => x.man, cor: 'var(--cyan)' },
+  r:     { nome: 'Abaixo do piso', f: x => x.c.status === 'r', cor: 'var(--red)' },
+  x:     { nome: 'Sem custo',      f: x => x.preco != null && x.c.semCusto, cor: 'var(--gray)' },
+  p:     { nome: 'Sem preço',      f: x => x.preco == null, cor: 'var(--amber)' }
+};
+
+function desenharTabelaMed() {
+  const body = document.getElementById('pm-body');
+  if (!body) return;
+  const cl = ctxMed(), fs = valorPop('pop-pmsetor'), todas = linhasMed(cl);
+  const base = todas.filter(x => (!fs || x.e.setorId === fs) && contem(x.e.mn + ' ' + x.e.descricao, pm.q));
+  if (!FILTROS_PM[pm.filtro]) pm.filtro = 'todos';
+  document.getElementById('pm-chips').innerHTML = Object.entries(FILTROS_PM).map(([k, F]) => {
+    const n = base.filter(F.f).length;
+    if (!n && k !== pm.filtro && k !== 'todos') return '';
+    return `<button class="chip ${pm.filtro === k ? 'on' : ''}" onclick="pm.filtro='${k}';pm.pag=1;desenharTabelaMed()">${F.cor ? `<span class="d" style="background:${F.cor}"></span>` : `<i class="fa-solid ${F.icone}"></i>`}${F.nome} <b>${n}</b></button>`;
+  }).join('');
+  const ls = base.filter(FILTROS_PM[pm.filtro].f);
+  const val = { mn: x => x.e.mn.toUpperCase(), desc: x => normalizar(x.e.descricao), prazo: x => x.prazo ?? 999, custo: x => x.c.custo ?? -1, ref: x => x.ref ?? -1,
+    preco: x => x.preco ?? -1, pd: x => x.desc ?? -9, margem: x => x.c.margem ?? -9, vol: x => x.vol, receita: x => x.receita }[pm.ordem];
+  if (val) ls.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * pm.dir; });
+  _pmLinhas = ls;
+  const n = Math.max(1, Math.ceil(ls.length / SIM_POR_PAG));
+  if (pm.pag > n) pm.pag = n;
+  const th = (r, k, cls) => thOrdem(r, k, pm.ordem, pm.dir, 'ordenarMed', cls);
+  document.getElementById('pm-head').innerHTML = `<tr>${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Prazo', 'prazo', 'col-opt')}${th('Custo total', 'custo', 'num')}${th(esc(cl.refNome), 'ref', 'num')}
+    ${th('Preço paciente', 'preco', 'num')}${th('Desc.', 'pd', 'num col-opt')}${th('Margem', 'margem', 'num')}${th('<span title="Expectativa de pacientes enviados pelo médico por mês">Volume/mês</span>', 'vol', 'num')}${th('Receita/mês', 'receita', 'num')}<th>Situação</th><th></th></tr>`;
+  body.innerHTML = ls.slice((pm.pag - 1) * SIM_POR_PAG, pm.pag * SIM_POR_PAG).map(x => htmlLinhaMed(x)).join('')
+    || `<tr><td colspan="12">${vazio(todas.length ? 'fa-magnifying-glass' : 'fa-user-doctor', todas.length ? 'Nenhum exame com esses filtros'
+      : `Nenhum exame ainda: busque pelo mnemônico ou nome e tecle Enter, ou use <b>Incluir todos da ${esc(cl.refNome)}</b>.`)}</td></tr>`;
+  document.getElementById('pm-foot').innerHTML = paginacao(ls.length, pm.pag, SIM_POR_PAG, 'paginaMed');
+  botaoTodosMed(cl);
+  desenharImpactoMed(cl, todas);
+}
+
+function htmlLinhaMed(x) {
+  const { e, k, ref, preco, man, vol, c, desc } = x;
+  const inp = (cc, v, on, extra = '') => `<div class="price-in ${on ? 'on' : ''}${cc === 'v' ? ' vol-in' : ''}">${cc === 'v' ? '' : '<span>R$</span>'}<input type="number" step="${cc === 'v' ? 1 : 0.01}" min="0" data-c="${cc}" value="${v}" placeholder="${cc === 'v' ? '0' : '—'}"
+      onchange="setTimeout(()=>editarMed(this))" onkeydown="teclaMed(event)" onfocus="this.dataset.v=this.value;this.select()"${extra}></div>`;
+  const lucro = vol > 0 ? x.lucro : c.lucro;
+  return `<tr data-k="${esc(k)}" class="ed">
+    <td class="mn"><a href="#" class="lk-mn" onclick="abrirFicha(this.closest('tr').dataset.k);return false">${esc(e.mn)}</a></td>
+    <td class="desc" title="${esc(e.descricao)}">${esc(e.descricao)}</td>
+    <td class="nw muted col-opt">${esc(textoPrazo(k)) || '—'}</td>
+    <td class="num">${celulaCusto(c)}</td>
+    <td class="num muted">${ref != null ? fmt(ref) : '—'}</td>
+    <td class="num">${inp('p', preco != null ? preco.toFixed(2) : '', man)}</td>
+    <td class="num muted col-opt">${desc != null ? pct(desc) : '—'}</td>
+    <td class="num" style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">${c.margem != null ? pct(c.margem) : '—'}${lucro != null ? `<div class="sub-num" style="color:var(--${lucro < 0 ? 'red' : 'green'})">lucro ${fmt(lucro)}${vol > 0 ? '/mês' : ''}</div>` : ''}</td>
+    <td class="num">${inp('v', vol || '', vol > 0, ' title="Pacientes esperados por mês"')}</td>
+    <td class="num">${vol > 0 && preco != null ? fmt(x.receita) : '<span class="muted">—</span>'}</td>
+    <td>${preco == null ? tagSt('p', 'fa-circle-minus', 'Sem preço') : c.status === 'x' ? tagStatus('x') : c.status === 'r' ? tagSt('r', 'fa-circle-xmark', 'Abaixo do piso') : tagSt('g', 'fa-circle-check', 'OK')}</td>
+    <td class="acts"><button title="Tirar da proposta" onclick="removerMed(this)"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
+}
+
+// Valor confirmado (Enter, setas, Tab ou clicar fora): redesenha só a linha e devolve o foco
+function editarMed(inp) {
+  const tr = inp.closest('tr'), k = tr?.dataset.k, it = pm.itens[k], txt = inp.value.trim(), v = txt === '' ? null : parseFloat(txt);
+  if (!it || (v != null && (isNaN(v) || v < 0))) return;
+  const cl = ctxMed();
+  if (inp.dataset.c === 'v') { if (v > 0) it.v = Math.round(v); else delete it.v; }
+  else {
+    const padrao = precoPadraoMed(cl, { ...ESTADO.exames[k], id: k }, cl.ref(k));
+    if (v == null || (padrao != null && Math.abs(v - padrao) < 0.005)) delete it.p; else it.p = Math.round(v * 100) / 100;
+  }
+  pm.sujo = true;
+  if (!tr.isConnected) return desenharTabelaMed();
+  const ativo = document.activeElement, fc = tr.contains(ativo) ? ativo.dataset.c : null, tmp = document.createElement('tbody');
+  tmp.innerHTML = htmlLinhaMed(linhaMed(cl, k));
+  tr.replaceWith(tmp.firstElementChild);
+  if (fc) document.querySelector(`#pm-body tr[data-k="${CSS.escape(k)}"] input[data-c="${fc}"]`)?.focus();
+  desenharImpactoMed(cl, linhasMed(cl));
+}
+
+function teclaMed(ev) {
+  if (ev.key === 'Escape') { ev.target.value = ev.target.dataset.v ?? ''; return ev.target.blur(); }
+  if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(ev.key)) return;
+  ev.preventDefault();
+  const c = ev.target.dataset.c, ins = [...document.querySelectorAll(`#pm-body input[data-c="${c}"]`)], i = ins.indexOf(ev.target);
+  const prox = ins[ev.key === 'ArrowUp' ? i - 1 : i + 1];
+  if (prox) prox.focus(); else ev.target.blur();
+}
+
+function removerMed(bt) {
+  delete pm.itens[bt.closest('tr').dataset.k];
+  pm.sujo = true;
+  desenharTabelaMed();
+}
+
+function desenharImpactoMed(cl, ls) {
+  guardarRascunhoMed();
+  const el = document.getElementById('pm-imp');
+  if (!el) return;
+  const s = resumoMed(cl, ls);
+  const imp = (ic, rot, v, d, cls = '') => `<div class="imp"><div class="l"><i class="fa-solid ${ic}"></i>${rot}</div><div class="v">${v}</div><div class="d ${cls}">${d}</div></div>`;
+  el.innerHTML = !s.n ? `<div class="alert x" style="grid-column:1/-1;margin:0"><i class="fa-solid fa-circle-info"></i><div>Monte a lista de exames com desconto para os pacientes do médico: adicione um a um pela busca ou <b>inclua todos da ${esc(cl.refNome)}</b> e tire o que não entra.
+      Informe o <b>volume/mês</b> que o médico deve encaminhar; a margem usa o custo normal de cada exame (piso ${pct(cl.piso, 0)}).</div></div>`
+    : imp('fa-flask-vial', 'Exames na proposta', num(s.n, 0), `<span class="muted">${s.desc != null ? `desconto médio ${pct(s.desc)} s/ ${esc(cl.refNome)}` : ''}${s.semPreco ? ` · ${s.semPreco} sem preço` : ''}</span>`)
+    + imp('fa-users', 'Pacientes esperados', `${num(s.vol, 0)}<small>/mês</small>`, `<span class="muted">${s.vol ? 'exames encaminhados pelo médico' : 'informe o volume/mês'}</span>`)
+    + imp('fa-sack-dollar', 'Receita mensal', s.vol ? fmt(s.receita) : '—', `<span class="muted">pela expectativa de envio</span>`)
+    + imp('fa-coins', 'Lucro mensal', s.vol ? fmt(s.lucro) : '—', `<span class="muted">após custo total e imposto${s.semCusto ? ` · ${s.semCusto} sem custo fora da conta` : ''}</span>`, s.vol ? (s.lucro < 0 ? 'dn' : 'up') : '')
+    + imp('fa-percent', s.comVol ? 'Margem ponderada' : 'Margem média', s.margem != null ? pct(s.margem) : '—', `piso ${pct(cl.piso, 0)}${s.comVol ? ' · pelo volume' : ' · sem volume, por exame'}`, s.margem == null ? 'muted' : s.viavel ? 'up' : 'dn')
+    + `<div class="imp viab ${s.viavel ? 'ok' : 'bad'}"><div class="l"><i class="fa-solid ${s.viavel ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>Viabilidade</div><div class="v">${s.margem == null ? '—' : s.viavel ? 'Viável' : 'Inviável'}</div>
+      <div class="d">${s.ab ? `${s.ab} exame(s) abaixo do piso` : 'todos os exames acima do piso'}</div></div>`;
+  desenharBulkMed(s);
+}
+
+function desenharBulkMed(s) {
+  const el = document.getElementById('pm-bulk');
+  if (!el) return;
+  const its = Object.values(pm.itens), nMan = its.filter(i => i.p != null).length, nVol = its.filter(i => i.v > 0).length, nSemVol = s.n - nVol;
+  el.innerHTML = `<b>${num(s.n, 0)} exame(s)</b>${_pmLinhas.length !== s.n ? `<span class="tag"><i class="fa-solid fa-filter"></i>${num(_pmLinhas.length, 0)} filtrado(s)</span>` : ''}
+    ${s.n ? `<div class="inp" style="width:110px"><input id="pm-vlote" type="number" step="1" min="0" placeholder="Volume" onkeydown="if(event.key==='Enter')volumeLoteMed()"><span class="suf">/mês</span></div>
+      <button class="btn sm" onclick="volumeLoteMed()" title="Aplica o volume aos exames filtrados"><i class="fa-solid fa-cart-plus"></i>Volume nos filtrados</button>` : ''}
+    ${nVol ? `<button class="btn sm" onclick="zerarVolumesMed()"><i class="fa-solid fa-eraser"></i>Zerar volumes</button>` : ''}
+    ${nMan ? `<button class="btn sm" onclick="limparPrecosMed()"><i class="fa-solid fa-rotate-left"></i>Desfazer ${nMan} preço(s) digitado(s)</button>` : ''}
+    ${nVol && nSemVol ? `<button class="btn sm" onclick="tirarSemVolumeMed()" title="Fica só o que o médico deve encaminhar"><i class="fa-solid fa-filter-circle-xmark"></i>Tirar ${nSemVol} sem volume</button>` : ''}
+    ${_pmLinhas.length && _pmLinhas.length !== s.n ? `<button class="btn sm" onclick="tirarFiltradosMed()"><i class="fa-solid fa-xmark"></i>Tirar os ${num(_pmLinhas.length, 0)} filtrados</button>` : ''}
+    ${s.n ? `<button class="btn sm" onclick="tirarTodosMed()"><i class="fa-solid fa-trash-can"></i>Tirar todos</button>` : ''}`;
+}
+
+// ── Incluir: um a um pela busca ou todos da tabela ────────────
+// Exames ativos com preço na tabela de referência (e do setor escolhido) que ainda não estão na proposta
+function faltantesMed(cl) {
+  const fs = valorPop('pop-pmsetor');
+  return examesVisiveis().filter(e => e.ativo !== false && !(e.id in pm.itens) && (!fs || e.setorId === fs) && cl.ref(e.id) != null)
+    .sort((a, b) => String(a.mn).localeCompare(String(b.mn), 'pt-BR', { sensitivity: 'base' }));
+}
+function botaoTodosMed(cl) {
+  const bt = document.getElementById('pm-todos');
+  if (!bt) return;
+  const n = faltantesMed(cl).length, s = ESTADO.setores[valorPop('pop-pmsetor')];
+  bt.disabled = !n;
+  bt.title = `Inclui os exames com preço na ${cl.refNome}${s ? ` do setor ${s.nome}` : ''} que ainda não estão na proposta`;
+  bt.innerHTML = `<i class="fa-solid fa-list-check"></i>${n ? `Incluir ${num(n, 0)} da ${esc(cl.refNome)}${s ? ` · ${esc(s.nome)}` : ''}` : `Todos da ${esc(cl.refNome)} incluídos`}`;
+}
+async function incluirTodosMed() {
+  const cl = ctxMed(), fs = faltantesMed(cl);
+  if (!fs.length) return;
+  if (fs.length > 50 && !await confirmar({ titulo: `Incluir ${num(fs.length, 0)} exames?`, texto: `Todos os exames com preço na ${esc(cl.refNome)} entram na proposta. Depois é só tirar as linhas que não fazem parte.`, botao: 'Incluir', icone: 'fa-list-check' })) return;
+  fs.forEach(e => { pm.itens[e.id] = {}; });
+  pm.sujo = true; pm.filtro = 'todos';
+  desenharTabelaMed();
+  toast(`${num(fs.length, 0)} exame(s) incluído(s)`);
+}
+
+function buscarMed(q) {
+  const el = document.getElementById('pm-sug'), cl = ctxMed();
+  if (!el || !q.trim()) return fecharSugMed();
+  const ini = normalizar(q.trim()), pri = e => normalizar(e.mn).startsWith(ini) ? 0 : 1;
+  const todos = examesVisiveis().filter(e => e.ativo !== false && contem(e.mn + ' ' + e.descricao, q))
+    .sort((a, b) => pri(a) - pri(b) || String(a.mn).localeCompare(String(b.mn), 'pt-BR'));
+  const vis = todos.slice(0, 10);
+  _pmSug = vis.map(e => e.id); _pmHi = 0;
+  el.innerHTML = !vis.length ? `<div class="gx-sug-v"><i class="fa-solid fa-magnifying-glass"></i>Nenhum exame encontrado para <b>${esc(q)}</b></div>`
+    : vis.map((e, i) => {
+      const ja = e.id in pm.itens, ref = cl.ref(e.id);
+      return `<button type="button" class="${i ? '' : 'hi'}" onmousedown="event.preventDefault();adicionarMed(_pmSug[${i}])" onmouseenter="marcarSugMed(${i})">
+        <b>${esc(e.mn)}</b><span title="${esc(e.descricao)}">${esc(e.descricao)}</span><small class="${ja ? 'c' : ref != null ? 'g' : ''}"><i class="fa-solid ${ja ? 'fa-check' : ref != null ? 'fa-table-list' : 'fa-circle-plus'}"></i>${ja ? 'já na proposta' : ref != null ? fmt(ref) : 'sem preço'}</small></button>`;
+    }).join('') + (todos.length > vis.length ? `<div class="gx-sug-v">+ ${todos.length - vis.length} exame(s): continue digitando para refinar</div>` : '');
+  el.classList.add('open');
+}
+function fecharSugMed() { _pmSug = []; document.getElementById('pm-sug')?.classList.remove('open'); }
+function marcarSugMed(i) {
+  _pmHi = i;
+  const bs = document.querySelectorAll('#pm-sug button');
+  bs.forEach((b, j) => b.classList.toggle('hi', j === i));
+  bs[i]?.scrollIntoView({ block: 'nearest' });
+}
+function teclaBuscaMed(ev) {
+  if (ev.key === 'Escape' && _pmSug.length) { ev.stopPropagation(); return fecharSugMed(); }
+  if (!_pmSug.length) return;
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); marcarSugMed(Math.max(0, Math.min(_pmSug.length - 1, _pmHi + (ev.key === 'ArrowDown' ? 1 : -1)))); }
+  else if (ev.key === 'Enter') { ev.preventDefault(); adicionarMed(_pmSug[_pmHi]); }
+}
+// Exame já na proposta: só leva até a linha dele
+function adicionarMed(k) {
+  const e = ESTADO.exames[k];
+  if (!e) return;
+  const ja = k in pm.itens;
+  if (!ja) { pm.itens[k] = {}; pm.sujo = true; }
+  const q = document.getElementById('pm-add');
+  if (q) q.value = '';
+  fecharSugMed();
+  // limpa filtros que esconderiam o exame e vai à página dele
+  if (pm.q || pm.filtro !== 'todos' || (valorPop('pop-pmsetor') && valorPop('pop-pmsetor') !== e.setorId)) { pm.q = ''; pm.filtro = 'todos'; definirPop('pop-pmsetor', ''); const f = document.getElementById('pm-q'); if (f) f.value = ''; }
+  desenharTabelaMed();
+  const i = _pmLinhas.findIndex(x => x.k === k);
+  if (i >= 0 && Math.floor(i / SIM_POR_PAG) + 1 !== pm.pag) { pm.pag = Math.floor(i / SIM_POR_PAG) + 1; desenharTabelaMed(); }
+  const tr = document.querySelector(`#pm-body tr[data-k="${CSS.escape(k)}"]`);
+  tr?.scrollIntoView({ block: 'nearest' });
+  tr?.classList.add('flash'); setTimeout(() => tr?.classList.remove('flash'), 900);
+  q?.focus();
+  if (ja) toast(`${e.mn} já está na proposta`);
+}
+
+// ── Ações em lote ─────────────────────────────────────────────
+function volumeLoteMed() {
+  const v = Math.round(numCampo('pm-vlote'));
+  if (!(v >= 0)) return toast('Informe o volume', 'erro');
+  _pmLinhas.forEach(x => { const it = pm.itens[x.k]; if (!it) return; if (v > 0) it.v = v; else delete it.v; });
+  pm.sujo = true;
+  desenharTabelaMed();
+  toast(`Volume ${v}/mês em ${_pmLinhas.length} exame(s)`);
+}
+async function zerarVolumesMed() {
+  if (!await confirmar({ titulo: 'Zerar volumes?', texto: 'Os exames continuam na proposta, sem volume.', botao: 'Zerar', perigo: true })) return;
+  Object.values(pm.itens).forEach(it => { delete it.v; });
+  pm.sujo = true;
+  desenharTabelaMed();
+}
+async function limparPrecosMed() {
+  if (!await confirmar({ titulo: 'Desfazer preços digitados?', texto: 'Os exames voltam ao preço ao paciente escolhido.', botao: 'Desfazer', perigo: true })) return;
+  Object.values(pm.itens).forEach(it => { delete it.p; });
+  pm.sujo = true;
+  desenharTabelaMed();
+}
+async function tirarSemVolumeMed() {
+  const ks = Object.keys(pm.itens).filter(k => !(pm.itens[k].v > 0));
+  if (!await confirmar({ titulo: `Tirar ${ks.length} exame(s) sem volume?`, texto: 'Ficam só os exames com expectativa de envio.', botao: 'Tirar', perigo: true })) return;
+  ks.forEach(k => { delete pm.itens[k]; });
+  pm.sujo = true;
+  desenharTabelaMed();
+}
+async function tirarFiltradosMed() {
+  const ks = _pmLinhas.map(x => x.k);
+  if (!await confirmar({ titulo: `Tirar ${ks.length} exame(s) filtrado(s)?`, texto: 'Os exames que aparecem na lista com os filtros atuais saem da proposta.', botao: 'Tirar', perigo: true })) return;
+  ks.forEach(k => { delete pm.itens[k]; });
+  pm.sujo = true;
+  desenharTabelaMed();
+}
+async function tirarTodosMed() {
+  if (!await confirmar({ titulo: 'Tirar todos os exames?', texto: 'A proposta fica sem exames.', botao: 'Tirar', perigo: true })) return;
+  pm.itens = {};
+  pm.sujo = true;
+  try { localStorage.removeItem(RASCUNHO_MED); } catch {}
+  desenharTabelaMed();
+}
+function paginaMed(p) { pm.pag = p; desenharTabelaMed(); }
+function ordenarMed(k) { pm.dir = pm.ordem === k ? -pm.dir : (['vol', 'receita', 'pd'].includes(k) ? -1 : 1); pm.ordem = k; desenharTabelaMed(); }
+
+// ── Salvar, abrir, nova, exportar ─────────────────────────────
+async function novaSimMed() {
+  if (pm.sujo && !await confirmar({ titulo: 'Descartar a proposta atual?', texto: 'As alterações não salvas serão perdidas.', botao: 'Descartar', perigo: true })) return;
+  Object.assign(pm, { id: null, nome: '', medico: '', crm: '', tabelaId: '', base: 'desc', d: 10, itens: {}, pdf: null, sujo: false, filtro: 'todos', q: '', pag: 1, ordem: '' });
+  try { localStorage.removeItem(RASCUNHO_MED); } catch {}
+  desenharSimMed();
+}
+
+async function abrirSimMed(id) {
+  const s = ESTADO.simulacoes[id];
+  if (!s) return;
+  if (pm.sujo && id !== pm.id && !await confirmar({ titulo: 'Abrir outra proposta?', texto: 'As alterações não salvas da atual serão perdidas.', botao: 'Abrir', perigo: true })) return;
+  // ordem de inclusão guardada em "o" (o banco devolve as chaves em ordem alfabética)
+  const itens = Object.entries(JSON.parse(JSON.stringify(s.itens || {}))).sort((a, b) => (a[1].o ?? 0) - (b[1].o ?? 0));
+  Object.assign(pm, { id, nome: s.nome || '', medico: s.medico || '', crm: s.crm || '', tabelaId: s.tabelaId ?? '', base: s.base || 'desc', d: s.d ?? 10, pdf: s.pdf ? { ...s.pdf } : null,
+    itens: Object.fromEntries(itens.map(([k, it]) => { delete it.o; return [k, it]; })), sujo: false, filtro: 'todos', q: '', pag: 1, ordem: '' });
+  desenharSimMed();
+}
+
+async function salvarSimMed() {
+  const cl = ctxMed(), r = resumoMed(cl, linhasMed(cl)), u = usuarioAtual();
+  pm.nome = (valorCampo('pm-nome') || pm.nome).trim();
+  if (!pm.nome) { document.getElementById('pm-nome')?.focus(); return toast('Dê um nome à proposta', 'erro'); }
+  if (!Object.keys(pm.itens).length) return toast('Nada para salvar: adicione exames', 'erro');
+  const id = pm.id || DB.novaChave('simulacoes'), antes = ESTADO.simulacoes[id];
+  // "o" guarda a ordem e evita item vazio (o banco não grava objeto vazio)
+  const itens = Object.fromEntries(Object.entries(pm.itens).map(([k, it], i) => [k, { ...it, o: i }]));
+  const dados = { tipo: 'med', nome: pm.nome, medico: pm.medico.trim() || null, crm: pm.crm.trim() || null, tabelaId: pm.tabelaId || '', base: pm.base, d: pm.d, itens,
+    pdf: pdfParaSalvar(pm.pdf, modeloPropostaMed()),
+    resumo: { n: r.n, vol: r.vol, receita: Math.round(r.receita * 100) / 100, margem: r.margem, viavel: r.viavel },
+    autor: antes?.autor || u.nome, autorId: antes?.autorId || u.id, em: antes?.em || DB.agora(), atualizadoEm: DB.agora(), atualizadoPor: u.nome };
+  await DB.gravar(`${CAMINHOS.simulacoes}/${id}`, dados);
+  ESTADO.simulacoes[id] = { ...dados, em: antes?.em || Date.now(), atualizadoEm: Date.now() };
+  pm.id = id; pm.sujo = false;
+  registrar('simulador', `Proposta médico "${pm.nome}" salva (${r.n} exames, ${num(r.vol, 0)}/mês, ${fmt(r.receita)}/mês)`);
+  renderSimulador();
+  toast('Proposta salva');
+}
+
+async function excluirSimMed() {
+  const s = ESTADO.simulacoes[pm.id];
+  if (!s || !await confirmar({ titulo: 'Excluir proposta?', texto: `"${esc(s.nome)}" será excluída.`, botao: 'Excluir', perigo: true })) return;
+  await DB.remover(`${CAMINHOS.simulacoes}/${pm.id}`);
+  delete ESTADO.simulacoes[pm.id];
+  pm.id = null; pm.sujo = true;
+  renderSimulador();
+}
+
+function exportarSimMed() {
+  const cl = ctxMed(), ls = linhasMed(cl).filter(x => x.preco != null);
+  if (!ls.length) return toast('Nenhum exame com preço para exportar', 'erro');
+  ls.sort((a, b) => a.e.mn.localeCompare(b.e.mn, 'pt-BR', { sensitivity: 'base' }));
+  const dec = v => v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ',');
+  const q = s => `"${String(s || '').replace(/"/g, '""')}"`;
+  const s = resumoMed(cl, ls);
+  const csv = [['Mnemônico', 'Exame', 'Prazo', cl.refNome, 'Preço paciente', 'Desconto', 'Volume/mês', 'Receita/mês'].join(';'),
+    ...ls.map(x => [x.e.mn, q(x.e.descricao), q(textoPrazo(x.k)), dec(x.ref), dec(x.preco), x.desc != null ? pct(x.desc) : '', x.vol || '', x.vol ? dec(x.receita) : ''].join(';')),
+    ['', q('Total'), '', '', '', s.desc != null ? pct(s.desc) : '', s.vol || '', s.vol ? dec(s.receita) : ''].join(';')].join('\r\n') + '\r\n';
+  baixarArquivo(`Proposta médico - ${pm.nome || pm.medico || 'sem nome'}.csv`, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
 }

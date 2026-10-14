@@ -728,3 +728,6 @@ tr.vlin.vsel td { background: var(--cyan-light); }
 .cus-cli { display: flex; justify-content: flex-end; align-items: center; gap: 6px; font-size: 10.5px; opacity: .75; white-space: nowrap; }
 .cus-cli b { font-weight: 600; color: var(--cyan); }
 .cus-cli i { font-size: 9px; margin-left: 2px; opacity: .7; }
+/* linha recém-incluída na proposta para médico */
+.tab-edit tr.flash td { animation: flash-linha .9s ease-out; }
+@keyframes flash-linha { from { background: var(--cyan-bg, rgba(0, 168, 204, .18)); } }
