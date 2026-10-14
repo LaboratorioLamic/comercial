@@ -30,6 +30,8 @@ async function iniciar() {
     }
     const u = ESTADO.usuarios[sessao.usuarioId];
     // Só a lista de usuários decide se a sessão continua válida
+    // no treinamento a alteração é só simulada: descarta a simulação em vez de encerrar a sessão de verdade
+    if (chave === 'usuarios' && (!u || u.ativo === false) && SIM.ativo) return encerrarSimulacao({ msg: 'Simulação encerrada: a alteração simulada removeria o seu próprio acesso. Nada foi gravado.' });
     if (chave === 'usuarios' && (!u || u.ativo === false)) { encerrarSessao(); fecharGaveta(); return mostrarAuth('login', 'Sua sessão foi encerrada pelo administrador.'); }
     if (!u) return;
     // último acesso gravado pelo L2L: só interessa à aba de acessos
@@ -61,6 +63,7 @@ function entrarApp() {
   let t = 'inicio';
   try { t = sessionStorage.getItem('prec-tela') || 'inicio'; } catch (e) {}
   irPara(t);
+  avisoFimSimulacao();
 }
 
 document.addEventListener('keydown', e => {

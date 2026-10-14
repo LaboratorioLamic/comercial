@@ -687,9 +687,11 @@ async function decidirProposta(id, status) {
     // preço muda: cada chave é o "Valor atualizado no sistema" (desligada por padrão)
     const cxA = ctxAlvo(p.alvo);
     if (pode('exames', 'editar') && sistemaSuportado(cxA)) {
-      const ks = Object.entries(itens).filter(([k, it]) => ESTADO.exames[k] && (it.para ?? null) !== (it.de ?? null)).map(([k]) => k);
+      // já marcados no UniLab só voltam à lista se o valor foi alterado aqui (marca fica obsoleta)
+      const mudouAqui = k => k in rev && precoDifere(itens[k].para, itens[k].proposto);
+      const ks = Object.entries(itens).filter(([k, it]) => ESTADO.exames[k] && (it.para ?? null) !== (it.de ?? null) && ((!it.sistemaOk && precoDifere(cxA.sistema(k), it.para)) || mudouAqui(k))).map(([k]) => k);
       if (ks.length) {
-        _envVs = Object.fromEntries(ks.map(k => [k, !!itens[k].sistemaOk]));
+        _envVs = Object.fromEntries(ks.map(k => [k, false]));
         const r = await confirmar({ titulo: 'Valor atualizado no sistema?', icone: 'fa-clock-rotate-left', botao: 'Aprovar e publicar', cancelar: 'Voltar',
           texto: `Marque os exames cujo novo valor <b>já foi lançado</b> no sistema do laboratório: a tabela do sistema no banco recebe o valor publicado. Os desmarcados ficam pendentes nas notificações (Atualizar no UniLab).
             <span style="display:flex;gap:6px;justify-content:center;margin:10px 0"><button type="button" class="btn sm" onclick="envVsTodos(true)"><i class="fa-solid fa-check-double"></i>Marcar todos</button><button type="button" class="btn sm" onclick="envVsTodos(null)"><i class="fa-solid fa-right-left"></i>Inverter</button></span>

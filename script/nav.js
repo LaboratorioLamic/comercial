@@ -68,6 +68,7 @@ function aplicarPermissoes() {
   atualizarBadgePendencias();
   atualizarBadgePropostas();
   atualizarSino();
+  atualizarTutorialBtn();
   const g = ESTADO.grupos[u.grupoId];
   document.getElementById('user-box').innerHTML = `<div class="avatar" style="background:${corAvatar(u.id)}">${esc(iniciais(u.nome))}</div>
     <div class="user-txt"><div class="user-n">${esc(u.nome)}</div><div class="user-g">${esc(u.cargo || (g ? g.nome : 'Sem grupo'))}</div></div>

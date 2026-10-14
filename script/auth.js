@@ -195,6 +195,13 @@ function entrar() {
 }
 
 async function sair() {
+  // no treinamento: sair também descarta a simulação
+  if (SIM.ativo) {
+    const ok = await confirmar({ titulo: 'Encerrar o treinamento e sair?', icone: 'fa-flask', tom: 'pausa', botao: 'Sair',
+      texto: 'Tudo o que foi feito na simulação será descartado e você precisará fazer login novamente.' });
+    if (ok) encerrarSimulacao({ sair: true, msg: '' });
+    return;
+  }
   const ok = await confirmar({ titulo: 'Sair do sistema?', texto: 'Você precisará fazer login novamente.', botao: 'Sair' });
   if (!ok) return;
   encerrarSessao();
