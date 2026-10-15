@@ -20,6 +20,12 @@ function renderParametros() {
     <div style="padding:0 18px 18px"><div class="alert x" id="params-previa" style="margin:0"></div></div>
     ${editar ? `<div class="wz-f"><span class="muted" style="font-size:12px"><i class="fa-solid fa-clock-rotate-left"></i> Toda alteração fica registrada no histórico</span>
       <div style="display:flex;gap:8px"><button class="btn" onclick="renderParametros()">Descartar</button><button class="btn pri" onclick="salvarParametros()"><i class="fa-solid fa-floppy-disk"></i>Salvar parâmetros</button></div></div>` : ''}
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="sec-card-h"><span class="tc-ic" style="--c:var(--cyan)"><i class="fa-solid fa-wand-magic-sparkles"></i></span><div><h3>Prompt da instrução do exame</h3><div class="sub">Texto copiado pelo botão "Copiar prompt" no cadastro do exame.</div></div></div>
+    <div style="padding:0 18px 18px"><textarea id="pf-prompt" class="txt-grande" style="min-height:320px;width:100%" ${editar ? '' : 'disabled'}>${esc(promptInstrucao())}</textarea></div>
+    ${editar ? `<div class="wz-f"><button class="btn" onclick="document.getElementById('pf-prompt').value=PADRAO_PROMPT_INSTRUCAO">Restaurar padrão</button>
+      <div style="display:flex;gap:8px"><button class="btn" onclick="renderParametros()">Descartar</button><button class="btn pri" onclick="salvarPromptInstrucao()"><i class="fa-solid fa-floppy-disk"></i>Salvar prompt</button></div></div>` : ''}
   </div>`;
   previaParametros();
 }
@@ -63,4 +69,24 @@ async function salvarParametros() {
   await DB.mesclar(CAMINHOS.parametros, p);
   registrar('parametros', 'Parâmetros de cálculo alterados', { antes, depois: { ...antes, ...p } });
   toast('Parâmetros salvos');
+}
+
+// Prompt de IA da instrução do exame
+const promptInstrucao = () => ESTADO.parametros?.promptInstrucao || PADRAO_PROMPT_INSTRUCAO;
+async function salvarPromptInstrucao() {
+  const v = valorCampo('pf-prompt').trim();
+  if (!v) return toast('O prompt não pode ficar vazio', 'erro');
+  if (v === promptInstrucao()) return toast('Nenhuma alteração', 'aviso');
+  await DB.mesclar(CAMINHOS.parametros, { promptInstrucao: v === PADRAO_PROMPT_INSTRUCAO ? null : v });
+  registrar('parametros', 'Prompt da instrução do exame alterado');
+  toast('Prompt salvo');
+}
+async function copiarPromptInstrucao() {
+  const t = promptInstrucao();
+  try { await navigator.clipboard.writeText(t); }
+  catch {
+    const a = Object.assign(document.createElement('textarea'), { value: t });
+    document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove();
+  }
+  toast('Prompt copiado');
 }

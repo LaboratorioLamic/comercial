@@ -1,6 +1,6 @@
 # COMERCIAL LAMIC — Tutoriais
 
-Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
+Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
 
 > **Regra de manutenção (para pessoas e para o Claude)**
 >
@@ -24,7 +24,7 @@ Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 5 | `exames-buscar` | Exames | Buscar e filtrar exames | exames:ver | 10 |
 | 6 | `exames-ficha` | Exames | Ficha do exame | exames:ver | 13 |
 | 7 | `exames-alterar-preco` | Exames | Alterar preço e enviar para aprovação | exames:editar | 10 |
-| 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 14 |
+| 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 15 |
 | 9 | `exames-rascunho` | Exames | Rascunho de exames | exames:ver ou tabelas:ver | 10 |
 | 10 | `custos-fixos` | Custos | Custos fixos: linear ou rateado | custos:editar | 8 |
 | 11 | `custos-reagente` | Custos | Cadastrar reagente | custos:criar | 11 |
@@ -44,7 +44,7 @@ Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 25 | `importar-exportar` | Importar / Exportar | Importar e exportar | importar:ver | 5 |
 | 26 | `config-usuarios` | Configurações | Cadastrar usuário | usuarios:criar | 11 |
 | 27 | `config-grupos` | Configurações | Grupos e permissões | usuarios:editar | 7 |
-| 28 | `config-parametros` | Configurações | Parâmetros e setores | params:editar | 10 |
+| 28 | `config-parametros` | Configurações | Parâmetros e setores | params:editar | 11 |
 
 ## Primeiros passos
 
@@ -203,11 +203,12 @@ Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 7 | `#dx-desc` | digitar (sugestão: "Exame de treinamento") | **Nome do exame** — Nome que aparece nas listas, tabelas e PDFs. |
 | 8 | `#pop-dxsetor` | ver | **Setor** — O setor define a margem alvo e as etapas padrão (coleta, triagem). |
 | 9 | `#dx-origem` | ver | **Origem** — Interno é feito no LAMIC; Apoio é enviado a outro laboratório. |
-| 10 | `#dx-anexos` | ver · condicional | **Anexos** — Links (Drive, PDF, formulário) da instrução do exame. Vão para o catálogo de instruções e aparecem clicáveis para os apoiados no L2L. Os anexos que já estão no catálogo entram sozinhos. |
-| 11 | `#gaveta [onclick="gravarDadosExame()"]` | clique · avança se deu certo | **Salvar** — Clique em Salvar. |
-| 12 | `#modal .modal-card` | ver · condicional | **Proposta ou publicar** — Com preço praticado, uma janela pergunta como ele passa a valer. Enviar como proposta (já marcado): vale depois da aprovação, e o exame fica sem preço até lá. Publicar direto (só quem aprova): vale na hora, sem revisão. |
-| 13 | `#modal [data-r="1"]` | clique · condicional · avança se deu certo | **Confirmar** — Clique em Enviar proposta. A ficha do exame novo abre em seguida. |
-| 14 | — (cartão central) | ver | **Pronto!** — O exame foi criado na simulação e já aparece na lista. Ao encerrar o treinamento ele é descartado. |
+| 10 | `#gaveta [onclick="copiarPromptInstrucao()"]` | ver · condicional | **Copiar prompt** — Copiar prompt copia o prompt de IA que organiza a instrução no padrão do catálogo (jejum, orientações, interações, conservação…). Cole numa IA junto com o texto técnico do exame e traga o resultado para o campo Instrução do exame. |
+| 11 | `#dx-anexos` | ver · condicional | **Anexos** — Links (Drive, PDF, formulário) da instrução do exame. Vão para o catálogo de instruções e aparecem clicáveis para os apoiados no L2L. Os anexos que já estão no catálogo entram sozinhos. |
+| 12 | `#gaveta [onclick="gravarDadosExame()"]` | clique · avança se deu certo | **Salvar** — Clique em Salvar. |
+| 13 | `#modal .modal-card` | ver · condicional | **Proposta ou publicar** — Com preço praticado, uma janela pergunta como ele passa a valer. Enviar como proposta (já marcado): vale depois da aprovação, e o exame fica sem preço até lá. Publicar direto (só quem aprova): vale na hora, sem revisão. |
+| 14 | `#modal [data-r="1"]` | clique · condicional · avança se deu certo | **Confirmar** — Clique em Enviar proposta. A ficha do exame novo abre em seguida. |
+| 15 | — (cartão central) | ver | **Pronto!** — O exame foi criado na simulação e já aparece na lista. Ao encerrar o treinamento ele é descartado. |
 
 ### Rascunho de exames
 
@@ -549,7 +550,7 @@ Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 ### Parâmetros e setores
 
 - **id:** `config-parametros` · **ícone:** `fa-sliders` · **permissão:** params:editar
-- **Objetivo:** Imposto, maquininha, exames por atendimento e setores.
+- **Objetivo:** Imposto, maquininha, exames por atendimento, prompt da instrução e setores.
 
 | # | Alvo | Ação | Legenda |
 |---|---|---|---|
@@ -557,9 +558,10 @@ Revisão: 14/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 2 | `#pf-imposto` | digitar (sugestão: calculada) | **Altere um valor** — Mude o imposto e veja a prévia abaixo. |
 | 3 | `#params-previa` | ver | **Prévia** — Efeito do parâmetro num exame de exemplo, antes de salvar. |
 | 4 | `#cfg-params [onclick="salvarParametros()"]` | clique | **Salvar** — Clique em Salvar parâmetros: vale para todos os exames. |
-| 5 | `#s-config .subnav button[data-p="setores"]` | clique | **Setores** — Clique em Setores. |
-| 6 | `#setores-body` | ver | **Setores** — Categoria, etapas padrão (coleta, triagem), quantidade de exames e margem alvo própria de cada setor. |
-| 7 | `#setores-body tr.row` | clique | **Abra um setor** — Clique em um setor para editar. |
-| 8 | `#gaveta .dr-b` | ver · espera `#gaveta.open` | **Editor do setor** — Nome, categoria, ícone, cor, etapas, margem alvo e os exames vinculados. |
-| 9 | `#gaveta .dr-h .icon-btn` | clique · espera `#gaveta.open` | **Fechar** — Clique no X para fechar a gaveta e voltar à lista. |
-| 10 | — (cartão central) | ver | **Pronto!** — Parâmetros e setores mudam o cálculo de todos os exames: altere com cuidado. |
+| 5 | `#pf-prompt` | ver · condicional | **Prompt da instrução** — Texto copiado pelo botão Copiar prompt no cadastro do exame. Edite e clique em Salvar prompt; Restaurar padrão volta ao texto original. |
+| 6 | `#s-config .subnav button[data-p="setores"]` | clique | **Setores** — Clique em Setores. |
+| 7 | `#setores-body` | ver | **Setores** — Categoria, etapas padrão (coleta, triagem), quantidade de exames e margem alvo própria de cada setor. |
+| 8 | `#setores-body tr.row` | clique | **Abra um setor** — Clique em um setor para editar. |
+| 9 | `#gaveta .dr-b` | ver · espera `#gaveta.open` | **Editor do setor** — Nome, categoria, ícone, cor, etapas, margem alvo e os exames vinculados. |
+| 10 | `#gaveta .dr-h .icon-btn` | clique · espera `#gaveta.open` | **Fechar** — Clique no X para fechar a gaveta e voltar à lista. |
+| 11 | — (cartão central) | ver | **Pronto!** — Parâmetros e setores mudam o cálculo de todos os exames: altere com cuidado. |

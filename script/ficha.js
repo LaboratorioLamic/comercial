@@ -599,7 +599,7 @@ function abrirDadosExame(id) {
         ${campo('dx-mat', 'Material', e?.material || '', { tipo: 'text', ph: 'Ex.: Soro' })}
         ${campo('dx-dias', 'Prazo (dias)', (id ? diasPrazo(id) : null) ?? '', { passo: '1', ph: 'Ex.: 2', dica: '0 = 24 Horas' })}
       </div>
-      ${comIns ? `<div class="field"><label><i class="fa-solid fa-book-medical"></i>Instrução do exame</label>
+      ${comIns ? `<div class="field"><label style="display:flex;align-items:center"><i class="fa-solid fa-book-medical"></i>Instrução do exame<button type="button" class="btn sm" style="margin-left:auto" onclick="copiarPromptInstrucao()" title="Copia o prompt de IA que formata a instrução no padrão do catálogo"><i class="fa-solid fa-copy"></i>Copiar prompt</button></label>
         <textarea id="dx-ins" class="txt-grande" style="min-height:170px" placeholder="Jejum, preparo, coleta, conservação, critérios de rejeição…"></textarea>
         <div class="dx-checks" id="dx-checks"></div>
         <span class="hint" id="dx-cat-hint">Vai para o catálogo de instruções. Opcional.</span></div>

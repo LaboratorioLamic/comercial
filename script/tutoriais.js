@@ -241,6 +241,9 @@ const TUTORIAIS = [
         texto: 'O setor define a margem alvo e as etapas padrão (coleta, triagem).' },
       { alvo: '#dx-origem', titulo: 'Origem', icone: 'fa-route', acao: 'ver',
         texto: '<b>Interno</b> é feito no LAMIC; <b>Apoio</b> é enviado a outro laboratório.' },
+      { alvo: '#gaveta [onclick="copiarPromptInstrucao()"]', titulo: 'Copiar prompt', icone: 'fa-copy', acao: 'ver', pular: () => !qsTut('#gaveta [onclick="copiarPromptInstrucao()"]'),
+        texto: '<b>Copiar prompt</b> copia o prompt de IA que organiza a instrução no padrão do catálogo (jejum, orientações, interações, conservação…). Cole numa IA junto com o texto técnico do exame e traga o resultado para o campo <b>Instrução do exame</b>.',
+        dica: 'O texto do prompt é editado em Configurações › Parâmetros.' },
       { alvo: '#dx-anexos', titulo: 'Anexos', icone: 'fa-paperclip', acao: 'ver', pular: () => !qsTut('#dx-anexos'),
         texto: 'Links (Drive, PDF, formulário) da instrução do exame. Vão para o catálogo de instruções e aparecem clicáveis para os apoiados no L2L. Os anexos que já estão no catálogo entram sozinhos.' },
       { alvo: '#gaveta [onclick="gravarDadosExame()"]', titulo: 'Salvar', icone: 'fa-floppy-disk', acao: 'clique', avancaSe: () => !qsTut('#dx-mn') || modalAbertoTut(),
@@ -681,7 +684,7 @@ const TUTORIAIS = [
   },
   {
     id: 'config-parametros', modulo: 'config', icone: 'fa-sliders', requer: [['params', 'editar']],
-    titulo: 'Parâmetros e setores', desc: 'Imposto, maquininha, exames por atendimento e setores.',
+    titulo: 'Parâmetros e setores', desc: 'Imposto, maquininha, exames por atendimento, prompt da instrução e setores.',
     passos: [
       { alvo: '#cfg-params .fgrid', titulo: 'Parâmetros de cálculo', icone: 'fa-sliders', acao: 'ver',
         antes: preparaTut(irTelaTut('config', () => { configAba = 'params'; })),
@@ -690,6 +693,8 @@ const TUTORIAIS = [
         texto: 'Mude o imposto e veja a prévia abaixo.' },
       { alvo: '#params-previa', titulo: 'Prévia', icone: 'fa-eye', acao: 'ver', texto: 'Efeito do parâmetro num exame de exemplo, antes de salvar.' },
       { alvo: '#cfg-params [onclick="salvarParametros()"]', titulo: 'Salvar', icone: 'fa-floppy-disk', acao: 'clique', texto: 'Clique em <b>Salvar parâmetros</b>: vale para todos os exames.' },
+      { alvo: '#pf-prompt', titulo: 'Prompt da instrução', icone: 'fa-wand-magic-sparkles', acao: 'ver', pular: () => !qsTut('#pf-prompt'),
+        texto: 'Texto copiado pelo botão <b>Copiar prompt</b> no cadastro do exame. Edite e clique em <b>Salvar prompt</b>; <b>Restaurar padrão</b> volta ao texto original.' },
       { alvo: '#s-config .subnav button[data-p="setores"]', titulo: 'Setores', icone: 'fa-sitemap', acao: 'clique', texto: 'Clique em <b>Setores</b>.' },
       { alvo: '#setores-body', titulo: 'Setores', icone: 'fa-list', acao: 'ver',
         texto: 'Categoria, etapas padrão (coleta, triagem), quantidade de exames e margem alvo própria de cada setor.' },
