@@ -21,7 +21,7 @@ const MODELO_PROPOSTA_PADRAO = {
   apresentacao: `Prezado(a) Senhor(a),
 
 É com grande satisfação que encaminhamos para apreciação de V.Sa. a nossa proposta orçamentária para realização de exames laboratoriais de nossa especialidade.
-Salientamos que todos os exames aqui apresentados estão disponíveis para imediata realização.
+Salientamos que todos os {itens} aqui apresentados estão disponíveis para imediata realização.
 Ademais, ressaltamos que a estrutura do Núcleo Técnico Operacional – NTO do Laboratório LAMIC está apta a realizar uma gama de aproximadamente 2.000 (dois mil) diferentes exames e, desta forma, caso V.Sa. demande a realização de algum(ns) exame(s) que não esteja(m) detalhado(s) na presente proposta, encontramo-nos à disposição para apresentar proposta específica para o(s) mesmo(s).
 
 Recepção dos materiais para análise:
@@ -35,52 +35,55 @@ Os prazos de entrega dos resultados estão evidenciados ao lado da descrição d
   assinatura: 'Dr. Leonardo Bezerra',
   cargo: 'Laboratório LAMIC',
   rodape: 'Laboratório LAMIC · Núcleo Técnico Operacional – NTO · Juazeiro do Norte – CE',
-  validade: 30
+  validade: 30,
+  itExame: true, itVacina: false
 };
 const modeloProposta = () => ({ ...MODELO_PROPOSTA_PADRAO, ...(ESTADO.modeloProposta || {}) });
 
 const MODELO_CLIENTE_PADRAO = {
   apresentacao: `Prezado(a) {destinatario},
 
-Agradecemos o seu contato e a confiança no Laboratório LAMIC. Segue o orçamento dos exames solicitados, com os valores e os prazos de entrega dos resultados.
+Agradecemos o seu contato e a confiança no Laboratório LAMIC. Segue o orçamento dos {itens} solicitados, com os valores e os prazos de entrega dos resultados.
 
 Atendimento e coleta:
 • Segunda-feira a sexta-feira: 06h00 às 17h00
 • Sábado: 06h00 às 12h00
 
 Preparo:
-Alguns exames exigem preparo (jejum, horário ou cuidados específicos). Consulte nossa equipe ao agendar a coleta.
+Alguns {itens} exigem preparo (jejum, horário ou cuidados específicos). Consulte nossa equipe ao agendar a coleta.
 
 Entrega dos resultados:
-Os prazos de entrega estão ao lado de cada exame e contam a partir da coleta.`,
+Os prazos de entrega estão ao lado de cada {item} e contam a partir da coleta.`,
   encerramento: 'Ficamos à disposição para esclarecer dúvidas e agendar o seu atendimento.',
   assinatura: 'Laboratório LAMIC',
   cargo: 'Atendimento ao cliente',
   rodape: MODELO_PROPOSTA_PADRAO.rodape,
-  validade: 15
+  validade: 15,
+  itExame: true, itVacina: false
 };
 const modeloPropostaCli = () => ({ ...MODELO_CLIENTE_PADRAO, ...(ESTADO.modeloPropostaCli || {}) });
 
 const MODELO_MEDICO_PADRAO = {
   apresentacao: `Prezado(a) {destinatario},
 
-O Laboratório LAMIC tem a satisfação de apresentar uma condição especial para os seus pacientes: os exames relacionados a seguir serão realizados com desconto sobre a nossa tabela, mediante a apresentação da solicitação médica emitida por V.Sa.
+O Laboratório LAMIC tem a satisfação de apresentar uma condição especial para os seus pacientes: os {itens} relacionados a seguir serão realizados com desconto sobre a nossa tabela, mediante a apresentação da solicitação médica emitida por V.Sa.
 
 Como funciona:
 • O paciente apresenta a solicitação médica no atendimento do Laboratório LAMIC.
-• O desconto vale para os exames desta proposta, durante a validade indicada.
+• O desconto vale para os {itens} desta proposta, durante a validade indicada.
 
 Atendimento e coleta:
 • Segunda-feira a sexta-feira: 06h00 às 17h00
 • Sábado: 06h00 às 12h00
 
 Entrega dos resultados:
-Os prazos de entrega estão ao lado de cada exame e contam a partir da coleta.`,
-  encerramento: 'Agradecemos a parceria e ficamos à disposição para esclarecer dúvidas ou incluir outros exames nesta proposta.',
+Os prazos de entrega estão ao lado de cada {item} e contam a partir da coleta.`,
+  encerramento: 'Agradecemos a parceria e ficamos à disposição para esclarecer dúvidas ou incluir outros {itens} nesta proposta.',
   assinatura: 'Laboratório LAMIC',
   cargo: 'Comercial',
   rodape: MODELO_PROPOSTA_PADRAO.rodape,
-  validade: 90
+  validade: 90,
+  itExame: true, itVacina: false
 };
 const modeloPropostaMed = () => ({ ...MODELO_MEDICO_PADRAO, ...(ESTADO.modeloPropostaMed || {}) });
 
@@ -141,7 +144,13 @@ const ordemGrupoPdf = (a, b) => (a === 'Diversos') - (b === 'Diversos') || a.loc
 const numeroProposta = () => `${PM().prefixo}-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${(PM().st().id || 'rasc').replace(/[^A-Za-z0-9]/g, '').slice(-4).toUpperCase()}`;
 
 // ── Textos: padrão (todos) × personalizado (proposta atual) ──
-const TEXTOS_PDF = ['apresentacao', 'encerramento', 'assinatura', 'cargo', 'rodape', 'validade'];
+const TEXTOS_PDF = ['apresentacao', 'encerramento', 'assinatura', 'cargo', 'rodape', 'validade', 'itExame', 'itVacina'];
+// Base do texto: {itens} e {item} viram exames, vacinas ou os dois, conforme as chaves marcadas
+function trocarItensPdf(texto, f) {
+  const ex = f.itExame !== false, va = !!f.itVacina;
+  const [itens, item] = ex && va ? ['exames e vacinas', 'exame ou vacina'] : va ? ['vacinas', 'vacina'] : ['exames', 'exame'];
+  return String(texto || '').replace(/\{itens\}/gi, itens).replace(/\{item\}/gi, item);
+}
 const textoPersonalizado = (f, k, m = PM().modelo()) => String(f?.[k] ?? '') !== String(m[k] ?? '');
 // Ao salvar a simulação, guarda só o que difere do padrão: o resto segue o padrão atual
 function pdfParaSalvar(f, m = modeloProposta()) {
@@ -157,6 +166,10 @@ function htmlTextosPdf(f, alvo, aoMudar = '') {
   return `<div class="just" style="margin:0"><label for="pdf-apr">Apresentação</label>
       <textarea id="pdf-apr" class="pdf-txt" rows="14" oninput="${on('apresentacao')}">${esc(f.apresentacao)}</textarea>
       <span class="hint">Linhas terminadas em ":" viram subtítulo · linhas com "•" ou "-" viram itens · {destinatario} é trocado pelo nome</span></div>
+    <div class="field" style="margin:0"><label>Base do texto</label><div class="dx-checks" style="grid-template-columns:1fr 1fr;margin-top:0">
+      <div class="dx-ck"><span><i class="fa-solid fa-flask"></i>Exame</span>${chave(f.itExame !== false, `${alvo}.itExame=!(${alvo}.itExame!==false);this.classList.toggle('on');${aoMudar}`)}</div>
+      <div class="dx-ck"><span><i class="fa-solid fa-syringe"></i>Vacina</span>${chave(!!f.itVacina, `${alvo}.itVacina=!${alvo}.itVacina;this.classList.toggle('on');${aoMudar}`)}</div>
+    </div><span class="hint">{itens} vira exames, vacinas ou exames e vacinas · {item} vira exame, vacina ou exame ou vacina</span></div>
     <div class="just" style="margin:0"><label for="pdf-enc">Encerramento</label>
       <textarea id="pdf-enc" rows="3" oninput="${on('encerramento')}">${esc(f.encerramento)}</textarea></div>
     <div class="fgrid sem-pad">
@@ -373,7 +386,7 @@ function montarPdfLab(logo) {
   // ── Página 1: faixa de título e destinatário ──
   y = 128;
   fonte('bold', 19); cor(C.navy);
-  doc.text(cli ? 'Orçamento de Exames Laboratoriais' : med ? 'Proposta de Desconto para Pacientes' : 'Proposta de Prestação de Serviços Laboratoriais', M, y);
+  doc.text(cli ? `Orçamento de ${f.itVacina ? (f.itExame !== false ? 'Exames e Vacinas' : 'Vacinas') : 'Exames Laboratoriais'}` : med ? 'Proposta de Desconto para Pacientes' : 'Proposta de Prestação de Serviços Laboratoriais', M, y);
   y += 10;
   cor(C.azul, 'fill'); doc.rect(M, y, 46, 3, 'F');
   cor(C.cinza, 'fill'); doc.rect(M + 50, y, 14, 3, 'F');
@@ -409,7 +422,7 @@ function montarPdfLab(logo) {
 
   // ── Texto de apresentação ──
   const blocoTexto = (texto, tam = 10) => {
-    String(texto || '').replace(/\{destinatario\}/gi, f.destinatario || '').split('\n').forEach(linha => {
+    trocarItensPdf(texto, f).replace(/\{destinatario\}/gi, f.destinatario || '').split('\n').forEach(linha => {
       const t = linha.trim();
       if (!t) { y += 7; return; }
       const item = /^[•\-–]\s*/.test(t), sub = !item && /:$/.test(t) && t.length < 90;
@@ -454,7 +467,7 @@ function montarPdfLab(logo) {
 
   // ── Relação de exames ──
   quebra(80);
-  fonte('bold', 12); cor(C.navy); doc.text('Relação de exames e valores', M, y);
+  fonte('bold', 12); cor(C.navy); doc.text(`Relação de ${trocarItensPdf('{itens}', f).replace(' e ', ', ')} e valores`, M, y);
   fonte('normal', 8.5); cor(C.muted); doc.text(med ? 'Valores ao paciente em reais (R$), por exame realizado.' : 'Valores unitários em reais (R$), por exame realizado.', W - M, y, { align: 'right' });
   y += 8;
   const cols = [{ k: 'mn', t: 'Mnemônico', w: 62 }, { k: 'ex', t: 'Exame' }];
