@@ -21,7 +21,7 @@ const ABAS_FICHA = [
 function abrirFicha(id, aba = 'valores') {
   const e = ESTADO.exames[id];
   if (!e) return;
-  _fxId = id; _fxFonte = null; _fxNovoItem = false; _fxAba = aba; _fxTab = {}; _fxRasc = {};
+  _fxId = id; _fxFonte = null; _fxNovoItem = false; _fxEditPreco = false; _fxAba = aba; _fxTab = {}; _fxRasc = {};
   _fxOrig = JSON.parse(JSON.stringify(e));
   _fx = JSON.parse(JSON.stringify(e));
   _fx.extras = extrasExame(_fx).map(x => ({ ...x }));
@@ -335,7 +335,18 @@ function desenharCustoTeste() {
     const p = e.vinculoApoio ? precoApoio(e.vinculoApoio.apoioId, e.vinculoApoio.chave) : null;
     corpo = !temTabela ? `<div class="casc-r muted"><div class="lft"><i class="fa-solid fa-circle-info"></i><div>Este apoio ainda não tem tabela importada<div class="s">use custo manual por enquanto</div></div></div></div>`
       : `<div class="casc-r"><div class="lft"><i class="fa-solid fa-link"></i><div>${p ? `<span class="mn">${esc(p.codigo)}</span> <span class="tag">${esc(p.material || '')}</span>` : 'Sem vínculo'}<div class="s">${p ? esc(p.descricao) : 'escolha o item da tabela do apoio'}</div></div></div><div id="pop-fxapoio" style="min-width:200px"></div></div>
-        ${p ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Preço negociado · vigência ${dataBR(p.vigencia)}<div class="s">${p.agendado ? `novo preço ${fmt(p.agendado.preco)} a partir de ${dataBR(p.agendado.vigencia)}` : 'atualiza a cada importação da tabela'}</div></div></div><span class="v">${fmt(p.valor)}</span></div>` : ''}`;
+        ${p ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Preço negociado · vigência ${dataBR(p.vigencia)}<div class="s">${p.agendado ? `novo preço ${fmt(p.agendado.preco)} a partir de ${dataBR(p.agendado.vigencia)}` : 'atualiza a cada importação da tabela'}</div></div></div>${editar ? `<div style="display:flex;align-items:center;gap:8px"><span class="v">${fmt(p.valor)}</span><button type="button" class="btn sm" title="Editar preço negociado" onclick="_fxEditPreco=true;desenharCustoTeste()"><i class="fa-solid fa-pen"></i></button></div>` : `<span class="v">${fmt(p.valor)}</span>`}</div>` : ''}`;
+    // edita o preço negociado e a vigência do item vinculado direto na tabela do apoio
+    if (p && editar && _fxEditPreco) {
+      const it = ESTADO.apoios[e.vinculoApoio.apoioId].precos[e.vinculoApoio.chave];
+      corpo += `<div class="casc-r" style="display:block"><div class="lft" style="margin-bottom:10px"><i class="fa-solid fa-pen"></i><div>Editar preço negociado<div class="s">altera o item ${esc(it.codigo)} na tabela do apoio; vigência futura mantém o preço atual até a data</div></div></div>
+          <div class="form-col" style="gap:8px">
+            <div style="display:flex;gap:8px"><div class="price-in"><span>R$</span><input id="fx-ep-preco" type="number" step="0.01" min="0" value="${Number(it.preco).toFixed(2)}" onfocus="this.select()"></div>
+              <div class="inp" style="flex:1"><input class="txt" id="fx-ep-vig" type="date" value="${esc(it.vigencia || hojeISO())}"></div></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn sm" onclick="_fxEditPreco=false;desenharCustoTeste()">Cancelar</button>
+              <button type="button" class="btn sm pri" onclick="salvarPrecoApoioFicha()"><i class="fa-solid fa-floppy-disk"></i>Salvar preço</button></div>
+          </div></div>`;
+    }
     // valor negociado fora da tabela importada: cadastra o item à mão na tabela do apoio e vincula, como no cadastro do exame
     const apoio = ESTADO.setores[apoioId];
     if (editar && apoio?.categoria === 'apoio') corpo += !_fxNovoItem
@@ -370,6 +381,26 @@ function desenharCustoTeste() {
 
 // Cadastra o item na tabela do apoio (manual) e já grava o vínculo no exame
 let _fxNovoItem = false;
+let _fxEditPreco = false;
+
+// Altera preço/vigência do item vinculado na tabela do apoio (mesma regra de gravarItemApoio)
+async function salvarPrecoApoioFicha() {
+  const { apoioId, chave: k } = _fx.vinculoApoio || {}, old = ESTADO.apoios[apoioId]?.precos?.[k], a = ESTADO.setores[apoioId];
+  if (!old) return toast('Item do apoio não encontrado', 'erro');
+  const preco = Math.round(numCampo('fx-ep-preco') * 100) / 100, vig = valorCampo('fx-ep-vig') || hojeISO();
+  if (!(preco >= 0)) return toast('Informe o preço', 'erro');
+  if (old.preco === preco && (old.vigencia || '') === vig) { _fxEditPreco = false; return desenharCustoTeste(); }
+  const item = { ...old, preco, vigencia: vig, editadoEm: Date.now(), editadoPor: usuarioAtual().nome };
+  // o preço que valia segue valendo até a nova vigência (ver precoApoio)
+  item.anterior = old.vigencia > hojeISO() && old.anterior ? old.anterior : { preco: old.preco, vigencia: old.vigencia || null };
+  const hist = itemHistorico(item, 'editado', { de: old.preco, para: preco, vigDe: old.vigencia, vigPara: vig });
+  await DB.mesclar('/', { [`${CAMINHOS.apoios}/${apoioId}/precos/${k}`]: item, ...loteHistoricoApoio('manual', { [k]: hist }, {}, apoioId) });
+  ESTADO.apoios[apoioId] = { ...ESTADO.apoios[apoioId], precos: { ...ESTADO.apoios[apoioId].precos, [k]: item } };
+  registrar('apoios', `${a?.nome || apoioId}: item ${old.codigo} alterado pela ficha do exame ${_fx.mn} (${fmt(old.preco)} → ${fmt(preco)}, vigência ${dataBR(vig)})`);
+  _fxEditPreco = false;
+  desenharCustoTeste(); desenharControles(); atualizarFicha();
+  toast(`Preço de ${old.codigo} atualizado`);
+}
 async function criarItemApoioFicha() {
   const e = _fx, apoioId = apoioDoExame(e), apoio = ESTADO.setores[apoioId];
   if (apoio?.categoria !== 'apoio') return toast('O setor do exame não é um laboratório de apoio', 'erro');
