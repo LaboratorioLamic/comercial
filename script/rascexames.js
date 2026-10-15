@@ -57,7 +57,7 @@ async function abrirRascunhoExames(foco = null, just = '') {
   if (!_rxVolta) _envVs = {};
   _rxVolta = null;
   abrirGaveta({
-    larga: true, sobre: 'Rascunho de exames', titulo: temFoco ? `Confirmar envio · ${ESTADO.exames[foco].mn}` : 'Preços alterados nas fichas',
+    larga: true, centro: true, sobre: 'Rascunho de exames', titulo: temFoco ? `Confirmar envio · ${ESTADO.exames[foco].mn}` : 'Preços alterados nas fichas',
     meta: '<span id="rx-meta" style="display:contents"></span>',
     corpo: `
       <div class="alert x"><i class="fa-solid fa-pen-to-square"></i><div>Preços alterados na ficha dos exames ficam aqui até serem enviados. Marque os exames, confira os valores e envie: <b>uma proposta por tabela</b>, todas no mesmo lote.</div></div>

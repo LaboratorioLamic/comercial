@@ -12,7 +12,6 @@ const tagSetor = id => {
 };
 // Filtro "Controle interno" da lista de exames
 const CTRL_EXAME = {
-  aud:  { rotulo: 'A auditar',            icone: 'fa-magnifying-glass-dollar', cor: 'var(--amber)',      desc: 'Valor marcado para auditoria',         f: e => !!e.auditar },
   vsis: { rotulo: 'Valor não atualizado', icone: 'fa-clock-rotate-left', cor: 'var(--red)', desc: 'Valor pendente de atualização no sistema', f: e => valorDesatualizado(e.id) },
   sist: { rotulo: 'Fora do sistema',      icone: 'fa-plug-circle-xmark',       cor: 'var(--text-muted)', desc: 'Mnemônico não existe no catálogo',     f: e => !!e.foraDoSistema },
   efet: { rotulo: 'Não efetua na Particular', icone: 'fa-ban',                 cor: 'var(--text-muted)', desc: 'Efetua = N na tabela Particular do Unilab', f: e => !!e.inativoNoSistema },
@@ -20,7 +19,6 @@ const CTRL_EXAME = {
   rasc: { rotulo: 'No meu rascunho',      icone: 'fa-pen-to-square',           cor: 'var(--cyan)',       desc: 'Preço alterado na ficha, ainda não enviado', f: e => emRascExame(e.id) }
 };
 const iconesExame = e =>
-  (e.auditar ? ' <i class="fa-solid fa-magnifying-glass-dollar flag" style="color:var(--amber)" title="Valor a auditar"></i>' : '') +
   (e.origem !== 'apoio' ? '' : negociadoExame(e) ? ' <i class="fa-solid fa-handshake flag" style="color:var(--green)" title="Apoio com negociação"></i>'
     : ' <i class="fa-solid fa-handshake-slash flag" style="color:var(--red)" title="Apoio sem valor negociado"></i>') +
   (valorDesatualizado(e.id) ? ' <i class="fa-solid fa-clock-rotate-left flag" style="color:var(--red)" title="Valor não atualizado no sistema"></i>' : '') +

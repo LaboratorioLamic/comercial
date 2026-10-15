@@ -214,7 +214,6 @@ const PENDENCIAS = {
   sist:   { nome: 'Fora do sistema',     icone: 'fa-plug-circle-xmark',        desc: 'Mnemônico não encontrado no sistema do laboratório, ou não efetuado pela tabela Particular (efetua = N no Unilab).' },
   div:    { nome: 'Divergência de preço', icone: 'fa-code-compare',            desc: 'Preço praticado diferente do cadastrado no sistema do laboratório.' },
   hier:   { nome: 'Quebra hierarquia',   icone: 'fa-stairs',                   desc: 'Preço de uma tabela acima de outra que deveria ser maior (Particular ≥ Cartões ≥ … ; tabelas fora da hierarquia ≤ Particular). Ajuste em Tabelas de preço → Hierarquia.' },
-  aud:    { nome: 'A auditar',           icone: 'fa-magnifying-glass-dollar',  desc: 'Valores marcados para auditoria interna.' },
   min:    { nome: 'Abaixo do mínimo',    icone: 'fa-circle-xmark',             desc: 'Margem abaixo da mínima: revise preço ou custo.' }
 };
 function pendenciasExame(e, c = calcular(e)) {
@@ -226,7 +225,6 @@ function pendenciasExame(e, c = calcular(e)) {
   if (e.foraDoSistema || e.inativoNoSistema) p.push('sist');
   if (e.precoSistema != null && e.precoPraticado && Math.abs(e.precoSistema - e.precoPraticado) > 0.004) p.push('div');
   if (e.id && quebrasHierarquia(e.id).length) p.push('hier');
-  if (e.auditar) p.push('aud');
   if (c.status === 'r') p.push('min');
   return p;
 }

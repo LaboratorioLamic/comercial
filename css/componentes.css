@@ -250,6 +250,14 @@ td.desc { width: 100%; max-width: 0; min-width: 110px; }
 .drawer.fantasma { z-index: 69; pointer-events: none; transition: none; }
 .drawer.fantasma::after { content: ""; position: absolute; inset: 0; background: rgba(14, 22, 40, .3); animation: aparecer .25s ease; }
 @keyframes aparecer { from { opacity: 0; } }
+/* Variante centralizada: janela suspensa no meio da tela */
+.drawer.centro {
+  top: 50%; left: 50%; right: auto; bottom: auto; width: 1040px; max-width: calc(100vw - 32px); height: calc(100vh - 48px);
+  border-radius: 14px; overflow: hidden; opacity: 0; pointer-events: none; visibility: hidden;
+  transform: translate(-50%, -48%) scale(.98); transition: transform .2s ease, opacity .2s ease, visibility .2s;
+}
+.drawer.centro.open { opacity: 1; pointer-events: auto; visibility: visible; transform: translate(-50%, -50%); }
+html.sim-on .drawer.centro { top: calc(50% + var(--sim-h) / 2); height: calc(100vh - 48px - var(--sim-h)); }
 .dr-h { padding: 18px 22px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
 .dr-h .mn { font-size: 13px; }
 .dr-h h3 { font-size: 16px; font-weight: 600; margin-top: 4px; line-height: 1.3; }

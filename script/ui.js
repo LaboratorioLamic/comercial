@@ -17,7 +17,7 @@ function toast(texto, tipo = 'ok') {
 
 // ── Gaveta lateral ────────────────────────────────────────────
 // abrirGaveta({ sobre, titulo, meta, corpo, rodape })
-function abrirGaveta({ sobre = '', titulo = '', meta = '', corpo = '', rodape = '', larga = false }) {
+function abrirGaveta({ sobre = '', titulo = '', meta = '', corpo = '', rodape = '', larga = false, centro = false }) {
   fecharPop();
   document.getElementById('g-sobre').textContent = sobre;
   document.getElementById('g-titulo').textContent = titulo;
@@ -26,6 +26,14 @@ function abrirGaveta({ sobre = '', titulo = '', meta = '', corpo = '', rodape = 
   c.innerHTML = corpo; c.scrollTop = 0;
   document.getElementById('g-rodape').innerHTML = rodape;
   document.getElementById('gaveta').classList.toggle('larga', larga);
+  const g = document.getElementById('gaveta');
+  // troca lateral ↔ centralizada sem animar o deslocamento: parte já do estado fechado do novo formato
+  if (g.classList.contains('centro') !== centro && !g.classList.contains('open')) {
+    g.style.transition = 'none';
+    g.classList.toggle('centro', centro);
+    void g.offsetWidth;
+    g.style.transition = '';
+  } else g.classList.toggle('centro', centro);
   document.getElementById('gaveta').classList.add('open');
   document.getElementById('gaveta-fundo').classList.add('open');
 }

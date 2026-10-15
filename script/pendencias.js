@@ -29,7 +29,6 @@ function renderPendencias() {
     sist:  ['Praticado', x => fmt(x.e.precoPraticado)],
     div:   ['Sistema → Praticado', x => `${fmt(x.e.precoSistema)} → <b>${fmt(x.e.precoPraticado)}</b>`],
     hier:  ['Quebra', x => quebrasHierarquia(x.e.id).map(q => esc(textoQuebra(q))).join('<br>')],
-    aud:   ['Praticado', x => fmt(x.e.precoPraticado)],
     min:   ['Margem · mínimo viável', x => `<span style="color:var(--red)">${pct(x.c.margem)}</span> · ${fmt(x.c.minimo)}`]
   }[pendAba];
   const total = new Set(Object.values(m).flat().map(x => x.e.id)).size;

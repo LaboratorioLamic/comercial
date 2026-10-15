@@ -229,7 +229,7 @@ async function abrirEnvioProposta() {
   // ligado = valor ainda não lançado no sistema (padrão); mantém o marcado ao voltar da ficha
   _envVs = Object.fromEntries(itens.map(x => [x.k, _envVs[x.k] ?? false]));
   abrirGaveta({
-    larga: true, sobre: 'Enviar proposta', titulo: cx.nome,
+    larga: true, centro: true, sobre: 'Enviar proposta', titulo: cx.nome,
     meta: `<span class="tag"><i class="fa-solid fa-pen"></i>${s.n} alteração(ões)</span>${s.ab ? `<span class="tag" style="color:var(--red)"><i class="fa-solid fa-circle-xmark"></i>${s.ab} abaixo do ${cx.pisoNome}</span>` : ''}${s.dm ? `<span class="tag" style="color:var(--red)"><i class="fa-solid fa-ban"></i>${s.dm} acima do desc. máximo</span>` : ''}`,
     corpo: `
       ${s.ab ? `<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>${s.ab} preço(s) ficam abaixo do ${cx.pisoNome} de ${cx.pisoTxt}.</div></div>` : ''}
@@ -433,7 +433,7 @@ function abrirLote(id) {
         celPara: x => `${x.it.revisado ? `<s class="muted">${fmtOuFora(x.it.proposto, cx?.lab)}</s> ` : ''}<b>${fmtOuFora(x.para, cx?.lab)}</b>${ppVar(x)}` })}</div>`;
   }).join('');
   abrirGaveta({
-    larga: true, sobre: `Histórico · ${dataHora(L.em)}`, titulo: `${new Set(L.ps.map(p => p.alvo)).size} tabela(s) alterada(s)`,
+    larga: true, centro: true, sobre: `Histórico · ${dataHora(L.em)}`, titulo: `${new Set(L.ps.map(p => p.alvo)).size} tabela(s) alterada(s)`,
     meta: `${L.status ? badgeSt(L.status) : ''}<span class="tag"><i class="fa-solid fa-user"></i>${esc(L.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${L.n} preço(s)</span><span class="tag">${resumoMudancas(L.cont)}</span>`,
     corpo: `${L.justificativa ? `<div class="pp-just"><i class="fa-solid fa-quote-left"></i><div><span>Justificativa · ${esc(L.autor)}</span><p>${esc(L.justificativa)}</p></div></div>` : ''}${quadros}`,
     rodape: `<button class="btn" onclick="fecharGaveta()">Fechar</button>`
@@ -462,7 +462,7 @@ function abrirProposta(id) {
     return x;
   }).sort((a, b) => String(a.mn).localeCompare(String(b.mn)));
   abrirGaveta({
-    larga: true, sobre: `Proposta · ${dataHora(p.em)}`, titulo: p.alvoNome || cx?.nome || 'Proposta',
+    larga: true, centro: true, sobre: `Proposta · ${dataHora(p.em)}`, titulo: p.alvoNome || cx?.nome || 'Proposta',
     meta: `<span class="badge-s ${st.cls}"><i class="fa-solid ${st.icone}"></i>${st.nome}</span><span class="tag"><i class="fa-solid fa-user"></i>${esc(p.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${itens.length} preço(s)</span>${p.editadaEm ? `<span class="tag" title="Editada por ${esc(p.editadaPor || '')} em ${dataHora(p.editadaEm)}"><i class="fa-solid fa-pen"></i>editada</span>` : ''}`,
     corpo: `
       ${!cx ? '<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>A tabela desta proposta foi excluída.</div></div>' : ''}
@@ -535,7 +535,7 @@ function desenharEdicaoProposta(focoK) {
   if (!cx) return;
   const aberta = !!document.getElementById('pe-q'), topo = aberta ? document.getElementById('g-corpo').scrollTop : 0, ls = peLinhas(cx);
   abrirGaveta({
-    larga: true, sobre: `Editar proposta · ${dataHora(p.em)}`, titulo: p.alvoNome || cx.nome,
+    larga: true, centro: true, sobre: `Editar proposta · ${dataHora(p.em)}`, titulo: p.alvoNome || cx.nome,
     meta: `<span class="tag"><i class="fa-solid fa-user"></i>${esc(p.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${ls.length} preço(s)</span>`,
     corpo: `
       <div class="hint"><i class="fa-solid fa-pen"></i> Retifique os valores, inclua ou tire exames e ajuste a justificativa. Nada muda na proposta até salvar.</div>
@@ -706,6 +706,7 @@ async function decidirProposta(id, status) {
     Object.entries(rev).forEach(([k, v]) => { itens[k] = { ...itens[k], para: v, proposto: itens[k].para ?? null, revisado: true }; });
     // preço muda: cada chave é o "Valor atualizado no sistema" (desligada por padrão)
     const cxA = ctxAlvo(p.alvo);
+    let confirmou = false;
     if (pode('exames', 'editar') && sistemaSuportado(cxA)) {
       // já marcados no UniLab só voltam à lista se o valor foi alterado aqui (marca fica obsoleta)
       const mudouAqui = k => k in rev && precoDifere(itens[k].para, itens[k].proposto);
@@ -717,10 +718,17 @@ async function decidirProposta(id, status) {
             <span style="display:flex;gap:6px;justify-content:center;margin:10px 0"><button type="button" class="btn sm" onclick="envVsTodos(true)"><i class="fa-solid fa-check-double"></i>Marcar todos</button><button type="button" class="btn sm" onclick="envVsTodos(null)"><i class="fa-solid fa-right-left"></i>Inverter</button></span>
             <span class="fx-conf" style="max-height:260px;overflow:auto">${ks.map(k => `<span data-vs="${esc(k)}" style="align-items:center"><b>${esc(itens[k].mn)}</b><i>${itens[k].de != null ? fmt(itens[k].de) : 'fora'} → <b>${itens[k].para != null ? fmt(itens[k].para) : 'retirar'}</b></i>${chave(_envVs[k], `envVs('${esc(k)}')`)}</span>`).join('')}</span>` });
         if (r !== true) { _envVs = {}; return; }
+        confirmou = true;
         ks.forEach(k => { itens[k] = { ...itens[k], sistemaOk: _envVs[k] || null }; });
         await DB.mesclar(`propostas/${id}/itens`, Object.fromEntries(ks.map(k => [k, itens[k]])));
         _envVs = {};
       }
+    }
+    // sem a janela do UniLab: confirma a publicação mesmo assim
+    if (!confirmou) {
+      const ok = await confirmar({ titulo: 'Aprovar e publicar?', icone: 'fa-stamp', botao: 'Aprovar e publicar', cancelar: 'Voltar',
+        texto: `${p.n || Object.keys(itens).length} preço(s) passam a valer agora em <b>${esc(p.alvoNome)}</b>${nRev ? `, ${nRev} com valor revisado` : ''}.` });
+      if (ok !== true) return;
     }
     if (nRev) await DB.mesclar(`propostas/${id}/itens`, Object.fromEntries(Object.keys(rev).map(k => [k, itens[k]])));
     const n = await aplicarProposta(id, { ...p, itens });

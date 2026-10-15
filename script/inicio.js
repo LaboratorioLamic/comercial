@@ -35,7 +35,6 @@ function resumoProposta(p) {
 
 // Exames marcados no controle interno que também entram no sino
 const SINO_EXAMES = {
-  aud:  { nome: 'A auditar', icone: 'fa-magnifying-glass-dollar', cor: 'var(--amber)', f: e => !!e.auditar, vazio: 'Nenhum exame marcado para auditoria.' },
   vsis: { nome: 'Atualizar no UniLab', icone: 'fa-clock-rotate-left', cor: 'var(--red)', f: (e, id) => valorDesatualizado(id), vazio: 'Nenhum valor pendente de atualização no UniLab.' },
   sist: { nome: 'Fora do catálogo', icone: 'fa-plug-circle-xmark', cor: 'var(--gray)', f: e => !!e.foraDoSistema, vazio: 'Nenhum exame marcado como fora do catálogo.' }
 };
@@ -198,7 +197,6 @@ function renderInicio() {
       ${kpi('fa-stamp', 'var(--amber)', 'var(--amber-bg)', 'Propostas pendentes', propostas.length, minhas ? `${minhas} enviada(s) por você` : 'aguardando aprovação', irTab('propostas'))}
       ${kpi('fa-stairs', 'var(--amber)', 'var(--amber-bg)', 'Quebra de hierarquia', pend.hier.length, 'tabela acima de outra que deveria ser maior', irTab('hierarquia'))}
       ${kpi('fa-circle-exclamation', 'var(--amber)', 'var(--amber-bg)', 'Abaixo do alvo', cont('a'), 'acima do mínimo, abaixo da margem alvo', pode('exames') ? "irPara('exames')" : '')}
-      ${kpi('fa-magnifying-glass-dollar', 'var(--cyan)', 'var(--cyan-light)', 'A auditar', pend.aud.length, 'valores marcados para auditoria', irPend('aud'))}
     </div>
     ${dist.length ? `<div class="card" style="margin-bottom:14px">
       <div class="card-h"><h3><i class="fa-solid fa-chart-pie"></i>Situação dos exames</h3><span>${num(exames.length, 0)} exames ativos · tabela Particular</span></div>

@@ -439,7 +439,6 @@ function desenharControles() {
     ${e.origem === 'apoio' ? (e.vinculoApoio
       ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:var(--green)"></i><div>Valor negociado com o apoio<div class="s">automático: vinculado à tabela importada</div></div></div><span class="badge-s ok"><i class="fa-solid fa-lock"></i>sim</span></div>`
       : `<div class="casc-r"><div class="lft"><i class="fa-solid fa-handshake" style="color:${e.negociado ? 'var(--green)' : 'inherit'}"></i><div>Valor negociado com o apoio<div class="s">marcação manual (sem vínculo com tabela importada)</div></div></div>${chave(e.negociado, '_fx.negociado=!_fx.negociado;this.classList.toggle(\'on\')', !editar)}</div>`) : ''}
-    <div class="casc-r"><div class="lft"><i class="fa-solid fa-magnifying-glass-dollar" style="color:var(--amber)"></i><div>Valor precisa ser auditado<div class="s">controle interno</div></div></div>${chave(e.auditar, '_fx.auditar=!_fx.auditar;this.classList.toggle(\'on\')', !editar)}</div>
     <div class="casc-r"><div class="lft"><i class="fa-solid fa-rotate" style="color:var(--green)"></i><div>Valor atualizado no sistema<div class="s">automático: marcado quando o valor publicado bate com o sistema do laboratório</div></div></div>${chave(!valorDesatualizado(_fxId), 'atualizarSistemaFicha()', !editar || !valorDesatualizado(_fxId))}</div>
     <div class="casc-r"><div class="lft"><i class="fa-solid fa-plug-circle-xmark"></i><div>Fora do sistema do laboratório<div class="s">mnemônico não existe no catálogo</div></div></div>${chave(e.foraDoSistema, '_fx.foraDoSistema=!_fx.foraDoSistema;this.classList.toggle(\'on\');atualizarFicha()', !editar)}</div>
   </div>`;
@@ -616,7 +615,6 @@ function abrirDadosExame(id) {
           </div>
           <div class="hint" id="dx-neg-hint"></div>
         </div>
-        <div class="casc-r"><div class="lft"><i class="fa-solid fa-magnifying-glass-dollar" style="color:var(--amber)"></i><div>Valor precisa ser auditado<div class="s">controle interno</div></div></div>${chave(false, '_dx.auditar=!_dx.auditar;this.classList.toggle(\'on\')')}</div>
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-plug-circle-xmark"></i><div>Fora do sistema do laboratório<div class="s">mnemônico não existe no catálogo</div></div></div>${chave(false, '_dx.fora=!_dx.fora;this.classList.toggle(\'on\')')}</div>` : ''}
         <div class="casc-r"><div class="lft"><i class="fa-solid fa-eye"></i><div>Exame ativo<div class="s">inativo sai das listas e das tabelas</div></div></div>${chave(_dx.ativo, '_dx.ativo=!_dx.ativo;this.classList.toggle(\'on\')')}</div></div>
     </div>`,
@@ -871,7 +869,7 @@ async function gravarDadosExame() {
     if (modoPreco === 'proposta') {
       const u = usuarioAtual(), pid = DB.novaChave('propostas');
       await DB.gravar(`propostas/${pid}`, { alvo: 'particular', alvoNome: 'Particular', itens: { [id]: { mn, de: null, para: Math.round(preco * 100) / 100 } }, n: 1,
-        justificativa: 'Preço do exame novo (cadastro)', autor: u.nome, autorId: u.id, em: DB.agora(), status: 'pendente', origem: 'cadastro' });
+        justificativa: 'Exame recém criado', autor: u.nome, autorId: u.id, em: DB.agora(), status: 'pendente', origem: 'cadastro' });
       registrar('tabelas', `Particular: proposta de preço do exame novo ${mn} enviada (cadastro)`, { proposta: pid });
     }
   } else {
