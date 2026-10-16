@@ -26,7 +26,7 @@ function examesNoRascunho() {
     if (!cx) return;
     Object.entries(rasc(a)).forEach(([k, v]) => {
       if (!ESTADO.exames[k] || propPendente(a, k)) return;
-      (por[k] ??= []).push({ ...linhaProposta(cx, k, cx.salvo(k) ?? null, v ?? null), alvo: a, cx });
+      (por[k] ??= []).push({ ...linhaProposta(cx, k, cx.salvo(k) ?? null, arredPP(v ?? null)), alvo: a, cx });
     });
   });
   return Object.entries(por).map(([k, itens]) => ({ k, e: ESTADO.exames[k], itens })).sort((a, b) => a.e.mn.localeCompare(b.e.mn));
@@ -51,6 +51,8 @@ async function atualizarBotaoRascExames() {
 async function abrirRascunhoExames(foco = null, just = '') {
   if (!usuarioAtual()) return;
   await carregarRascExames();
+  if (!_rxVolta) _ppArred = '0';
+  _ppRascPart = true;
   const ls = examesNoRascunho(), aprova = pode('tabelas', 'aprovar');
   const temFoco = foco && ls.some(x => x.k === foco);
   _rx = _rxVolta || { foco: temFoco ? foco : null, soFoco: !!temFoco, q: '', sel: new Set(temFoco ? [foco] : ls.map(x => x.k)) };
@@ -66,6 +68,7 @@ async function abrirRascunhoExames(foco = null, just = '') {
         <span id="rx-foco"></span>
         <button class="btn sm" id="rx-todos" onclick="marcarTodosRx()"></button>
       </div>
+      <div class="pp-barra" id="rx-arred">${barraRx()}</div>
       <div id="rx-lista"></div>
       <div class="just"><label for="rx-just">Justificativa <span class="muted">(opcional)</span></label>
         <textarea id="rx-just" placeholder="Motivo do reajuste, negociação, concorrência…">${esc(just)}</textarea></div>
@@ -91,19 +94,24 @@ function desenharRascExames() {
   const por = {};
   vis.forEach(x => x.itens.forEach(i => { (por[i.alvo] ??= { cx: i.cx, itens: [] }).itens.push(i); }));
   const marca = x => { const on = _rx.sel.has(x.k);
-    return ` <button type="button" class="rx-ck ${on ? 'on' : ''}" title="${on ? 'Desmarcar' : 'Marcar para enviar'}" onclick="event.stopPropagation();alternarRx('${esc(x.k)}')"><i class="fa-solid ${on ? 'fa-square-check' : 'fa-square'}"></i></button>`; };
-  el.innerHTML = alvosRascExames().filter(a => por[a]).map(a => {
-    const { cx, itens } = por[a], podeVs = pode('exames', 'editar') && sistemaSuportado(cx);
-    itens.forEach(x => { const kv = `${a}|${x.k}`; if (podeVs && !(kv in _envVs)) _envVs[kv] = false; });
+    return `<button type="button" class="rx-ck ${on ? 'on' : ''}" title="${on ? 'Desmarcar' : 'Marcar para enviar'}" onclick="event.stopPropagation();alternarRx('${esc(x.k)}')"><i class="fa-solid ${on ? 'fa-square-check' : 'fa-square'}"></i></button>`; };
+  // sintético: uma linha por exame e uma coluna por tabela (a chave UniLab fica na vista analítica)
+  el.innerHTML = ppSint() ? (vis.length ? (Object.keys(_envVs).length ? '<div class="hint" style="margin:12px 0 0"><i class="fa-solid fa-clock-rotate-left" style="color:var(--red)"></i> Para marcar os valores já lançados no UniLab, use a vista <b>Analítico</b>.</div>' : '')
+      + htmlSintetico(alvosRascExames().filter(a => por[a]).map(a => ({ cx: por[a].cx, nome: por[a].cx.nome, itens: por[a].itens, alvo: a })), { marcaEsq: marca, cel: (x, g) => `<td class="num">${campoRx(g.alvo, x)}${sintInfo(x) ? `<small class="pp-sinf">${sintInfo(x)}</small>` : ''}</td>` }) : '')
+    : alvosRascExames().filter(a => por[a]).map(a => {
+    // chave UniLab só nos exames cujo valor proposto difere do que está hoje no sistema
+    const { cx, itens } = por[a], vs = pode('exames', 'editar') ? itens.filter(x => precisaVs(cx, x.k, x.para)) : [], podeVs = vs.length > 0;
+    itens.forEach(x => { const kv = `${a}|${x.k}`; if (!vs.includes(x)) delete _envVs[kv]; else if (!(kv in _envVs)) _envVs[kv] = false; });
     const ab = itens.filter(x => _rx.sel.has(x.k) && x.c?.status === 'r').length, dm = itens.filter(x => _rx.sel.has(x.k) && acimaDescMax(x.desc, x.descMax, x.descTol)).length;
     return `<div class="rx-q">
       ${ab ? `<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>${esc(cx.nome)}: ${ab} preço(s) abaixo do ${cx.pisoNome} de ${cx.pisoTxt}.</div></div>` : ''}
       ${dm ? `<div class="alert r"><i class="fa-solid fa-ban"></i><div>${esc(cx.nome)}: ${dm} preço(s) passam do desconto máximo de ${cx.dmaxTxt}.</div></div>` : ''}
       ${podeVs ? `<div class="hint" style="display:flex;align-items:center;gap:8px;margin:12px 0 6px"><i class="fa-solid fa-clock-rotate-left" style="color:var(--red)"></i><span style="flex:1">UniLab (${esc(cx.nome)}): marque os exames cujo novo valor <b>já foi lançado</b> no sistema do laboratório. Ao publicar, a tabela do sistema no banco recebe esse valor.</span>
         <button class="btn sm" onclick="envVsRx('${esc(a)}',true)"><i class="fa-solid fa-check-double"></i>Marcar todos</button><button class="btn sm" onclick="envVsRx('${esc(a)}',null)"><i class="fa-solid fa-right-left"></i>Inverter</button></div>` : ''}
-      ${htmlQuadroProposta(cx, itens, { colDe: 'Atual', colPara: 'Proposto', marca, celPara: x => `<b>${fmtOuFora(x.para, cx.lab)}</b>${ppVar(x)}`,
-        colExtra: { th: podeVs ? 'UniLab' : '', td: x => `<span class="rx-acts"><button type="button" class="icon-btn" title="Tirar do rascunho (volta ao valor publicado)" onclick="tirarItemRx('${esc(x.k)}','${esc(a)}')"><i class="fa-solid fa-rotate-left"></i></button>${podeVs ? `<span data-vs="${esc(a)}|${esc(x.k)}" title="Valor já lançado no UniLab">${chave(_envVs[`${a}|${x.k}`], `envVs('${esc(a)}|${esc(x.k)}')`)}</span>` : ''}</span>` } })}</div>`;
-  }).join('') || vazio('fa-pen-to-square', ls.length ? 'Nenhum exame com esse filtro' : 'Rascunho vazio<br><span class="muted">Altere o preço na ficha de um exame e escolha <b>Rascunho</b> ou <b>Enviar proposta</b>.</span>');
+      ${htmlQuadroProposta(cx, itens, { colDe: 'Atual', colPara: 'Proposto', marcaEsq: marca, celPara: x => campoRx(a, x),
+        colExtra: { th: podeVs ? 'UniLab' : '', td: x => `<span class="rx-acts"><button type="button" class="icon-btn" title="Tirar do rascunho (volta ao valor publicado)" onclick="tirarItemRx('${esc(x.k)}','${esc(a)}')"><i class="fa-solid fa-rotate-left"></i></button>${podeVs && `${a}|${x.k}` in _envVs ? `<span data-vs="${esc(a)}|${esc(x.k)}" title="Valor já lançado no UniLab">${chave(_envVs[`${a}|${x.k}`], `envVs('${esc(a)}|${esc(x.k)}')`)}</span>` : ''}</span>` } })}</div>`;
+  }).join('');
+  el.innerHTML ||= vazio('fa-pen-to-square', ls.length ? 'Nenhum exame com esse filtro' : 'Rascunho vazio<br><span class="muted">Altere o preço na ficha de um exame e escolha <b>Rascunho</b> ou <b>Enviar proposta</b>.</span>');
   el.querySelectorAll('tr[data-k]').forEach(tr => tr.classList.toggle('rx-off', !_rx.sel.has(tr.dataset.k)));
 
   const sel = ls.filter(x => _rx.sel.has(x.k)), n = sel.reduce((s, x) => s + x.itens.length, 0);
@@ -122,6 +130,26 @@ function desenharRascExames() {
 // Chave UniLab de todos os exames de uma tabela (true = marcar; null = inverter)
 const envVsRx = (a, v) => Object.keys(_envVs).filter(kv => kv.startsWith(a + '|')).forEach(kv => envVs(kv, v ?? !_envVs[kv]));
 
+// Valor proposto editável: muda o rascunho na hora (vale para o envio mesmo sem sair do campo);
+// ao sair do campo, a janela recalcula. Vazio = retirar da tabela (na Particular, volta ao publicado)
+const campoRx = (a, x) => `<div class="price-in on"><span>R$</span><input type="text" inputmode="numeric" autocomplete="off" data-a="${esc(a)}" value="${moedaCampo(x.para)}"
+  placeholder="${x.cx.base ? '' : x.cx.lab ? 'remover' : 'retirar'}" oninput="editarRx(this)" onchange="desenharRascExames()" onfocus="this.select()"></div><div class="pp-var">${ppVar(x)}</div>`;
+function editarRx(inp) {
+  mascaraMoeda(inp);
+  const cx = ctxAlvo(inp.dataset.a), k = inp.closest('tr').dataset.k, v = lerMoeda(inp.value);
+  if (!cx || (v != null && !(v > 0))) return;
+  definirRasc(cx, k, v == null && cx.base ? undefined : v);
+}
+const barraRx = () => htmlVistaPP('desenharVistaRx') + htmlArredPP('arredRx');
+function desenharVistaRx() {
+  document.getElementById('rx-arred').innerHTML = barraRx();
+  desenharRascExames();
+}
+function arredRx(v) {
+  _ppArred = _ppArred === v ? '0' : v;
+  document.getElementById('rx-arred').innerHTML = barraRx();
+  desenharRascExames();
+}
 function alternarRx(k) {
   if (_rx.sel.has(k)) _rx.sel.delete(k); else _rx.sel.add(k);
   desenharRascExames();
@@ -155,7 +183,7 @@ async function descartarRascExames() {
   atualizarBotaoRascExames();
 }
 
-// Envia os exames marcados: uma proposta por tabela; publicar = aprova e publica na hora (com confirmação)
+// Envia os exames marcados: uma proposta por tabela; publicar = aprova e publica na hora, sem outra confirmação
 async function enviarRascExames(publicar) {
   const sel = examesNoRascunho().filter(x => _rx.sel.has(x.k));
   if (!sel.length) return toast('Marque ao menos um exame', 'erro');
@@ -166,16 +194,15 @@ async function enviarRascExames(publicar) {
   const alvos = Object.keys(por), n = sel.reduce((s, x) => s + x.itens.length, 0);
   if (por.particular && !pode('exames', 'editar')) return toast('Seu grupo não pode alterar o preço praticado', 'erro');
   if (alvos.some(a => a !== 'particular') && !pode('tabelas', 'editar')) return toast('Seu grupo não pode alterar tabelas de preço', 'erro');
-  if (publicar) {
-    if (!pode('tabelas', 'aprovar')) return toast('Seu grupo não pode publicar preços', 'erro');
-    const ok = await confirmarPublicarSemRevisao({ n, tabelas: alvos.map(a => por[a].cx.nome),
-      ab: alvos.reduce((s, a) => s + por[a].ab, 0), dm: alvos.reduce((s, a) => s + por[a].dm, 0) });
-    if (ok !== true) return;
-  }
-  const u = usuarioAtual(), just = valorCampo('rx-just').trim() || null, lote = alvos.length > 1 ? DB.novaChave('propostas') : null;
+  if (publicar && !pode('tabelas', 'aprovar')) return toast('Seu grupo não pode publicar preços', 'erro');
+  // publicar: UniLab dos divergentes ainda não marcados na janela
+  const marc = publicar ? await perguntarUnilab(alvos.flatMap(a => Object.entries(por[a].itens).filter(([k]) => _envVs[`${a}|${k}`] !== true)
+    .map(([k, it]) => ({ alvo: a, k, mn: it.mn, para: it.para })))) : new Set();
+  if (!marc) return;
+  const u = usuarioAtual(), just = valorCampo('rx-just').trim() || null, lote = DB.novaChave('propostas');   // um lote só por envio
   for (const a of alvos) {
     const { cx, itens } = por[a], id = DB.novaChave('propostas'), q = Object.keys(itens).length;
-    Object.keys(itens).forEach(k => { itens[k].sistemaOk = sistemaSuportado(cx) && _envVs[`${a}|${k}`] === true || null; });
+    Object.keys(itens).forEach(k => { itens[k].sistemaOk = sistemaSuportado(cx) && (_envVs[`${a}|${k}`] === true || marc.has(`${a}|${k}`)) || null; });
     const p = { alvo: a, alvoNome: cx.nome, itens, n: q, justificativa: just, autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente', origem: 'ficha', lote };
     await DB.gravar(`propostas/${id}`, { ...p, em: DB.agora() });
     if (publicar) await aplicarProposta(id, p);
@@ -184,7 +211,7 @@ async function enviarRascExames(publicar) {
     Object.keys(itens).forEach(k => definirRasc(cx, k, undefined));
     await gravarRasc(a);
   }
-  _rx = null; _envVs = {};
+  _rx = null; _envVs = {}; _ppArred = '0';
   fecharGaveta();
   toast(publicar ? `${n} preço(s) publicados` : `${alvos.length} proposta(s) enviadas: ${n} preço(s) aguardando aprovação`);
   if (document.getElementById('ex-rasc')) atualizarBotaoRascExames();

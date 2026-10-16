@@ -26,7 +26,11 @@ const fmtOuFora = (v, lab) => v != null ? fmt(v) : `<span class="muted">${lab ? 
 // Linha: valor de antes, valor proposto e o cálculo dele no perfil da tabela.
 // Desconto só onde há referência (tabelas: Particular; laboratórios/conveniados: tabela base).
 // Valor da Particular em proposta pendente (a mais recente que inclui o exame): { id, para } | null
+// No envio e no rascunho de exames (_ppRascPart), o valor da Particular no rascunho do usuário vem antes:
+// a proposta da Particular ainda não enviada já afeta o desconto das demais tabelas ({ rasc: true, para })
+let _ppRascPart = false;
 function partPendente(k) {
+  if (_ppRascPart && k in rasc('particular') && rasc('particular')[k] != null && !propPendente('particular', k)) return { id: null, rasc: true, para: arredPP(rasc('particular')[k]) };
   let r = null;
   Object.entries(ESTADO.propostas || {}).forEach(([id, p]) => {
     const it = p.status === 'pendente' && p.alvo === 'particular' ? p.itens?.[k] : null;
@@ -54,11 +58,11 @@ const ppAlvo = (v, txt, tit) => v != null ? `<small class="pp-alvo" data-v="${v}
 function ppAplicarAlvo(el) {
   const inp = el.closest('tr')?.querySelector('.price-in input');
   if (!inp) return;
-  inp.value = (+el.dataset.v).toFixed(2);
+  inp.value = moedaCampo(+el.dataset.v);
   inp.dispatchEvent(new Event('input'));
 }
 const ppDesc = x => x.desc == null ? '<span class="muted">—</span>'
-  : `<b class="${acimaDescMax(x.desc, x.descMax, x.descTol) || x.desc < -0.0005 ? 'r' : acimaDescRef(x.desc, x.descRef, x.descTol) ? 'a' : ''}"${acimaDescMax(x.desc, x.descMax, x.descTol) ? ` title="Acima do desconto máximo (${pct(x.descMax, 0)})"` : ''}>${pct(x.desc)}</b>${x.descRef != null ? ppAlvo(x.ref != null ? Math.round(x.ref * (1 - x.descRef)) : null, `ref. ${pct(x.descRef, 0)}`, 'Aplicar o desconto de referência') : ''}${x.pend ? `<small style="color:var(--amber)" title="Particular com proposta pendente: desconto sobre ${fmt(x.pend.para)} (publicado hoje: ${x.refPub != null ? fmt(x.refPub) : '—'})"><i class="fa-solid fa-hourglass-half"></i> Part. ${fmt(x.pend.para)}</small>` : ''}`;
+  : `<b class="${acimaDescMax(x.desc, x.descMax, x.descTol) || x.desc < -0.0005 ? 'r' : acimaDescRef(x.desc, x.descRef, x.descTol) ? 'a' : ''}"${acimaDescMax(x.desc, x.descMax, x.descTol) ? ` title="Acima do desconto máximo (${pct(x.descMax, 0)})"` : ''}>${pct(x.desc)}</b>${x.descRef != null ? ppAlvo(x.ref != null ? Math.round(x.ref * (1 - x.descRef)) : null, `ref. ${pct(x.descRef, 0)}`, 'Aplicar o desconto de referência') : ''}${x.pend ? `<small style="color:var(--${x.pend.rasc ? 'cyan' : 'amber'})" title="Particular ${x.pend.rasc ? 'no seu rascunho' : 'com proposta pendente'}: desconto sobre ${fmt(x.pend.para)} (publicado hoje: ${x.refPub != null ? fmt(x.refPub) : '—'})"><i class="fa-solid ${x.pend.rasc ? 'fa-pen-to-square' : 'fa-hourglass-half'}"></i> Part. ${fmt(x.pend.para)}</small>` : ''}`;
 // Margem do valor de hoje, sob ele (vermelha abaixo do piso)
 const ppMrg0 = x => x.c0?.margem == null ? '' : `<small${x.c0.status === 'r' ? ' style="color:var(--red)"' : ''} title="Margem do valor de hoje · lucro ${fmt(x.c0.lucro)}">margem ${pct(x.c0.margem)}</small>`;
 const ppMrg = x => {
@@ -128,7 +132,7 @@ fecharGaveta = function () {
     if (campo) campo.value = v.txt;
     Object.entries(v.rev).forEach(([k, val]) => {
       const inp = [...document.querySelectorAll('#g-corpo .pp-tab tr')].find(tr => tr.dataset.k === k)?.querySelector('input');
-      if (inp) { inp.value = val != null ? val.toFixed(2) : ''; revisarItem(inp); }
+      if (inp) { inp.value = moedaCampo(val); revisarItem(inp); }
     });
   }, 400);
 };
@@ -181,11 +185,12 @@ function ppSetor(e) {
 }
 
 // Particular do exame (referência nas demais tabelas), com margem e lucro
+// Com valor da Particular no rascunho ou em proposta pendente, mostra esse valor (o publicado fica no "era")
 const ppPartCel = x => {
-  const v = x.e?.precoPraticado;
+  const pub = x.e?.precoPraticado || null, v = x.pend?.para ?? pub;
   if (!v) return '<span class="muted">—</span>';
   const c = calcular(x.e, v, null);
-  return `${fmt(v)}${c?.margem != null ? `<small${c.status === 'r' ? ' style="color:var(--red)"' : ''}>margem ${pct(c.margem)}</small><small>lucro ${fmt(c.lucro)}</small>` : ''}`;
+  return `${x.pend ? `<b style="color:var(--${x.pend.rasc ? 'cyan' : 'amber'})" title="${x.pend.rasc ? 'No seu rascunho' : 'Em proposta pendente'} · publicado ${pub ? fmt(pub) : '—'}"><i class="fa-solid ${x.pend.rasc ? 'fa-pen-to-square' : 'fa-hourglass-half'}"></i> ${fmt(v)}</b><small>era ${pub ? fmt(pub) : '—'}</small>` : fmt(v)}${c?.margem != null ? `<small${c.status === 'r' ? ' style="color:var(--red)"' : ''}>margem ${pct(c.margem)}</small><small>lucro ${fmt(c.lucro)}</small>` : ''}`;
 };
 // Coluna "Hoje": verde = recém-adicionado; vermelho = acima da Particular (quebra de hierarquia)
 const ppHojeCel = (x, lab, comPart) => {
@@ -199,16 +204,17 @@ function htmlQuadroProposta(cx, ls, o) {
   const lab = cx?.lab, comDesc = cx && !cx.base && !!cx.ref, comPart = cx && !cx.base;
   const n = { e: 0, s: 0, up: 0, dn: 0 };
   ls.forEach(x => { if (x.de == null) n.e++; else if (x.para == null) n.s++; else if (x.para > x.de) n.up++; else if (x.para < x.de) n.dn++; });
-  const pend = ls.filter(x => x.pend), idPend = pend[0]?.pend.id;
+  const pend = ls.filter(x => x.pend && !x.pend.rasc), idPend = pend[0]?.pend.id, nRascPart = ls.filter(x => x.pend?.rasc).length;
   const partes = [n.e && `${n.e} ${lab ? 'novos' : 'entram'}`, n.up && `${n.up} sobem`, n.dn && `${n.dn} descem`, n.s && `${n.s} ${lab ? 'removidos' : 'saem'}`].filter(Boolean).join(' · ');
   return `<div class="pp-q">
     <div class="pp-qh"><span class="tc-ic" style="--c:${cx?.cor || 'var(--gray)'}"><i class="fa-solid ${cx?.icone || 'fa-table-list'}"></i></span>
       <div><b>${esc(o.nome || cx?.nome || '(removida)')}</b><small>${ls.length} preço(s)${partes ? ' · ' + partes : ''}</small></div></div>
     ${cx ? `<div class="pp-kpis" id="pp-kpis">${htmlKpisProposta(cx, ls)}</div>` : ''}
     ${pend.length ? `<div class="alert a" style="margin:10px 12px"><i class="fa-solid fa-hourglass-half"></i><div><b>${pend.length} exame(s) com valor da Particular aguardando aprovação.</b> O desconto deles já considera o valor proposto da Particular; se ela for rejeitada, volta a valer o publicado. <a href="#" onclick="abrirProposta('${idPend}');return false">Abrir a proposta da Particular</a></div></div>` : ''}
+    ${nRascPart ? `<div class="alert x" style="margin:10px 12px"><i class="fa-solid fa-pen-to-square"></i><div><b>${nRascPart} exame(s) com valor da Particular no seu rascunho.</b> O desconto deles já considera esse valor; envie também a Particular para que ele valha.</div></div>` : ''}
     <div class="tbl-wrap"><table class="pp-tab"><thead><tr><th>Exame</th>${comPart ? '<th class="num">Particular</th>' : ''}<th class="num">Custo</th><th class="num">${o.colDe}</th><th class="num">${o.colPara}</th>${comDesc ? '<th class="num">Desconto</th>' : ''}<th class="num">Margem</th>${o.colExtra ? `<th class="num">${o.colExtra.th}</th>` : ''}</tr></thead>
       <tbody>${ls.map(x => `<tr data-k="${esc(x.k)}">
-        <td class="pp-ex ${x.e && !o.semFicha ? 'lk' : ''}" ${x.e && !o.semFicha ? 'title="Abrir a ficha do exame" onclick="ppFicha(this)"' : ''}><span class="mn">${esc(x.mn ?? '—')}</span>${o.marca?.(x) || ''}<small title="${esc(x.e?.descricao || '')}">${esc(x.e?.descricao || 'exame excluído')}</small>${ppSetor(x.e)}</td>
+        <td class="pp-ex ${x.e && !o.semFicha ? 'lk' : ''}" ${x.e && !o.semFicha ? 'title="Abrir a ficha do exame" onclick="ppFicha(this)"' : ''}>${o.marcaEsq?.(x) || ''}<span class="mn">${esc(x.mn ?? '—')}</span>${o.marca?.(x) || ''}<small title="${esc(x.e?.descricao || '')}">${esc(x.e?.descricao || 'exame excluído')}</small>${ppSetor(x.e)}</td>
         ${comPart ? `<td class="num pp-v">${ppPartCel(x)}</td>` : ''}
         <td class="num pp-custo">${ppCustoCel(x, cx)}</td>
         <td class="num"${x.it?.novoUnilab ? ' title="Valor recém-adicionado: era fora da tabela e entrou ao marcar como já praticado no UniLab"' : ''}>${ppHojeCel(x, lab, comPart)}${ppMrg0(x)}</td>
@@ -217,17 +223,75 @@ function htmlQuadroProposta(cx, ls, o) {
         <td class="num pp-v pp-mrg">${ppMrg(x)}</td>${o.colExtra ? `<td class="num">${o.colExtra.td(x)}</td>` : ''}</tr>`).join('')}</tbody></table></div></div>`;
 }
 
+// ── Arredondamento (envio e aprovação) ────────────────────────
+// Para cima no múltiplo escolhido (R$ 1, 5, 10 ou 100), como no simulador; clicar de novo no ativo desliga.
+let _ppArred = '0';
+const arredPP = v => v != null && _ppArred !== '0' ? arredSim(v, +_ppArred) : v;
+const htmlArredPP = fn => `<div class="pp-arred"><span><i class="fa-solid fa-coins"></i>Arredondar para cima</span><div class="seg">${ARRED_CMP.map(v =>
+  `<button type="button" class="${_ppArred === v ? 'on' : ''}" title="Múltiplo de R$ ${v},00 · clique de novo para não arredondar" onclick="${fn}('${v}')">R$ ${v},00</button>`).join('')}</div></div>`;
+
+// Chave UniLab só onde se aplica: o valor proposto difere do que está hoje no sistema do laboratório
+const precisaVs = (cx, k, para) => sistemaSuportado(cx) && precoDifere(cx.sistema(k), para ?? null);
+
+// ── Vista analítica × sintética ───────────────────────────────
+// Analítica: quadro completo por tabela (indicadores, Particular, custo, desconto, margem).
+// Sintética: uma linha por exame, só o essencial; com várias tabelas, uma coluna por tabela.
+let _ppVista = (() => { try { return localStorage.getItem('ppVista') || 'analitico'; } catch { return 'analitico'; } })();
+const ppSint = () => _ppVista === 'sintetico';
+const htmlVistaPP = fn => `<div class="seg pp-vista">${[['analitico', 'Analítico', 'fa-table-cells'], ['sintetico', 'Sintético', 'fa-list']].map(([v, t, ic]) =>
+  `<button type="button" class="${_ppVista === v ? 'on' : ''}" onclick="trocarVistaPP('${v}', ${fn})"><i class="fa-solid ${ic}"></i>${t}</button>`).join('')}</div>`;
+function trocarVistaPP(v, fn) {
+  if (_ppVista === v) return;
+  _ppVista = v;
+  try { localStorage.setItem('ppVista', v); } catch {}
+  fn();
+}
+// Mesmo contrato de htmlQuadroProposta: escolhe o formato pela vista
+const quadroPP = (cx, ls, o) => ppSint() ? htmlSintetico([{ cx, itens: ls, nome: o.nome }], o) : htmlQuadroProposta(cx, ls, o);
+
+// Margem e desconto do valor, numa linha curta (vermelho = abaixo do piso / acima do desconto máximo)
+const sintInfo = x => [x.c?.margem != null ? `<span class="${x.c.status === 'r' ? 'r' : ''}">marg. ${pct(x.c.margem)}</span>` : x.c?.semCusto ? (pode('exames', 'editar') ? '<button type="button" class="gx-sc pp-sc" title="Exame sem custo: clique para informar" onclick="ppCusto(this)">+ sem custo</button>' : '<span>sem custo</span>') : '',
+  x.desc != null ? `<span class="${acimaDescMax(x.desc, x.descMax, x.descTol) || x.desc < -0.0005 ? 'r' : ''}">desc. ${pct(x.desc)}</span>` : ''].filter(Boolean).join(' · ');
+// Valor de um exame numa tabela, compacto: novo valor, o de antes e a variação; vermelho = abaixo do piso ou acima do desconto máximo
+const sintCel = (x, cx) => {
+  if (!x) return '<td class="num"><span class="muted">—</span></td>';
+  const r = x.c?.status === 'r' || acimaDescMax(x.desc, x.descMax, x.descTol), d = x.de != null && x.para != null && x.de > 0 ? x.para / x.de - 1 : null;
+  const tit = [x.c?.margem != null ? `margem ${pct(x.c.margem)}` : '', x.desc != null ? `desconto ${pct(x.desc)}` : ''].filter(Boolean).join(' · ');
+  return `<td class="num"><b class="${r ? 'r' : ''}" title="${tit}">${fmtOuFora(x.para, cx?.lab)}</b><small>${x.de != null ? `era ${fmt(x.de)}` : cx?.lab ? 'novo' : 'entra'}${d ? ` · <span class="${d > 0 ? 'delta-dn' : 'delta-up'}">${d > 0 ? '+' : ''}${pct(d)}</span>` : ''}</small>${sintInfo(x) ? `<small class="pp-sinf">${sintInfo(x)}</small>` : ''}</td>`;
+};
+// grupos: [{ cx, nome, itens, rot? }] · o: mesmas opções do quadro (colDe, colPara, celPara, marca, colExtra)
+function htmlSintetico(grupos, o = {}) {
+  const exCel = x => `<td class="pp-ex ${x.e && !o.semFicha ? 'lk' : ''}" ${x.e && !o.semFicha ? 'title="Abrir a ficha do exame" onclick="ppFicha(this)"' : ''}>${o.marcaEsq?.(x) || ''}<span class="mn">${esc(x.mn ?? '—')}</span>${o.marca?.(x) || ''}<small title="${esc(x.e?.descricao || '')}">${esc(x.e?.descricao || 'exame excluído')}</small></td>`;
+  if (grupos.length === 1) {
+    const { cx, itens } = grupos[0], comDesc = cx && !cx.base && !!cx.ref;
+    return `<div class="pp-q pp-sint"><div class="tbl-wrap"><table class="pp-tab"><thead><tr><th>Exame</th><th class="num">${o.colDe || 'Antes'}</th><th class="num">${o.colPara || 'Proposto'}</th>${comDesc ? '<th class="num">Desconto</th>' : ''}<th class="num">Margem</th>${o.colExtra ? `<th class="num">${o.colExtra.th}</th>` : ''}</tr></thead>
+      <tbody>${itens.map(x => `<tr data-k="${esc(x.k)}">${exCel(x)}<td class="num">${fmtOuFora(x.de, cx?.lab)}</td>
+        <td class="num pp-para">${o.celPara ? o.celPara(x) : `<b>${fmtOuFora(x.para, cx?.lab)}</b>${ppVar(x)}`}</td>
+        ${comDesc ? `<td class="num pp-v pp-desc">${ppDesc(x)}</td>` : ''}<td class="num pp-v pp-mrg">${ppMrg(x)}</td>${o.colExtra ? `<td class="num">${o.colExtra.td(x)}</td>` : ''}</tr>`).join('')}</tbody></table></div></div>`;
+  }
+  const ks = [], por = {};
+  grupos.forEach((g, gi) => g.itens.forEach(x => { if (!por[x.k]) { por[x.k] = { x, c: {} }; ks.push(x.k); } por[x.k].c[gi] = x; }));
+  ks.sort((a, b) => String(por[a].x.mn).localeCompare(String(por[b].x.mn)));
+  return `<div class="pp-q pp-sint"><div class="tbl-wrap"><table class="pp-tab"><thead><tr><th>Exame</th>${grupos.map(g =>
+      `<th class="num pp-sth" title="${esc(g.nome || g.cx?.nome || '(removida)')}"><i class="fa-solid ${g.cx?.icone || 'fa-table-list'}" style="color:${g.cx?.cor || 'var(--gray)'}"></i><span>${esc(g.nome || g.cx?.nome || '(removida)')}</span>${g.rot || ''}</th>`).join('')}</tr></thead>
+    <tbody>${ks.map(k => `<tr data-k="${esc(k)}">${exCel(por[k].x)}${grupos.map((g, gi) => o.cel && por[k].c[gi] ? o.cel(por[k].c[gi], g) : sintCel(por[k].c[gi], g.cx)).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+}
+
 // ── Envio ─────────────────────────────────────────────────────
-async function abrirEnvioProposta() {
+async function abrirEnvioProposta(manter) {
   const cx = ctxAtual();
+  const just = manter ? valorCampo('pp-just') : '', topo = manter ? document.getElementById('g-corpo')?.scrollTop || 0 : 0;
+  if (!manter && !document.getElementById('gaveta-fantasma')) _ppArred = '0';
+  _ppRascPart = true;
   limparRascTravado(cx);
   await gravarRasc(cx.alvo);
+  if (!cx.base) await carregarRascunho('particular');
   const r = rasc(cx.alvo), s = resumoRasc(cx), aprova = pode('tabelas', 'aprovar');
-  const podeVs = pode('exames', 'editar') && sistemaSuportado(cx);
-  const itens = Object.entries(r).filter(([k]) => ESTADO.exames[k] && !propPendente(cx.alvo, k)).map(([k, v]) => linhaProposta(cx, k, cx.salvo(k) ?? null, v ?? null))
+  const itens = Object.entries(r).filter(([k]) => ESTADO.exames[k] && !propPendente(cx.alvo, k)).map(([k, v]) => linhaProposta(cx, k, cx.salvo(k) ?? null, arredPP(v ?? null)))
     .sort((a, b) => a.mn.localeCompare(b.mn));
   // ligado = valor ainda não lançado no sistema (padrão); mantém o marcado ao voltar da ficha
-  _envVs = Object.fromEntries(itens.map(x => [x.k, _envVs[x.k] ?? false]));
+  const vs = pode('exames', 'editar') ? itens.filter(x => precisaVs(cx, x.k, x.para)) : [], podeVs = vs.length > 0;
+  _envVs = Object.fromEntries(vs.map(x => [x.k, _envVs[x.k] ?? false]));
   abrirGaveta({
     larga: true, centro: true, sobre: 'Enviar proposta', titulo: cx.nome,
     meta: `<span class="tag"><i class="fa-solid fa-pen"></i>${s.n} alteração(ões)</span>${s.ab ? `<span class="tag" style="color:var(--red)"><i class="fa-solid fa-circle-xmark"></i>${s.ab} abaixo do ${cx.pisoNome}</span>` : ''}${s.dm ? `<span class="tag" style="color:var(--red)"><i class="fa-solid fa-ban"></i>${s.dm} acima do desc. máximo</span>` : ''}`,
@@ -236,15 +300,21 @@ async function abrirEnvioProposta() {
       ${s.dm ? `<div class="alert r"><i class="fa-solid fa-ban"></i><div>${s.dm} preço(s) passam do desconto máximo de ${cx.dmaxTxt}.</div></div>` : ''}
       ${podeVs ? `<div class="hint" style="display:flex;align-items:center;gap:8px;margin:12px 0 0"><i class="fa-solid fa-clock-rotate-left" style="color:var(--red)"></i><span style="flex:1">UniLab: marque os exames cujo novo valor <b>já foi lançado</b> no sistema do laboratório. Ao publicar, a tabela do sistema no banco recebe esse valor.</span>
         <button class="btn sm" onclick="envVsTodos(true)"><i class="fa-solid fa-check-double"></i>Marcar todos</button><button class="btn sm" onclick="envVsTodos(null)"><i class="fa-solid fa-right-left"></i>Inverter</button></div>` : ''}
-      ${htmlQuadroProposta(cx, itens, { colDe: 'Atual', colPara: 'Proposto', celPara: x => `<b>${fmtOuFora(x.para, cx.lab)}</b>${ppVar(x)}`,
-        colExtra: podeVs ? { th: 'UniLab', td: x => `<span data-vs="${esc(x.k)}">${chave(_envVs[x.k], `envVs('${esc(x.k)}')`)}</span>` } : null })}
+      <div class="pp-barra">${htmlVistaPP('() => abrirEnvioProposta(true)')}${htmlArredPP('arredEnvio')}</div>
+      ${quadroPP(cx, itens, { colDe: 'Atual', colPara: 'Proposto', celPara: x => `<b>${fmtOuFora(x.para, cx.lab)}</b>${ppVar(x)}`,
+        colExtra: podeVs ? { th: 'UniLab', td: x => x.k in _envVs ? `<span data-vs="${esc(x.k)}">${chave(_envVs[x.k], `envVs('${esc(x.k)}')`)}</span>` : '<span class="muted" title="Valor proposto igual ao do UniLab">—</span>' } : null })}
       <div class="just"><label for="pp-just">Justificativa <span class="muted">(opcional)</span></label>
-        <textarea id="pp-just" placeholder="Motivo do reajuste, negociação, concorrência…"></textarea></div>
+        <textarea id="pp-just" placeholder="Motivo do reajuste, negociação, concorrência…">${esc(just)}</textarea></div>
       ${aprova ? '' : '<div class="hint" style="margin-top:8px"><i class="fa-solid fa-circle-info"></i> Os preços passam a valer quando alguém com permissão de aprovação aprovar a proposta.</div>'}`,
     rodape: `<button class="btn" style="margin-right:auto" onclick="fecharGaveta()">Voltar</button>
       <button class="btn ${aprova ? '' : 'pri'}" onclick="enviarProposta(false)"><i class="fa-solid fa-paper-plane"></i>Enviar para aprovação</button>
       ${aprova ? `<button class="btn pri" onclick="enviarProposta(true)"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : ''}`
   });
+  if (topo) document.getElementById('g-corpo').scrollTop = topo;
+}
+function arredEnvio(v) {
+  _ppArred = _ppArred === v ? '0' : v;
+  abrirEnvioProposta(true);
 }
 
 // Chave "Valor sistema" no envio e na aprovação (_envVs: chave → ligado = já atualizado no sistema).
@@ -255,31 +325,45 @@ function envVs(k, v) {
   document.querySelector(`[data-vs="${CSS.escape(k)}"] .switch`)?.classList.toggle('on', _envVs[k]);
 }
 const envVsTodos = v => Object.keys(_envVs).forEach(k => envVs(k, v ?? !_envVs[k]));
-// "Aprovar e publicar" direto do rascunho (sem passar pela aprovação de outra pessoa): pede confirmação
-function confirmarPublicarSemRevisao({ n, tabelas = [], ab = 0, dm = 0 }) {
-  const li = (ic, t, cor = '') => `<span${cor ? ` style="color:${cor}"` : ''}><i class="fa-solid ${ic}"${cor ? ` style="color:${cor}"` : ''}></i>${t}</span>`;
-  return confirmar({
-    titulo: 'Publicar sem revisão?', icone: 'fa-stamp', tom: 'pausa', botao: 'Publicar sem revisão', cancelar: 'Voltar',
-    texto: `Os preços passam a valer <b>agora</b>, sem passar pela aprovação de outra pessoa.
-      <span class="modal-li">${li('fa-tag', `<span><b>${n} preço(s)</b> em ${tabelas.map(esc).join(', ')}</span>`)}
-        ${ab ? li('fa-circle-xmark', `${ab} abaixo do piso de margem`, 'var(--red)') : ''}
-        ${dm ? li('fa-ban', `${dm} acima do desconto máximo`, 'var(--red)') : ''}
-        ${li('fa-clock-rotate-left', 'Fica no histórico do exame com o seu nome')}</span>
-      <small>Para alguém revisar antes, use <b>Enviar para aprovação</b>.</small>`
-  });
+// Antes de publicar (qualquer janela): exames cujo valor a publicar difere do salvo no UniLab, para marcar
+// os que já foram lançados lá. Nenhum divergente (ou sem permissão de editar exames): publica direto, sem janela.
+// ls: [{ alvo, k, mn, para }] → Set de 'alvo|k' marcados · null = voltou sem publicar
+let _uniVs = {};
+function uniVs(kv, v) {
+  _uniVs[kv] = v ?? !_uniVs[kv];
+  document.querySelector(`[data-uv="${CSS.escape(kv)}"] .switch`)?.classList.toggle('on', _uniVs[kv]);
+}
+const uniVsTodos = v => Object.keys(_uniVs).forEach(kv => uniVs(kv, v ?? !_uniVs[kv]));
+async function perguntarUnilab(ls, botao = 'Publicar') {
+  if (!pode('exames', 'editar')) return new Set();
+  const div = ls.map(x => ({ ...x, cx: ctxAlvo(x.alvo) })).filter(x => x.cx && ESTADO.exames[x.k] && precisaVs(x.cx, x.k, x.para ?? null));
+  if (!div.length) return new Set();
+  const varias = new Set(div.map(x => x.alvo)).size > 1, v = x => x != null ? fmt(x) : 'sem valor';
+  _uniVs = Object.fromEntries(div.map(x => [`${x.alvo}|${x.k}`, false]));
+  const r = await confirmar({ titulo: 'Valor atualizado no UniLab?', icone: 'fa-clock-rotate-left', botao, cancelar: 'Voltar',
+    texto: `${div.length} exame(s) ficam com valor diferente do UniLab. Marque os que <b>já foram lançados</b> lá: a tabela do sistema no banco recebe o valor publicado. Os desmarcados ficam pendentes nas notificações (Atualizar no UniLab).
+      <span style="display:flex;gap:6px;justify-content:center;margin:10px 0"><button type="button" class="btn sm" onclick="uniVsTodos(true)"><i class="fa-solid fa-check-double"></i>Marcar todos</button><button type="button" class="btn sm" onclick="uniVsTodos(null)"><i class="fa-solid fa-right-left"></i>Inverter</button></span>
+      <span class="fx-conf" style="max-height:260px;overflow:auto">${div.map(x => { const kv = `${x.alvo}|${x.k}`;
+        return `<span data-uv="${esc(kv)}" style="align-items:center"><b>${esc(x.mn || ESTADO.exames[x.k].mn)}${varias ? ` · ${esc(x.cx.nome)}` : ''}</b><i>UniLab ${v(x.cx.sistema(x.k))} → <b>${x.para != null ? fmt(x.para) : 'retirar'}</b></i>${chave(false, `uniVs('${esc(kv)}')`)}</span>`; }).join('')}</span>` });
+  const marc = new Set(Object.keys(_uniVs).filter(kv => _uniVs[kv]));
+  _uniVs = {};
+  return r === true ? marc : null;
 }
 
 async function enviarProposta(publicar) {
   const cx = ctxAtual(), r = rasc(cx.alvo), u = usuarioAtual();
+  let marc = new Set();
   if (publicar) {
-    const s = resumoRasc(cx);
-    if (await confirmarPublicarSemRevisao({ n: s.n, tabelas: [cx.nome], ab: s.ab, dm: s.dm }) !== true) return;
+    // já marcados na janela de envio não voltam a ser perguntados
+    marc = await perguntarUnilab(Object.entries(r).filter(([k]) => ESTADO.exames[k] && !propPendente(cx.alvo, k) && _envVs[k] !== true)
+      .map(([k, v]) => ({ alvo: cx.alvo, k, mn: ESTADO.exames[k].mn, para: arredPP(v ?? null) })));
+    if (!marc) return;
   }
   const just = valorCampo('pp-just').trim();
   const itens = {};
   Object.entries(r).forEach(([k, v]) => {
     const e = ESTADO.exames[k];
-    if (e && !propPendente(cx.alvo, k)) itens[k] = { mn: e.mn, de: cx.salvo(k) ?? null, para: v ?? null, sistemaOk: sistemaSuportado(cx) && _envVs[k] === true || null };
+    if (e && !propPendente(cx.alvo, k)) itens[k] = { mn: e.mn, de: cx.salvo(k) ?? null, para: arredPP(v ?? null), sistemaOk: sistemaSuportado(cx) && (_envVs[k] === true || marc.has(`${cx.alvo}|${k}`)) || null };
   });
   const n = Object.keys(itens).length;
   if (!n) return toast('Nada para enviar', 'erro');
@@ -287,7 +371,7 @@ async function enviarProposta(publicar) {
   const p = { alvo: cx.alvo, alvoNome: cx.nome, itens, n, justificativa: just || null, autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente' };
   await DB.gravar(`propostas/${id}`, { ...p, em: DB.agora() });
   await limparRasc(cx.alvo);
-  _envVs = {};
+  _envVs = {}; _ppArred = '0';
   if (publicar) await aplicarProposta(id, p);
   else registrar('tabelas', `${cx.nome}: proposta com ${n} preço(s) enviada`, { proposta: id });
   fecharGaveta();
@@ -330,10 +414,11 @@ async function aplicarProposta(id, p) {
 // Histórico: decididas agrupadas em lotes (mesmo envio, várias tabelas). Sem "lote" (dados antigos):
 // mesmo autor e justificativa, enviadas com até 2 min de diferença.
 // filtrar: só as tabelas do filtro "Tabela" ficam visíveis (contagens refeitas; lote sem nenhuma some)
-function lotesHistorico(filtrar) {
+// pend: pendentes agrupadas só pelo lote (cada envio do rascunho de exames vira uma linha)
+function lotesHistorico(filtrar, pend) {
   const g = [], porLote = {};
-  lista(ESTADO.propostas, (a, b) => (b.em || 0) - (a.em || 0)).filter(p => p.status !== 'pendente').forEach(p => {
-    let L = p.lote ? porLote[p.lote] : g.find(l => !l.lote && l.autorId === p.autorId && (l.justificativa || '') === (p.justificativa || '') && Math.abs(l.ult - (p.em || 0)) < 120000);
+  lista(ESTADO.propostas, (a, b) => (b.em || 0) - (a.em || 0)).filter(p => (p.status === 'pendente') === !!pend).forEach(p => {
+    let L = p.lote ? porLote[p.lote] : pend ? null : g.find(l => !l.lote && l.autorId === p.autorId && (l.justificativa || '') === (p.justificativa || '') && Math.abs(l.ult - (p.em || 0)) < 120000);
     if (!L) { L = { id: p.lote || p.id, lote: p.lote || null, autor: p.autor, autorId: p.autorId, em: p.em || 0, ult: p.em || 0, justificativa: p.justificativa, ps: [] }; g.push(L); if (p.lote) porLote[p.lote] = L; }
     L.ult = p.em || 0;
     L.ps.push(p);
@@ -358,7 +443,7 @@ const resumoMudancas = c => [c.up && `<span class="delta-dn" title="Sobem"><i cl
 function desenharPropostas() {
   const el = document.getElementById('tabelas-propostas');
   if (propFiltro !== 'pendente') propFiltro = 'historico';
-  const pend = lista(ESTADO.propostas, (a, b) => (b.em || 0) - (a.em || 0)).filter(p => p.status === 'pendente');
+  const pend = lotesHistorico(false, true);
   const lotes = lotesHistorico();
   const hist = propFiltro === 'historico';
   const chips = `<div class="chips" style="padding-bottom:12px;align-items:center">
@@ -388,14 +473,14 @@ function desenharPropostas() {
 function desenharCorpoPropostas() {
   const el = document.getElementById('prop-corpo');
   if (!el) return;
-  const pend = lista(ESTADO.propostas, (a, b) => (b.em || 0) - (a.em || 0)).filter(p => p.status === 'pendente');
+  const pend = lotesHistorico(false, true);
   const tabs = valorPop('pop-prop-tab'), aut = valorPop('pop-prop-autor');
   const lotes = propFiltro === 'pendente' ? [] : lotesHistorico(true).filter(L => passaPop('pop-prop-autor', L.autorId || L.autor));
   el.innerHTML = propFiltro === 'pendente'
     ? `<table><thead><tr><th>Enviada em</th><th>Tabela</th><th>Autor</th><th class="num">Preços</th><th>Justificativa</th><th></th></tr></thead>
-      <tbody>${pend.map(p => `<tr class="row" onclick="abrirProposta('${p.id}')">
-        <td>${dataHora(p.em)}</td><td>${tagAlvo(p)}</td><td>${esc(p.autor)}</td><td class="num">${num(p.n || Object.keys(p.itens || {}).length, 0)}</td>
-        <td class="desc" title="${esc(p.justificativa || '')}">${esc(p.justificativa || '—')}</td>
+      <tbody>${pend.map(L => `<tr class="row" onclick="${L.ps.length === 1 ? `abrirProposta('${L.ps[0].id}')` : `abrirLote('${L.id}', true)`}">
+        <td>${dataHora(L.em)}</td><td><div style="display:flex;flex-wrap:wrap;gap:4px">${L.ps.map(tagAlvo).join('')}</div></td><td>${esc(L.autor)}</td><td class="num">${num(L.n, 0)}</td>
+        <td class="desc" title="${esc(L.justificativa || '')}">${esc(L.justificativa || '—')}</td>
         <td class="acts"><button title="Abrir"><i class="fa-solid fa-chevron-right"></i></button></td></tr>`).join('')
         || `<tr><td colspan="6">${vazio('fa-stamp', 'Nenhuma proposta aguardando aprovação')}</td></tr>`}</tbody></table>`
     : `<table><thead><tr><th>Enviado em</th><th>Tabelas</th><th>Autor</th><th class="num">Preços</th><th>Alterações</th><th>Justificativa</th><th>Situação</th><th></th></tr></thead>
@@ -409,9 +494,10 @@ function desenharCorpoPropostas() {
 }
 
 // Lote do histórico: todas as tabelas alteradas juntas, cada uma com sua decisão
-function abrirLote(id) {
-  const L = lotesHistorico(true).find(l => l.id === id);
+function abrirLote(id, pend) {
+  const L = pend ? lotesHistorico(false, true).find(l => l.id === id) : lotesHistorico(true).find(l => l.id === id);
   if (!L) return;
+  _ppRascPart = false;
   if (L.ps.length === 1) return abrirProposta(L.ps[0].id);
   L.ps.sort((a, b) => String(a.alvoNome).localeCompare(String(b.alvoNome)));
   const marca = x => x.de == null ? ' <span class="tag" style="color:var(--green)">entra</span>' : x.para == null ? ' <span class="tag" style="color:var(--red)">sai</span>'
@@ -422,10 +508,14 @@ function abrirLote(id) {
     const g = grupos.find(x => x.alvo === p.alvo && x.status === p.status);
     if (g) { g.ids.push(p.id); Object.assign(g.itens, p.itens); } else grupos.push({ ...p, ids: [p.id], itens: { ...p.itens } });
   });
-  const quadros = grupos.map(p => {
-    const cx = ctxAlvo(p.alvo);
-    const itens = Object.entries(p.itens || {}).map(([k, it]) => Object.assign(linhaProposta(cx, k, it.de ?? null, it.para ?? null), { it, mn: it.mn }))
+  grupos.forEach(p => {
+    p.cx = ctxAlvo(p.alvo);
+    p.ls = Object.entries(p.itens || {}).map(([k, it]) => Object.assign(linhaProposta(p.cx, k, it.de ?? null, it.para ?? null), { it, mn: it.mn }))
       .sort((a, b) => String(a.mn).localeCompare(String(b.mn)));
+  });
+  const quadros = ppSint() ? htmlSintetico(grupos.map(p => ({ cx: p.cx, nome: p.alvoNome, itens: p.ls, rot: p.status !== 'aprovada' ? ` <small>${ST_PROPOSTA[p.status]?.nome || ''}</small>` : '' })))
+    : grupos.map(p => {
+    const cx = p.cx, itens = p.ls;
     return `<div style="margin-top:16px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">${badgeSt(p.status)}
         ${p.decisao ? `<small class="muted">por ${esc(p.decisao.por)} em ${dataHora(p.decisao.em)}${p.decisao.motivo ? ` · ${esc(p.decisao.motivo)}` : ''}</small>` : ''}
         ${p.ids.length === 1 ? `<a href="#" style="margin-left:auto;font-size:12px" onclick="abrirProposta('${p.id}');return false">detalhe <i class="fa-solid fa-chevron-right"></i></a>` : `<small class="muted" style="margin-left:auto">${p.ids.length} envios</small>`}</div>
@@ -435,8 +525,12 @@ function abrirLote(id) {
   abrirGaveta({
     larga: true, centro: true, sobre: `Histórico · ${dataHora(L.em)}`, titulo: `${new Set(L.ps.map(p => p.alvo)).size} tabela(s) alterada(s)`,
     meta: `${L.status ? badgeSt(L.status) : ''}<span class="tag"><i class="fa-solid fa-user"></i>${esc(L.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${L.n} preço(s)</span><span class="tag">${resumoMudancas(L.cont)}</span>`,
-    corpo: `${L.justificativa ? `<div class="pp-just"><i class="fa-solid fa-quote-left"></i><div><span>Justificativa · ${esc(L.autor)}</span><p>${esc(L.justificativa)}</p></div></div>` : ''}${quadros}`,
-    rodape: `<button class="btn" onclick="fecharGaveta()">Fechar</button>`
+    corpo: `${L.justificativa ? `<div class="pp-just"><i class="fa-solid fa-quote-left"></i><div><span>Justificativa · ${esc(L.autor)}</span><p>${esc(L.justificativa)}</p></div></div>` : ''}
+      ${pend ? `<div class="hint" style="margin:12px 0 0"><i class="fa-solid fa-layer-group"></i> Enviadas juntas: aprove o lote inteiro ou abra o <b>detalhe</b> de uma tabela para revisar, editar ou rejeitar só ela.</div>` : ''}
+      <div class="pp-barra">${htmlVistaPP(`() => abrirLote('${id}', ${!!pend})`)}</div>${quadros}`,
+    rodape: pend && pode('tabelas', 'aprovar') ? `<button class="btn" style="margin-right:auto" onclick="fecharGaveta()">Fechar</button>
+      <button class="btn pri" onclick="aprovarLote('${id}')"><i class="fa-solid fa-stamp"></i>Aprovar lote (${L.ps.length} tabelas)</button>`
+      : `${L.ps.every(podeReverterProp) ? `<button class="btn perigo-txt" style="margin-right:auto" onclick="reverterPropostas(${esc(JSON.stringify(L.ps.map(p => p.id)))})" title="Volta os preços ao valor de antes e marca como cancelada"><i class="fa-solid fa-clock-rotate-left"></i>Reverter</button>` : ''}${L.ps.every(podeExcluirProp) ? `<button class="btn perigo-txt" style="margin-right:auto" onclick="excluirPropostas(${esc(JSON.stringify(L.ps.map(p => p.id)))})"><i class="fa-solid fa-trash"></i>Excluir do histórico</button>` : ''}<button class="btn" onclick="fecharGaveta()">Fechar</button>`
   });
 }
 
@@ -450,7 +544,8 @@ function abrirProposta(id) {
   const cx = ctxAlvo(p.alvo), st = ST_PROPOSTA[p.status] || ST_PROPOSTA.pendente, u = usuarioAtual();
   const pendente = p.status === 'pendente', aprova = pode('tabelas', 'aprovar'), autor = p.autorId === u.id;
   const revisa = pendente && aprova && !!cx;
-  _propRev = {}; _propId = id; _propEd = null;
+  if (_propId !== id) _ppArred = '0';
+  _propRev = {}; _propId = id; _propEd = null; _ppRascPart = false;
   const nRev = Object.values(p.itens || {}).filter(it => it.revisado).length;
   let conflitos = 0, abaixo = 0;
   const itens = Object.entries(p.itens || {}).map(([k, it]) => {
@@ -466,21 +561,24 @@ function abrirProposta(id) {
     meta: `<span class="badge-s ${st.cls}"><i class="fa-solid ${st.icone}"></i>${st.nome}</span><span class="tag"><i class="fa-solid fa-user"></i>${esc(p.autor)}</span><span class="tag"><i class="fa-solid fa-tag"></i>${itens.length} preço(s)</span>${p.editadaEm ? `<span class="tag" title="Editada por ${esc(p.editadaPor || '')} em ${dataHora(p.editadaEm)}"><i class="fa-solid fa-pen"></i>editada</span>` : ''}`,
     corpo: `
       ${!cx ? '<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>A tabela desta proposta foi excluída.</div></div>' : ''}
-      ${p.decisao ? `<div class="alert ${p.status === 'aprovada' ? 'x' : 'a'}"><i class="fa-solid ${st.icone}"></i><div><b>${st.nome}</b> por ${esc(p.decisao.por)} em ${dataHora(p.decisao.em)}${p.decisao.motivo ? `<br>${esc(p.decisao.motivo)}` : ''}</div></div>` : ''}
+      ${p.decisao ? `<div class="alert ${p.status === 'aprovada' ? 'x' : 'a'}"><i class="fa-solid ${st.icone}"></i><div><b>${st.nome}</b> por ${esc(p.decisao.por)} em ${dataHora(p.decisao.em)}${p.decisao.motivo ? `<br>${esc(p.decisao.motivo)}` : ''}${p.decisao.revertida ? `<br><i class="fa-solid fa-clock-rotate-left"></i> Aprovada e depois revertida por ${esc(p.decisao.revertida.por)} em ${dataHora(p.decisao.revertida.em)}` : ''}</div></div>` : ''}
       ${conflitos ? `<div class="alert a"><i class="fa-solid fa-triangle-exclamation"></i><div>${conflitos} preço(s) mudaram desde o envio (coluna "Tabela UniLab"). Ao aprovar, vale o valor proposto.</div></div>` : ''}
       <div id="pp-abaixo">${abaixo ? `<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>${abaixo} preço(s) abaixo do ${cx?.pisoNome || 'piso'}.</div></div>` : ''}</div>
       ${nRev ? `<div class="alert x"><i class="fa-solid fa-pen"></i><div>${nRev} valor(es) revisado(s) na aprovação (riscado = valor proposto).</div></div>` : ''}
       ${p.justificativa ? `<div class="pp-just"><i class="fa-solid fa-quote-left"></i><div><span>Justificativa · ${esc(p.autor)}</span><p>${esc(p.justificativa)}</p></div></div>` : ''}
-      ${revisa ? '<div class="hint" style="margin:14px 0 0"><i class="fa-solid fa-pen"></i> Ajuste o valor proposto, se precisar: ao aprovar, vale o valor revisado.</div>' : ''}
-      ${htmlQuadroProposta(cx, itens, {
+      ${revisa ? `<div class="hint" style="margin:14px 0 0"><i class="fa-solid fa-pen"></i> Ajuste o valor proposto, se precisar: ao aprovar, vale o valor revisado.</div><div id="pp-arred-w">${htmlArredPP('arredAprov')}</div>` : ''}
+      <div class="pp-barra">${htmlVistaPP('atualizarPropostaAberta')}</div>
+      ${quadroPP(cx, itens, {
         nome: p.alvoNome, colDe: pendente ? 'Tabela UniLab' : 'Antes', colPara: p.status === 'aprovada' ? 'Publicado' : 'Proposto',
         marca: x => x.mudou ? ` <i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)" title="Mudou desde o envio: era ${x.it.de != null ? fmt(x.it.de) : 'fora'}"></i>` : '',
-        celPara: x => revisa && x.e ? `<div class="price-in"><span>R$</span><input type="number" step="0.01" min="0" value="${x.para != null ? x.para.toFixed(2) : ''}" placeholder="${cx.base ? '' : cx.lab ? 'sem valor' : 'fora'}" oninput="revisarItem(this)" onfocus="this.select()"></div><div class="pp-var">${ppVar(x)}</div><div class="delta"></div>`
+        celPara: x => revisa && x.e ? `<div class="price-in"><span>R$</span><input type="text" inputmode="numeric" autocomplete="off" value="${moedaCampo(x.para)}" placeholder="${cx.base ? '' : cx.lab ? 'sem valor' : 'fora'}" oninput="mascaraMoeda(this);revisarItem(this)" onfocus="this.select()"></div><div class="pp-var">${ppVar(x)}</div><div class="delta"></div>`
           : `${x.it.revisado ? `<s class="muted">${fmtOuFora(x.it.proposto, cx?.lab)}</s> ` : ''}<b>${fmtOuFora(x.para, cx?.lab)}</b>${ppVar(x)}`
       })}
       ${pendente && aprova ? `<div class="just"><label for="pp-motivo">Observação da decisão <span class="muted">(obrigatória para rejeitar)</span></label><textarea id="pp-motivo"></textarea></div>` : ''}`,
     rodape: `${!pendente && autor && cx ? `<button class="btn" style="margin-right:auto" onclick="reabrirProposta('${id}')" title="Carrega os preços no seu rascunho"><i class="fa-solid fa-pen"></i>Editar de novo</button>` : pendente && cx && (autor || aprova) && pode('tabelas', 'editar') ? `<button class="btn" style="margin-right:auto" onclick="editarProposta('${id}')" title="Retificar valores, incluir ou tirar exames e alterar a justificativa"><i class="fa-solid fa-pen"></i>Editar</button>` : '<span style="margin-right:auto"></span>'}
       ${pendente && autor ? `<button class="btn perigo-txt" onclick="decidirProposta('${id}','cancelada')"><i class="fa-solid fa-ban"></i>Cancelar</button>` : ''}
+      ${podeReverterProp(p) ? `<button class="btn perigo-txt" onclick="reverterPropostas(['${id}'])" title="Volta os preços ao valor de antes e marca como cancelada"><i class="fa-solid fa-clock-rotate-left"></i>Reverter</button>` : ''}
+      ${podeExcluirProp(p) ? `<button class="btn perigo-txt" onclick="excluirPropostas(['${id}'])" title="Excluir do histórico"><i class="fa-solid fa-trash"></i></button>` : ''}
       ${pendente && aprova ? `<button class="btn perigo-txt" onclick="decidirProposta('${id}','rejeitada')"><i class="fa-solid fa-circle-xmark"></i>Rejeitar</button>
         <button class="btn pri" id="pp-aprovar" ${cx ? '' : 'disabled'} onclick="decidirProposta('${id}','aprovada')"><i class="fa-solid fa-stamp"></i>Aprovar e publicar</button>` : `<button class="btn" onclick="fecharGaveta()">Fechar</button>`}`
   });
@@ -507,7 +605,7 @@ function atualizarPropostaAberta() {
   if (campo) campo.value = txt;
   Object.entries(rev).forEach(([k, val]) => {
     const inp = [...document.querySelectorAll('#g-corpo .pp-tab tr')].find(tr => tr.dataset.k === k)?.querySelector('input');
-    if (inp) { inp.value = val != null ? val.toFixed(2) : ''; revisarItem(inp); }
+    if (inp) { inp.value = moedaCampo(val); revisarItem(inp); }
   });
   const novo = document.getElementById('g-corpo');
   if (novo) novo.scrollTop = topo;
@@ -522,6 +620,7 @@ function editarProposta(id) {
   const p = ESTADO.propostas[id];
   if (!p || p.status !== 'pendente') return toast('Proposta já decidida', 'erro');
   _propEd = { id, just: p.justificativa || '', itens: JSON.parse(JSON.stringify(p.itens || {})), sis: {} };
+  _ppRascPart = false;
   const cx = ctxAlvo(p.alvo);
   if (cx?.tabela) Object.entries(_propEd.itens).forEach(([k, it]) => { if (it.para != null && cx.salvo(k) == null && !precoDifere(cx.sistema(k), it.para)) _propEd.sis[k] = true; });
   desenharEdicaoProposta();
@@ -542,11 +641,12 @@ function desenharEdicaoProposta(focoK) {
       <div class="gx-busca" style="margin:12px 0"><div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="pe-q" placeholder="Adicionar exame: mnemônico ou nome…" autocomplete="off"
           oninput="peBuscar(this.value)" onfocus="peBuscar(this.value)" onkeydown="peTecla(event)" onblur="setTimeout(peFecharSug, 150)"></div>
         <div class="gx-sug" id="pe-sug"></div></div>
-      ${htmlQuadroProposta(cx, ls, {
+      <div class="pp-barra">${htmlVistaPP('() => desenharEdicaoProposta()')}</div>
+      ${quadroPP(cx, ls, {
         nome: p.alvoNome, colDe: 'Tabela UniLab', colPara: 'Proposto',
         semFicha: true, // a ficha tomaria a gaveta e a edição em curso se perderia
         marca: () => ` <button type="button" class="gx-sc" style="color:var(--red)" title="Tirar o exame da proposta" onclick="peRemover(this)"><i class="fa-solid fa-xmark"></i>tirar</button>`,
-        celPara: x => `<div class="price-in on"><span>R$</span><input type="number" step="0.01" min="0" value="${x.para != null ? x.para.toFixed(2) : ''}" placeholder="${cx.base ? '' : cx.lab ? 'remover' : 'retirar'}" oninput="peEditar(this)" onfocus="this.select()"></div><div class="pp-var">${ppVar(x)}</div>`,
+        celPara: x => `<div class="price-in on"><span>R$</span><input type="text" inputmode="numeric" autocomplete="off" value="${moedaCampo(x.para)}" placeholder="${cx.base ? '' : cx.lab ? 'remover' : 'retirar'}" oninput="mascaraMoeda(this);peEditar(this)" onfocus="this.select()"></div><div class="pp-var">${ppVar(x)}</div>`,
         colExtra: pode('exames', 'editar') && sistemaSuportado(cx) ? { th: 'UniLab', td: x => peChaveSis(cx, x.k) } : null
       })}
       <div class="just"><label for="pe-just">Justificativa <span class="muted">(opcional)</span></label>
@@ -563,8 +663,8 @@ function desenharEdicaoProposta(focoK) {
 }
 
 function peEditar(inp) {
-  const p = ESTADO.propostas[_propEd.id], cx = ctxAlvo(p.alvo), tr = inp.closest('tr'), k = tr.dataset.k, txt = inp.value.trim();
-  const v = txt === '' ? null : Math.round(parseFloat(txt) * 100) / 100;
+  const p = ESTADO.propostas[_propEd.id], cx = ctxAlvo(p.alvo), tr = inp.closest('tr'), k = tr.dataset.k, lido = lerMoeda(inp.value);
+  const v = lido == null ? null : Math.round(lido * 100) / 100;
   if (v != null && (isNaN(v) || v < 0)) return;
   _propEd.itens[k].para = v;
   const x = linhaProposta(cx, k, cx.salvo(k) ?? null, v);
@@ -574,7 +674,8 @@ function peEditar(inp) {
   tr.querySelector('.pp-mrg').innerHTML = ppMrg(x);
   const sw = tr.querySelector('[data-pes]');
   if (sw) sw.outerHTML = peChaveSis(cx, k);
-  document.getElementById('pp-kpis').innerHTML = htmlKpisProposta(cx, peLinhas(cx));
+  const kpis = document.getElementById('pp-kpis');
+  if (kpis) kpis.innerHTML = htmlKpisProposta(cx, peLinhas(cx));
 }
 // Chave UniLab na edição: ligada = valor proposto já praticado hoje no sistema do laboratório.
 // Já igual ao sistema: travada. Marcada pelo usuário (_propEd.sis): só grava ao salvar, com confirmação.
@@ -677,7 +778,7 @@ async function salvarEdicaoProposta() {
 function revisarItem(inp) {
   const p = ESTADO.propostas[_propId], cx = p && ctxAlvo(p.alvo), tr = inp.closest('tr'), k = tr.dataset.k, it = p?.itens?.[k];
   if (!it || !cx) return;
-  const txt = inp.value.trim(), v = txt === '' ? null : Math.round(parseFloat(txt) * 100) / 100, orig = it.para ?? null;
+  const lido = lerMoeda(inp.value), v = lido == null ? null : Math.round(lido * 100) / 100, orig = it.para ?? null;
   if ((v != null && (isNaN(v) || v < 0)) || (v == null && cx.base) || v === orig) delete _propRev[k];
   else _propRev[k] = v;
   const rev = k in _propRev, x = linhaProposta(cx, k, cx.salvo(k) ?? null, rev ? _propRev[k] : orig);
@@ -689,11 +790,26 @@ function revisarItem(inp) {
   tr.querySelector('.pp-mrg').innerHTML = ppMrg(x);
   // indicadores, alerta e botão refletem os valores revisados
   const ls = Object.entries(p.itens).map(([kk, i2]) => linhaProposta(cx, kk, cx.salvo(kk) ?? null, kk in _propRev ? _propRev[kk] : i2.para ?? null));
-  document.getElementById('pp-kpis').innerHTML = htmlKpisProposta(cx, ls);
+  const kpis = document.getElementById('pp-kpis');
+  if (kpis) kpis.innerHTML = htmlKpisProposta(cx, ls);
   const abaixo = ls.filter(l => l.c?.status === 'r').length;
   document.getElementById('pp-abaixo').innerHTML = abaixo ? `<div class="alert r"><i class="fa-solid fa-circle-xmark"></i><div>${abaixo} preço(s) abaixo do ${cx.pisoNome}.</div></div>` : '';
   const n = Object.keys(_propRev).length;
   document.getElementById('pp-aprovar').innerHTML = `<i class="fa-solid fa-stamp"></i>${n ? `Publicar com ${n} revisão(ões)` : 'Aprovar e publicar'}`;
+}
+
+// Arredonda os valores propostos nos campos de revisão (desligar volta ao proposto)
+function arredAprov(v) {
+  const p = ESTADO.propostas[_propId];
+  if (!p) return;
+  _ppArred = _ppArred === v ? '0' : v;
+  document.getElementById('pp-arred-w').innerHTML = htmlArredPP('arredAprov');
+  document.querySelectorAll('#g-corpo .pp-tab tr[data-k]').forEach(tr => {
+    const inp = tr.querySelector('.price-in input'), orig = p.itens?.[tr.dataset.k]?.para ?? null;
+    if (!inp || orig == null) return;
+    inp.value = moedaCampo(arredPP(orig));
+    revisarItem(inp);
+  });
 }
 
 async function decidirProposta(id, status) {
@@ -701,35 +817,19 @@ async function decidirProposta(id, status) {
   if (!p || p.status !== 'pendente') return toast('Proposta já decidida', 'erro');
   if (status === 'rejeitada' && !motivo) { document.getElementById('pp-motivo')?.focus(); return toast('Informe o motivo da rejeição', 'erro'); }
   if (status === 'aprovada') {
+    // valor digitado e não confirmado com Enter/Tab: vale o que está no campo
+    if (_propId === id) document.querySelectorAll('#g-corpo .pp-tab tr .price-in input').forEach(revisarItem);
     // valores revisados por quem aprova: guarda o proposto original para auditoria
     const rev = _propId === id ? { ..._propRev } : {}, nRev = Object.keys(rev).length, itens = { ...p.itens };
     Object.entries(rev).forEach(([k, v]) => { itens[k] = { ...itens[k], para: v, proposto: itens[k].para ?? null, revisado: true }; });
-    // preço muda: cada chave é o "Valor atualizado no sistema" (desligada por padrão)
-    const cxA = ctxAlvo(p.alvo);
-    let confirmou = false;
-    if (pode('exames', 'editar') && sistemaSuportado(cxA)) {
-      // já marcados no UniLab só voltam à lista se o valor foi alterado aqui (marca fica obsoleta)
-      const mudouAqui = k => k in rev && precoDifere(itens[k].para, itens[k].proposto);
-      const ks = Object.entries(itens).filter(([k, it]) => ESTADO.exames[k] && (it.para ?? null) !== (it.de ?? null) && ((!it.sistemaOk && precoDifere(cxA.sistema(k), it.para)) || mudouAqui(k))).map(([k]) => k);
-      if (ks.length) {
-        _envVs = Object.fromEntries(ks.map(k => [k, false]));
-        const r = await confirmar({ titulo: 'Valor atualizado no sistema?', icone: 'fa-clock-rotate-left', botao: 'Aprovar e publicar', cancelar: 'Voltar',
-          texto: `Marque os exames cujo novo valor <b>já foi lançado</b> no sistema do laboratório: a tabela do sistema no banco recebe o valor publicado. Os desmarcados ficam pendentes nas notificações (Atualizar no UniLab).
-            <span style="display:flex;gap:6px;justify-content:center;margin:10px 0"><button type="button" class="btn sm" onclick="envVsTodos(true)"><i class="fa-solid fa-check-double"></i>Marcar todos</button><button type="button" class="btn sm" onclick="envVsTodos(null)"><i class="fa-solid fa-right-left"></i>Inverter</button></span>
-            <span class="fx-conf" style="max-height:260px;overflow:auto">${ks.map(k => `<span data-vs="${esc(k)}" style="align-items:center"><b>${esc(itens[k].mn)}</b><i>${itens[k].de != null ? fmt(itens[k].de) : 'fora'} → <b>${itens[k].para != null ? fmt(itens[k].para) : 'retirar'}</b></i>${chave(_envVs[k], `envVs('${esc(k)}')`)}</span>`).join('')}</span>` });
-        if (r !== true) { _envVs = {}; return; }
-        confirmou = true;
-        ks.forEach(k => { itens[k] = { ...itens[k], sistemaOk: _envVs[k] || null }; });
-        await DB.mesclar(`propostas/${id}/itens`, Object.fromEntries(ks.map(k => [k, itens[k]])));
-        _envVs = {};
-      }
-    }
-    // sem a janela do UniLab: confirma a publicação mesmo assim
-    if (!confirmou) {
-      const ok = await confirmar({ titulo: 'Aprovar e publicar?', icone: 'fa-stamp', botao: 'Aprovar e publicar', cancelar: 'Voltar',
-        texto: `${p.n || Object.keys(itens).length} preço(s) passam a valer agora em <b>${esc(p.alvoNome)}</b>${nRev ? `, ${nRev} com valor revisado` : ''}.` });
-      if (ok !== true) return;
-    }
+    // UniLab: pergunta só pelos que divergem; já marcados no envio voltam só se o valor foi alterado aqui
+    const mudouAqui = k => k in rev && precoDifere(itens[k].para, itens[k].proposto);
+    const ks = Object.keys(itens).filter(k => !itens[k].sistemaOk || mudouAqui(k));
+    const marc = await perguntarUnilab(ks.map(k => ({ alvo: p.alvo, k, mn: itens[k].mn, para: itens[k].para ?? null })), 'Aprovar e publicar');
+    if (!marc) return;
+    const mk = ks.filter(k => marc.has(`${p.alvo}|${k}`) || (mudouAqui(k) && itens[k].sistemaOk));
+    mk.forEach(k => { itens[k] = { ...itens[k], sistemaOk: marc.has(`${p.alvo}|${k}`) || null }; });
+    if (mk.length) await DB.mesclar(`propostas/${id}/itens`, Object.fromEntries(mk.map(k => [k, itens[k]])));
     if (nRev) await DB.mesclar(`propostas/${id}/itens`, Object.fromEntries(Object.keys(rev).map(k => [k, itens[k]])));
     const n = await aplicarProposta(id, { ...p, itens });
     if (motivo || nRev) await DB.mesclar(`propostas/${id}/decisao`, { motivo: motivo || null, revisados: nRev || null });
@@ -742,6 +842,85 @@ async function decidirProposta(id, status) {
     toast(status === 'cancelada' ? 'Proposta cancelada' : 'Proposta rejeitada');
   }
   fecharGaveta();
+  renderTela();
+}
+
+// Aprova todas as propostas pendentes do lote de uma vez (valores e marcas UniLab como enviados)
+async function aprovarLote(id) {
+  const L = lotesHistorico(false, true).find(l => l.id === id);
+  if (!L) return toast('Lote já decidido', 'erro');
+  const ps = L.ps.map(p => [p.id, ESTADO.propostas[p.id]]).filter(([, p]) => p?.status === 'pendente' && ctxAlvo(p.alvo));
+  const marc = await perguntarUnilab(ps.flatMap(([, p]) => Object.entries(p.itens || {}).filter(([, it]) => !it.sistemaOk)
+    .map(([k, it]) => ({ alvo: p.alvo, k, mn: it.mn, para: it.para ?? null }))), 'Aprovar lote');
+  if (!marc) return;
+  let n = 0;
+  for (const [id, p] of ps) {
+    const itens = Object.fromEntries(Object.entries(p.itens || {}).map(([k, it]) => [k, marc.has(`${p.alvo}|${k}`) ? { ...it, sistemaOk: true } : it]));
+    n += await aplicarProposta(id, { ...p, itens });
+  }
+  fecharGaveta();
+  toast(`${n} preço(s) publicados em ${L.ps.length} tabela(s)`);
+  renderTela();
+}
+
+// Reverter (quem aprova): proposta aprovada volta cada preço ao valor de antes ("de"; sem "de" = sai da tabela)
+// e passa a cancelada. Preço mudado depois por outra proposta não é tocado (fica de fora, avisado).
+// A tabela do sistema (UniLab) não muda: a divergência aparece para atualizar o UniLab.
+const podeReverterProp = p => p.status === 'aprovada' && pode('tabelas', 'aprovar') && !!ctxAlvo(p.alvo);
+async function reverterPropostas(ids) {
+  const ps = ids.map(id => [id, ESTADO.propostas[id]]).filter(([, p]) => p && podeReverterProp(p));
+  if (!ps.length) return toast('Nada para reverter', 'erro');
+  const volta = [], mudou = [];
+  ps.forEach(([id, p]) => {
+    const cx = ctxAlvo(p.alvo);
+    Object.entries(p.itens || {}).forEach(([k, it]) => {
+      if (!ESTADO.exames[k]) return;
+      (precoDifere(cx.salvo(k), it.para ?? null) ? mudou : volta).push({ id, p, cx, k, it });
+    });
+  });
+  const v = x => x != null ? fmt(x) : 'fora';
+  const ok = await confirmar({ titulo: 'Reverter os preços?', icone: 'fa-clock-rotate-left', perigo: true, botao: 'Reverter',
+    texto: `${volta.length} preço(s) voltam ao valor de antes e ${ps.length > 1 ? 'as propostas passam' : 'a proposta passa'} a <b>cancelada</b>:`
+      + `<span class="fx-conf" style="max-height:220px;overflow:auto">${volta.map(x => `<span><b>${esc(x.it.mn)} · ${esc(x.p.alvoNome)}</b><i>${v(x.it.para)} → <b>${v(x.it.de)}</b></i></span>`).join('')}</span>`
+      + (mudou.length ? `<small style="color:var(--amber)">${mudou.length} preço(s) mudaram depois desta proposta e ficam como estão: ${mudou.map(x => esc(x.it.mn)).join(', ')}.</small>` : '') });
+  if (ok !== true) return;
+  const u = usuarioAtual(), agora = DB.agora(), upd = {};
+  volta.forEach(({ id, p, cx, k, it }) => {
+    const de = it.de ?? null;
+    if (cx.base) {
+      upd[`${CAMINHOS.exames}/${k}/precoPraticado`] = de;
+      upd[`${CAMINHOS.exames}/${k}/atualizadoEm`] = agora;
+      upd[`${CAMINHOS.exames}/${k}/atualizadoPor`] = u.nome;
+    } else if (cx.lab) upd[`${cx.caminho}/${cx.id}/precos/${k}`] = de;
+    else upd[`${CAMINHOS.tabelas}/${cx.id}/precos/${k}`] = de;
+    upd[`historicoExames/${k}/${DB.novaChave('historicoExames')}`] = {
+      descricao: `${cx.nome}: revertido ${v(it.para)} → ${de != null ? fmt(de) : cx.lab ? 'sem valor' : 'fora da tabela'}`,
+      proposta: id, usuario: u.nome, usuarioId: u.id, em: agora };
+  });
+  ps.forEach(([id, p]) => {
+    upd[`propostas/${id}/status`] = 'cancelada';
+    upd[`propostas/${id}/decisao`] = { ...(p.decisao || {}), revertida: { por: u.nome, porId: u.id, em: agora } };
+  });
+  await DB.mesclar('/', upd);
+  registrar('tabelas', `${[...new Set(ps.map(([, p]) => p.alvoNome))].join(', ')}: ${volta.length} preço(s) revertidos`, { propostas: ps.map(([id]) => id) });
+  fecharGaveta();
+  toast(`${volta.length} preço(s) revertidos`);
+  renderTela();
+}
+
+// Cancelada: o autor (ou quem aprova) pode tirá-la do histórico. Nada foi publicado, então nada mais muda.
+const podeExcluirProp = p => p.status === 'cancelada' && (p.autorId === usuarioAtual()?.id || pode('tabelas', 'aprovar'));
+async function excluirPropostas(ids) {
+  const ps = ids.map(id => ESTADO.propostas[id]).filter(Boolean);
+  if (!ps.length || !ps.every(podeExcluirProp)) return toast('Só propostas canceladas podem ser excluídas', 'erro');
+  const n = ps.reduce((s, p) => s + (p.n || Object.keys(p.itens || {}).length), 0);
+  const ok = await confirmar({ titulo: 'Excluir do histórico?', perigo: true, botao: 'Excluir',
+    texto: `${ps.length > 1 ? `${ps.length} propostas canceladas` : 'A proposta cancelada'} (${n} preço(s) em ${[...new Set(ps.map(p => esc(p.alvoNome)))].join(', ')}) some do histórico. Não dá para desfazer.` });
+  if (ok !== true) return;
+  for (const id of ids) { await DB.remover(`propostas/${id}`); delete ESTADO.propostas[id]; }
+  registrar('tabelas', `${ps.length} proposta(s) cancelada(s) excluída(s) do histórico (${ps.map(p => p.alvoNome).join(', ')})`);
+  fecharGaveta();
+  toast('Excluída do histórico');
   renderTela();
 }
 

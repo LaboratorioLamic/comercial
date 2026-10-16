@@ -39,7 +39,7 @@ function abrirFicha(id, aba = 'valores') {
         <div class="sec-t"><i class="fa-solid fa-user"></i>Particular · preço praticado</div>
         <div class="prices"><div id="fx-sug"></div>
           <div class="pbox ${editar ? 'edit' : ''}"><div class="l"><i class="fa-solid fa-pen"></i>Praticado</div>
-            <input id="fx-preco" type="number" step="0.01" min="0" value="${e.precoPraticado != null ? Number(e.precoPraticado).toFixed(2) : ''}" ${editar ? '' : 'disabled'} oninput="_fx.precoPraticado=parseFloat(this.value)||null;atualizarFicha()">
+            <input id="fx-preco" type="text" inputmode="numeric" autocomplete="off" value="${moedaCampo(e.precoPraticado)}" ${editar ? '' : 'disabled'} oninput="mascaraMoeda(this);_fx.precoPraticado=lerMoeda(this.value)||null;atualizarFicha()" onfocus="this.select()">
             <div class="m" id="fx-st"></div><div class="delta" id="fx-preco-d"></div></div></div>
         <div id="fx-sist"></div>
         <div id="fx-comp" style="margin-top:12px"></div>
@@ -85,7 +85,7 @@ async function carregarRascFicha(id) {
   Object.entries(_fxRasc).forEach(([a, v]) => {
     if (a !== 'particular') { _fxTab[a] = v; return; }
     _fx.precoPraticado = v;
-    document.getElementById('fx-preco').value = Number(v).toFixed(2);
+    document.getElementById('fx-preco').value = moedaCampo(v);
   });
   document.getElementById('fx-rasc').innerHTML = `<div class="alert x"><i class="fa-solid fa-pen-to-square"></i><div><b>${n} valor(es) do seu rascunho</b> nesta ficha · ainda não enviados para aprovação.</div></div>`;
   if (pode('tabelas')) desenharTabelasFicha(id);
@@ -122,7 +122,7 @@ function desenharTabelasFicha(id) {
       const p = precoTabFicha(t.id), pend = propPendente(t.id, id);
       return `<div class="casc-r ${t.ativa === false ? 'skip' : ''}" data-t="${t.id}"><div class="lft"><i class="fa-solid ${t.icone}" style="color:${t.cor}"></i><div>${esc(t.nome)}
           <div class="s" id="fxt-s-${t.id}"></div></div></div>
-        <div class="fx-tv"><div class="fx-tv-l"><div class="price-in" id="fxt-pi-${t.id}"><span>R$</span><input type="number" step="0.01" min="0" data-t="${t.id}" value="${p != null ? Number(p).toFixed(2) : ''}" placeholder="—" ${edit && !pend ? '' : 'disabled'} oninput="editarTabFicha(this)" onfocus="this.select()"></div>
+        <div class="fx-tv"><div class="fx-tv-l"><div class="price-in" id="fxt-pi-${t.id}"><span>R$</span><input type="text" inputmode="numeric" autocomplete="off" data-t="${t.id}" value="${moedaCampo(p)}" placeholder="—" ${edit && !pend ? '' : 'disabled'} oninput="editarTabFicha(this)" onfocus="this.select()"></div>
           ${pend ? htmlTravaProposta(pend) : edit ? `<div class="acts"><button title="Margem alvo: ${pct(margemAlvoTab(t), 0)}${t.margemSugerida != null ? ' (sugestão de margem da tabela)' : ' (alvo do setor/geral: tabela sem sugestão de margem)'}" ${calcular(e, null, t).semCusto ? 'disabled' : ''} onclick="margemTabFicha('${t.id}')"><i class="fa-solid fa-bullseye"></i></button><button title="Particular − ${pct(calcular(e, null, t).descRef, 0)} (desconto de referência)" onclick="refTabFicha('${t.id}')"><i class="fa-solid fa-percent"></i></button><button title="Retirar da tabela" onclick="definirTabFicha('${t.id}', null, true)"><i class="fa-solid fa-xmark"></i></button></div>` : ''}</div>
           <div class="delta" id="fxt-d-${t.id}"></div></div></div>`;
     }).join('')}
@@ -138,11 +138,12 @@ function definirTabFicha(id, v, forcarCampo) {
   if ((v == null && s == null) || (v != null && s != null && Math.abs(v - s) < 0.005)) delete _fxTab[id];
   else _fxTab[id] = v == null ? null : Math.round(v * 100) / 100;
   const inp = document.querySelector(`#fx-tabs input[data-t="${id}"]`), p = precoTabFicha(id);
-  if (inp && forcarCampo) inp.value = p != null ? Number(p).toFixed(2) : '';
+  if (inp && forcarCampo) inp.value = moedaCampo(p);
   atualizarFicha();
 }
 function editarTabFicha(inp) {
-  const txt = inp.value.trim(), v = txt === '' ? null : parseFloat(txt);
+  mascaraMoeda(inp);
+  const v = lerMoeda(inp.value);
   if (v != null && (isNaN(v) || v <= 0)) return;
   definirTabFicha(inp.dataset.t, v);
 }
@@ -299,7 +300,7 @@ function atualizarFicha() {
 function usarSugerido(v) {
   if (propPendente('particular', _fxId)) return toast('Preço em proposta aguardando aprovação: altere na proposta', 'erro');
   _fx.precoPraticado = v;
-  document.getElementById('fx-preco').value = v;
+  document.getElementById('fx-preco').value = moedaCampo(v);
   atualizarFicha();
 }
 
@@ -514,8 +515,9 @@ async function salvarFicha(modo) {
   if (modo === 'publicar' && !pode('tabelas', 'aprovar')) return toast('Seu grupo não pode publicar preços', 'erro');
   if (precos.some(m => m.alvo === 'particular') && !pode('exames', 'editar')) return toast('Seu grupo não pode alterar o preço praticado', 'erro');
   if (precos.some(m => m.alvo !== 'particular') && !pode('tabelas', 'editar')) return toast('Seu grupo não pode alterar tabelas de preço', 'erro');
-  if (modo === 'publicar' && precos.length && await confirmarPublicarSemRevisao({ n: precos.length, tabelas: precos.map(m => m.nome),
-    ab: precos.filter(m => m.para != null && calcular(e, m.para, m.alvo === 'particular' ? null : ESTADO.tabelas[m.alvo]).status === 'r').length }) !== true) return;
+  // publicar: UniLab dos que ficam diferentes do sistema (nenhum: publica direto)
+  const marcUni = modo === 'publicar' && precos.length ? await perguntarUnilab(precos.map(m => ({ alvo: m.alvo, k, mn: e.mn, para: m.para ?? null }))) : new Set();
+  if (!marcUni) return;
   const u = usuarioAtual();
 
   // dados do exame (custos, controles…)
@@ -560,7 +562,7 @@ async function salvarFicha(modo) {
   const just = (e.justificativa || '').trim() || null, lote = precos.length > 1 ? DB.novaChave('propostas') : null;
   for (const m of precos) {
     const id = DB.novaChave('propostas');
-    const p = { alvo: m.alvo, alvoNome: m.nome, itens: { [k]: { mn: e.mn, de: m.de ?? null, para: m.para ?? null } }, n: 1,
+    const p = { alvo: m.alvo, alvoNome: m.nome, itens: { [k]: { mn: e.mn, de: m.de ?? null, para: m.para ?? null, sistemaOk: marcUni.has(`${m.alvo}|${k}`) || null } }, n: 1,
       justificativa: just, autor: u.nome, autorId: u.id, em: Date.now(), status: 'pendente', origem: 'ficha', lote };
     await DB.gravar(`propostas/${id}`, { ...p, em: DB.agora() });
     if (modo === 'publicar') await aplicarProposta(id, p);
@@ -568,6 +570,8 @@ async function salvarFicha(modo) {
   }
   // publicado ou enviado: o rascunho deste exame deixa de valer
   for (const a of new Set([...precos.map(m => m.alvo), ...desfeitos])) { await carregarRascunho(a); definirRasc(ctxAlvo(a), k, undefined); await gravarRasc(a); }
+  // publicado: a janela fecha de vez (sem voltar à proposta ou ao rascunho de onde a ficha foi aberta)
+  if (modo === 'publicar' && precos.length) { _ppVolta = null; ppTirarFantasma(); }
   fecharGaveta();
   atualizarBotaoRascExames();
   toast(!precos.length ? `${e.mn} salvo` : modo === 'publicar' ? `${e.mn}: ${precos.length} preço(s) publicados` : `${e.mn}: ${precos.length} proposta(s) enviadas para aprovação`);

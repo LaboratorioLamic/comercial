@@ -8,6 +8,19 @@ const fmt = v => v == null || isNaN(v) ? '—'
 const pct = (v, casas = 1) => v == null || isNaN(v) ? '—'
   : (v * 100).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas }) + '%';
 
+// Campo de preço com vírgula automática: os dígitos enchem da direita (centavos). "1234" → "12,34"
+const moedaCampo = v => v == null || v === '' || isNaN(v) ? '' : Number(v).toFixed(2).replace('.', ',');
+const lerMoeda = txt => {
+  const s = String(txt ?? '').trim();
+  if (!s) return null;
+  const v = parseFloat(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
+  return isNaN(v) ? null : v;
+};
+function mascaraMoeda(inp) {
+  const d = inp.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  inp.value = d ? moedaCampo(+d / 100) : '';
+}
+
 const num = (v, casas = 2) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas });
 
 // Escapa texto vindo do banco antes de inserir em HTML
