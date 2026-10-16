@@ -1,6 +1,6 @@
 # COMERCIAL LAMIC — Tutoriais
 
-Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
+Revisão: 16/10/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
 
 > **Regra de manutenção (para pessoas e para o Claude)**
 >
@@ -25,26 +25,28 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 6 | `exames-ficha` | Exames | Ficha do exame | exames:ver | 13 |
 | 7 | `exames-alterar-preco` | Exames | Alterar preço e enviar para aprovação | exames:editar | 10 |
 | 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 15 |
-| 9 | `exames-rascunho` | Exames | Rascunho de exames | exames:ver ou tabelas:ver | 10 |
+| 9 | `exames-rascunho` | Exames | Rascunho de exames | exames:ver ou tabelas:ver | 13 |
 | 10 | `custos-fixos` | Custos | Custos fixos: linear ou rateado | custos:editar | 8 |
 | 11 | `custos-reagente` | Custos | Cadastrar reagente | custos:criar | 11 |
 | 12 | `custos-apoio` | Custos | Laboratórios de apoio | custos:ver | 5 |
-| 13 | `tabelas-editar` | Tabelas de Preço | Editar preços na tabela | tabelas:editar | 12 |
+| 13 | `tabelas-editar` | Tabelas de Preço | Editar preços na tabela | tabelas:editar | 13 |
 | 14 | `tabelas-nova` | Tabelas de Preço | Criar nova tabela | tabelas:criar | 11 |
-| 15 | `tabelas-aprovar` | Tabelas de Preço | Aprovar ou rejeitar proposta | tabelas:aprovar | 11 |
-| 16 | `tabelas-hierarquia` | Tabelas de Preço | Hierarquia de valor | tabelas:ver | 5 |
-| 17 | `tabelas-labs-conv` | Tabelas de Preço | Laboratórios apoiados e conveniados | tabelas:criar | 10 |
-| 18 | `simulador-reajuste` | Simulador | Reajuste de tabela | simulador:ver | 7 |
-| 19 | `simulador-comparar` | Simulador | Comparar tabelas | simulador:ver | 13 |
-| 20 | `simulador-lab` | Simulador | Proposta comercial (laboratório) | simulador:criar | 10 |
-| 21 | `simulador-cli` | Simulador | Proposta para cliente | simulador:criar | 10 |
-| 22 | `simulador-med` | Simulador | Proposta para médico | simulador:criar | 11 |
-| 23 | `pendencias-resolver` | Pendências | Resolver pendências | pendencias:ver | 6 |
-| 24 | `instrucoes-consultar` | Instruções | Consultar instruções | instrucoes:ver | 8 |
-| 25 | `importar-exportar` | Importar / Exportar | Importar e exportar | importar:ver | 5 |
-| 26 | `config-usuarios` | Configurações | Cadastrar usuário | usuarios:criar | 11 |
-| 27 | `config-grupos` | Configurações | Grupos e permissões | usuarios:editar | 7 |
-| 28 | `config-parametros` | Configurações | Parâmetros e setores | params:editar | 11 |
+| 15 | `tabelas-aprovar` | Tabelas de Preço | Aprovar ou rejeitar proposta | tabelas:aprovar | 13 |
+| 16 | `tabelas-historico` | Tabelas de Preço | Histórico de propostas | tabelas:ver | 8 |
+| 17 | `tabelas-hierarquia` | Tabelas de Preço | Hierarquia de valor | tabelas:ver | 5 |
+| 18 | `tabelas-labs-conv` | Tabelas de Preço | Laboratórios apoiados e conveniados | tabelas:criar | 10 |
+| 19 | `simulador-reajuste` | Simulador | Reajuste de tabela | simulador:ver | 7 |
+| 20 | `simulador-comparar` | Simulador | Comparar tabelas | simulador:ver | 13 |
+| 21 | `simulador-lab` | Simulador | Proposta L2L (laboratório) | simulador:criar | 10 |
+| 22 | `simulador-emp` | Simulador | Propostas Empresas | simulador:criar | 15 |
+| 23 | `simulador-cli` | Simulador | Proposta para cliente | simulador:criar | 10 |
+| 24 | `simulador-med` | Simulador | Proposta para médico | simulador:criar | 12 |
+| 25 | `pendencias-resolver` | Pendências | Resolver pendências | pendencias:ver | 6 |
+| 26 | `instrucoes-consultar` | Instruções | Consultar instruções | instrucoes:ver | 8 |
+| 27 | `importar-exportar` | Importar / Exportar | Importar e exportar | importar:ver | 5 |
+| 28 | `config-usuarios` | Configurações | Cadastrar usuário | usuarios:criar | 11 |
+| 29 | `config-grupos` | Configurações | Grupos e permissões | usuarios:editar | 7 |
+| 30 | `config-parametros` | Configurações | Parâmetros e setores | params:editar | 11 |
 
 ## Primeiros passos
 
@@ -80,9 +82,9 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 6 | `#nav a[data-s="custos"]` | clique · condicional | **Custos** — Clique em Custos. Base do custo de cada exame. Uma alteração aqui vale para todos os exames que usam aquele custo. |
 | 7 | `#s-custos .subnav` | ver · condicional | **Abas de Custos** — Custos fixos (linear ou rateado por atendimento), Reagentes e insumos e Laboratórios de apoio com seus vínculos. |
 | 8 | `#nav a[data-s="tabelas"]` | clique · condicional | **Tabelas de Preço** — Clique em Tabelas de Preço. Preços de cada tabela. As edições ficam no seu rascunho até serem enviadas para aprovação. |
-| 9 | `#s-tabelas .subnav` | ver · condicional | **Abas de Tabelas** — Tabelas, Laboratórios apoiados, Conveniados, Hierarquia de valor entre tabelas e Propostas aguardando aprovação. |
+| 9 | `#s-tabelas .subnav` | ver · condicional | **Abas de Tabelas** — Tabelas, Laboratórios apoiados, Conveniados, Hierarquia de valor entre tabelas e Propostas (pendentes e histórico). |
 | 10 | `#nav a[data-s="simulador"]` | clique · condicional | **Simulador** — Clique em Simulador. Mostra o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada. |
-| 11 | `#s-simulador .subnav` | ver · condicional | **Abas do Simulador** — Reajuste de tabela, Comparar tabelas, Proposta comercial para laboratórios, Proposta cliente (orçamento) e Proposta médico, com PDF. |
+| 11 | `#s-simulador .subnav` | ver · condicional | **Abas do Simulador** — Reajuste de tabela, Comparar tabelas, Proposta L2L para laboratórios, Propostas Empresas, Proposta cliente (orçamento) e Proposta médico, com PDF. |
 | 12 | `#nav a[data-s="pendencias"]` | clique · condicional | **Pendências** — Clique em Pendências. Exames com algo que impede um preço confiável: sem custo, sem setor, abaixo do mínimo, divergência com o Unilab… |
 | 13 | `#s-pendencias .tabs` | ver · condicional | **Categorias** — Cada aba é um tipo de pendência, com a quantidade de exames. Clique em um exame para abrir a ficha e resolver. |
 | 14 | `#nav a[data-s="instrucoes"]` | clique · condicional | **Instruções** — Clique em Instruções. Instruções de coleta e preparo de cada exame, com anexos. É o que aparece para os laboratórios apoiados. |
@@ -142,7 +144,7 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 3 | `#pop-exsetor .pop-btn` | clique | **Filtro por setor** — Clique para escolher um setor. Cada opção mostra quantos exames tem. |
 | 4 | `#pop-exsetor .pop` | ver · espera `#pop-exsetor.open` | **Escolha o setor** — Pesquise o setor, use as setas do teclado e Enter. O X ao lado do filtro limpa a escolha. |
 | 5 | `#pop-exorigem .pop-btn` | ver | **Origem** — Separa exames internos (feitos no LAMIC) dos enviados a laboratórios de apoio. |
-| 6 | `#pop-exctrl .pop-btn` | ver | **Controle interno** — Mostra só os exames marcados: a auditar, valor não atualizado no sistema, fora do sistema, apoio não negociado… |
+| 6 | `#pop-exctrl .pop-btn` | ver | **Controle interno** — Mostra só os exames marcados: valor não atualizado no sistema, fora do sistema, não efetua na Particular, apoio não negociado, sem custo (custo do teste não informado) e no meu rascunho. |
 | 7 | `#ex-chips` | ver | **Status da margem** — Atalhos por status, com a contagem de cada um. Clique em um para filtrar. |
 | 8 | `#ex-head` | ver | **Ordenar** — Clique no título de uma coluna para ordenar; clique de novo para inverter. |
 | 9 | `#s-exames .subnav` | ver | **Ativos e inativos** — Exames inativos saem das tabelas, do simulador e dos PDFs, mas ficam guardados aqui. |
@@ -177,13 +179,13 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | # | Alvo | Ação | Legenda |
 |---|---|---|---|
 | 1 | `#ex-body tr.row` | clique | **Abra um exame** — Clique em um exame para abrir a ficha. |
-| 2 | `#fx-preco` | digitar (sugestão: calculada) · espera `#gaveta.open` · condicional | **Novo preço praticado** — Digite o novo preço. A margem, o status e a composição são recalculados na hora. |
+| 2 | `#fx-preco` | digitar (sugestão: calculada) · espera `#gaveta.open` · condicional | **Novo preço praticado** — Digite só os números: a vírgula entra sozinha pelos centavos (5730 vira 57,30). A margem, o status e a composição são recalculados na hora. Os preços das outras tabelas, logo abaixo, funcionam igual. |
 | 3 | `#fx-st` | ver | **Confira a margem** — Veja a nova margem e o status. Preço abaixo do mínimo fica em vermelho. |
 | 4 | `#fx-just` | digitar (sugestão: "Reajuste anual (treinamento)") | **Justificativa** — Explique o motivo. Quem aprova vê este texto. |
-| 5 | `#gaveta .dr-f` | ver | **Opções de envio** — Rascunho guarda para enviar depois · Enviar proposta abre o rascunho para conferir e confirmar · Aprovar e publicar (só para quem aprova) publica na hora, depois de confirmar que vai publicar sem revisão. |
+| 5 | `#gaveta .dr-f` | ver | **Opções de envio** — Rascunho guarda para enviar depois · Enviar proposta abre o rascunho para conferir e confirmar · Aprovar e publicar (só para quem aprova) publica na hora e fecha a ficha. Se algum valor ficar diferente do UniLab, antes aparece a janela para marcar os já lançados lá. |
 | 6 | `#gaveta [onclick="salvarFicha('confirmar')"]` | clique · avança se deu certo | **Enviar proposta** — Clique em Enviar proposta. O preço vai para o seu rascunho e abre o Rascunho de exames, já neste exame. |
-| 7 | `#rx-lista` | ver · espera `#rx-lista` | **Confira o rascunho** — Um quadro por tabela alterada, como no envio da proposta: atual, proposto, desconto, margem, médias e a chave UniLab. A justificativa da ficha já vem preenchida abaixo. |
-| 8 | `#rx-enviar` | clique · avança se deu certo | **Confirmar envio** — Clique em Enviar para aprovação. Uma proposta é criada para cada tabela alterada. |
+| 7 | `#rx-lista` | ver · espera `#rx-lista` | **Confira o rascunho** — Um quadro por tabela alterada, como no envio da proposta: atual, proposto (editável aqui mesmo), desconto, margem e médias. A chave UniLab só aparece nos exames cujo valor difere do UniLab. A justificativa da ficha já vem preenchida abaixo. |
+| 8 | `#rx-enviar` | clique · avança se deu certo | **Confirmar envio** — Clique em Enviar para aprovação. Uma proposta é criada para cada tabela alterada, todas num lote só. |
 | 9 | `#sino .sino-btn` | ver · condicional | **Proposta criada** — A proposta (simulada) aparece no sino de quem aprova e em Tabelas de Preço › Propostas. O preço só muda depois da aprovação. |
 | 10 | — (cartão central) | ver | **Pronto!** — Preço alterado e enviado para aprovação. Na simulação nada foi gravado de verdade. |
 
@@ -221,12 +223,15 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 2 | `#fx-preco` | digitar (sugestão: calculada) · espera `#gaveta.open` · condicional | **Novo preço** — Digite um novo preço praticado. |
 | 3 | `#gaveta [onclick="salvarFicha('rascunho')"]` | clique · condicional · avança se deu certo | **Guardar no rascunho** — Clique em Rascunho: o preço fica guardado só para você, sem enviar. |
 | 4 | `#ex-rasc` | clique · avança se deu certo | **Botão Rascunho** — O número mostra quantos exames têm preço no seu rascunho. No filtro Controle interno › No meu rascunho a lista mostra só eles. Clique em Rascunho. |
-| 5 | `#rx-lista` | ver · espera `#rx-lista` | **Exames no rascunho** — Um quadro por tabela, como no envio da proposta: Particular, custo, atual, proposto, desconto e margem, com as médias e a tabela toda. A chave UniLab marca os valores já lançados no sistema. Clique no exame para abrir a ficha (ao fechar, volta aqui); tira a linha do rascunho. |
-| 6 | `.rx-ck` | ver · condicional | **Marque o que enviar** — A caixa ao lado do mnemônico marca o exame: só os marcados são enviados ou descartados. Marcar todos e o filtro agilizam. |
-| 7 | `#rx-just` | digitar (sugestão: "Reajuste de treinamento") | **Justificativa** — Explique o motivo. Quem aprova vê este texto. |
-| 8 | `#gaveta .dr-f` | ver | **Enviar** — Enviar para aprovação cria uma proposta por tabela, no mesmo lote. Aprovar e publicar (só para quem aprova) pede confirmação antes de publicar sem revisão. |
-| 9 | `#rx-enviar` | clique · condicional · avança se deu certo | **Enviar para aprovação** — Clique em Enviar para aprovação. |
-| 10 | — (cartão central) | ver | **Pronto!** — Rascunho enviado (na simulação). As propostas aparecem em Tabelas de Preço › Propostas e no sino de quem aprova. |
+| 5 | `#rx-lista` | ver · espera `#rx-lista` | **Exames no rascunho** — Um quadro por tabela, como no envio da proposta: Particular, custo, atual, proposto, desconto e margem, com as médias e a tabela toda. Se o exame ainda está no rascunho da Particular, o desconto das outras tabelas já usa esse valor. A chave UniLab aparece só nos exames cujo valor difere do UniLab. Clique no exame para abrir a ficha (ao fechar, volta aqui); tira a linha do rascunho. |
+| 6 | `#rx-lista .price-in input` | digitar (sugestão: calculada) · condicional | **Edite o valor** — O valor proposto pode ser alterado aqui mesmo, com a vírgula automática. Vale na hora para o envio, mesmo sem sair do campo; ao sair, margem e desconto são recalculados. Vazio retira o exame da tabela. |
+| 7 | `#rx-arred .pp-arred` | ver · condicional | **Arredondar** — Arredonda para cima todos os valores propostos no múltiplo de R$ 1, 5, 10 ou 100. Clique de novo no botão ativo para voltar aos centavos. |
+| 8 | `#rx-arred .pp-vista` | ver · condicional | **Analítico ou sintético** — Analítico: um quadro completo por tabela. Sintético: uma linha por exame e uma coluna por tabela, com o valor editável e margem e desconto logo abaixo (+ sem custo abre a aba de custos do exame). A escolha fica lembrada neste navegador; a chave UniLab só existe no Analítico. |
+| 9 | `.rx-ck` | ver · condicional | **Marque o que enviar** — A caixa à esquerda do mnemônico marca o exame (cinza = desmarcado): só os marcados são enviados ou descartados. Marcar todos e o filtro agilizam. |
+| 10 | `#rx-just` | digitar (sugestão: "Reajuste de treinamento") | **Justificativa** — Explique o motivo. Quem aprova vê este texto. |
+| 11 | `#gaveta .dr-f` | ver | **Enviar** — Enviar para aprovação cria uma proposta por tabela, todas num lote só (uma linha nas pendentes). Aprovar e publicar (só para quem aprova) publica direto; se algum valor ficar diferente do UniLab, antes aparece a janela para marcar os já lançados lá. |
+| 12 | `#rx-enviar` | clique · condicional · avança se deu certo | **Enviar para aprovação** — Clique em Enviar para aprovação. |
+| 13 | — (cartão central) | ver | **Pronto!** — Rascunho enviado (na simulação). As propostas aparecem em Tabelas de Preço › Propostas e no sino de quem aprova. |
 
 ## Custos
 
@@ -295,10 +300,11 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 6 | `#gr-body tr.ed .acts, #gr-body tr[data-k] .acts` | ver | **Atalhos da linha** — Botões para usar o preço sugerido, levar ao piso, aplicar o desconto de referência, desfazer ou retirar da tabela. |
 | 7 | `#gr-bar` | ver · espera `#gr-bar.on` | **Seu rascunho** — Resumo do rascunho: quantos sobem, descem e a margem média antes e depois. |
 | 8 | `#gr-bar [onclick="abrirEnvioProposta()"]` | clique | **Revisar e enviar** — Clique em Revisar e enviar. |
-| 9 | `#pp-just` | digitar (sugestão: "Reajuste de treinamento") · espera `#gaveta.open` | **Justificativa** — Confira os preços e explique o motivo da proposta. |
-| 10 | `#gaveta [onclick="enviarProposta(true)"]` | ver · condicional | **Aprovar e publicar** — Só para quem aprova: publica na hora, sem passar por outra pessoa. Antes, uma janela pede para confirmar que vai publicar sem revisão, com os preços abaixo do piso ou acima do desconto máximo. |
-| 11 | `#gaveta [onclick="enviarProposta(false)"]` | clique · avança se deu certo | **Enviar para aprovação** — Clique em Enviar para aprovação. |
-| 12 | — (cartão central) | ver | **Pronto!** — Proposta enviada (na simulação). Ela aparece em Propostas e no sino de quem aprova. |
+| 9 | `#gaveta .pp-barra` | ver · espera `#gaveta.open` · condicional | **Vista e arredondamento** — Analítico mostra o quadro completo; Sintético, uma linha por exame com o essencial. Os botões R$ 1, 5, 10 e 100 arredondam para cima todos os valores propostos (clique de novo para desligar). A chave UniLab aparece só nos exames cujo valor difere do UniLab. |
+| 10 | `#pp-just` | digitar (sugestão: "Reajuste de treinamento") · espera `#gaveta.open` | **Justificativa** — Confira os preços e explique o motivo da proposta. |
+| 11 | `#gaveta [onclick="enviarProposta(true)"]` | ver · condicional | **Aprovar e publicar** — Só para quem aprova: publica na hora, sem passar por outra pessoa. Se algum valor ficar diferente do UniLab, antes aparece a janela para marcar os já lançados lá; senão, publica direto. |
+| 12 | `#gaveta [onclick="enviarProposta(false)"]` | clique · avança se deu certo | **Enviar para aprovação** — Clique em Enviar para aprovação. |
+| 13 | — (cartão central) | ver | **Pronto!** — Proposta enviada (na simulação). Ela aparece em Propostas e no sino de quem aprova. |
 
 ### Criar nova tabela
 
@@ -326,17 +332,35 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 
 | # | Alvo | Ação | Legenda |
 |---|---|---|---|
-| 1 | `#tabelas-propostas` | ver | **Propostas** — Aqui ficam as propostas pendentes e o histórico das decididas. |
+| 1 | `#tabelas-propostas` | ver | **Propostas** — Aqui ficam as propostas pendentes e o histórico das decididas. Envios do rascunho de exames com várias tabelas viram uma linha só (um lote). |
 | 2 | — (cartão central) | ver · condicional | **Nenhuma proposta pendente** — Não há propostas aguardando agora. Faça antes o tutorial Editar preços na tabela e escolha Explorar livremente no final: a proposta simulada aparece aqui e você volta a este tutorial. |
-| 3 | `#prop-corpo tbody tr.row` | clique · condicional | **Abra a proposta** — Clique em uma proposta pendente. |
-| 4 | `#gaveta .dr-b` | ver · espera `#gaveta.open` · condicional | **Revise** — Preço de hoje → preço proposto, margem e alertas de piso de cada exame, com a justificativa do autor. |
-| 5 | `#pp-motivo` | digitar (sugestão: "Aprovado no treinamento") · condicional | **Observação** — Opcional para aprovar; obrigatória para rejeitar. |
-| 6 | `#gaveta .dr-f` | ver · condicional | **Decida** — Rejeitar devolve ao autor com a observação. Aprovar e publicar aplica os preços na tabela. |
-| 7 | `#pp-aprovar` | clique · condicional · avança se deu certo | **Aprovar e publicar** — Clique em Aprovar e publicar. |
-| 8 | `#modal .modal-card` | ver · condicional | **Valor atualizado no sistema?** — Aparece quando o preço muda numa tabela comparada com o UniLab. Lista só os exames ainda não marcados no UniLab (ou com valor alterado na aprovação): os já lançados não aparecem. |
-| 9 | `#modal .fx-conf` | ver · condicional | **Já lançado no UniLab?** — Ligue os exames cujo novo valor já foi lançado no sistema do laboratório: a tabela do sistema no banco recebe o valor publicado. Os desligados ficam pendentes no sino, em Atualizar no UniLab. Marcar todos e Inverter agilizam. |
-| 10 | `#modal [data-r="1"]` | clique · condicional · avança se deu certo | **Publicar** — Clique em Aprovar e publicar. Voltar retorna à proposta sem publicar. |
-| 11 | — (cartão central) | ver | **Pronto!** — Na vida real, os preços aprovados ficam publicados e o autor vê a decisão no histórico. |
+| 3 | `#prop-corpo tbody tr.row[onclick^="abrirProposta"]` | clique · condicional | **Abra a proposta** — Clique em uma proposta pendente. |
+| 4 | `#gaveta .dr-b` | ver · espera `#gaveta.open` · condicional | **Revise** — Preço de hoje → preço proposto, margem e alertas de piso de cada exame, com a justificativa do autor. O valor proposto pode ser revisado no campo, com a vírgula automática: vale o que estiver digitado, mesmo sem Enter. |
+| 5 | `#gaveta [onclick^="aprovarLote"]` | ver · condicional | **Aprovar o lote** — Abriu um lote: as tabelas enviadas juntas. Aprovar lote publica todas de uma vez; o link detalhe de cada tabela abre a proposta dela para revisar, editar ou rejeitar só ela. |
+| 6 | `#pp-arred-w` | ver · condicional | **Arredondar** — Arredonda para cima todos os valores propostos no múltiplo de R$ 1, 5, 10 ou 100: viram valores revisados. Clique de novo no ativo para voltar ao proposto. |
+| 7 | `#pp-motivo` | digitar (sugestão: "Aprovado no treinamento") · condicional | **Observação** — Opcional para aprovar; obrigatória para rejeitar. |
+| 8 | `#gaveta .dr-f` | ver · condicional | **Decida** — Rejeitar devolve ao autor com a observação. Aprovar e publicar aplica os preços na tabela: se nenhum valor ficar diferente do UniLab, publica direto. |
+| 9 | `#pp-aprovar` | clique · condicional · avança se deu certo | **Aprovar e publicar** — Clique em Aprovar e publicar. |
+| 10 | `#modal .modal-card` | ver · condicional | **Valor atualizado no UniLab?** — Aparece em qualquer publicação quando o valor publicado fica diferente do salvo no UniLab. Lista só os exames ainda não marcados (ou com valor alterado na aprovação): os já marcados no envio não aparecem. |
+| 11 | `#modal .fx-conf` | ver · condicional | **Já lançado no UniLab?** — Ligue os exames cujo novo valor já foi lançado no sistema do laboratório: a tabela do sistema no banco recebe o valor publicado. Os desligados ficam pendentes no sino, em Atualizar no UniLab. Marcar todos e Inverter agilizam. |
+| 12 | `#modal [data-r="1"]` | clique · condicional · avança se deu certo | **Publicar** — Clique em Aprovar e publicar. Voltar retorna à proposta sem publicar. |
+| 13 | — (cartão central) | ver | **Pronto!** — Na vida real, os preços aprovados ficam publicados e o autor vê a decisão no histórico. Para desfazer uma aprovação, veja Histórico de propostas. |
+
+### Histórico de propostas
+
+- **id:** `tabelas-historico` · **ícone:** `fa-clock-rotate-left` · **permissão:** tabelas:ver
+- **Objetivo:** Lotes decididos, vista analítica ou sintética, reverter e excluir.
+
+| # | Alvo | Ação | Legenda |
+|---|---|---|---|
+| 1 | `#tabelas-propostas [onclick^="propFiltro='historico'"]` | clique | **Histórico** — Clique em Histórico: propostas aprovadas, rejeitadas e canceladas, agrupadas pelo envio (lote). |
+| 2 | `#prop-corpo` | ver | **Lotes** — Cada linha é um envio: tabelas, autor, quantos preços, o que subiu ou desceu e a situação. Os filtros Tabela e Autor ficam à direita. |
+| 3 | `#prop-corpo tbody tr.row` | clique · condicional · avança se deu certo | **Abra um lote** — Clique em uma linha. |
+| 4 | `#gaveta .pp-vista` | ver · espera `#gaveta.open` · condicional | **Analítico ou sintético** — Analítico: um quadro por tabela, com indicadores. Sintético: uma linha por exame e uma coluna por tabela, com valor, de quanto era, margem e desconto. Clique no exame para abrir a ficha. |
+| 5 | `#gaveta [onclick^="reverterPropostas"]` | ver · condicional | **Reverter** — Só para quem aprova, em proposta aprovada: volta cada preço ao valor de antes e a proposta passa a cancelada. Preço que mudou depois por outra proposta fica como está (a janela avisa). O UniLab não muda: a divergência aparece para atualizar lá. |
+| 6 | `#gaveta [onclick^="excluirPropostas"]` | ver · condicional | **Excluir do histórico** — Proposta cancelada (pelo autor ou por quem aprova) pode sair do histórico. Não dá para desfazer. |
+| 7 | `#gaveta .dr-h .icon-btn` | clique · espera `#gaveta.open` | **Fechar** — Clique no X para fechar o lote. |
+| 8 | — (cartão central) | ver | **Pronto!** — O histórico guarda quem propôs, quem decidiu e quando, por tabela. |
 
 ### Hierarquia de valor
 
@@ -407,7 +431,7 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 12 | `#cmp-ambos` | ver · condicional | **Os dois de uma vez** — Gerar os dois rascunhos leva os ajustes de A e de B, cada um para o rascunho da sua tabela. |
 | 13 | — (cartão central) | ver | **Pronto!** — Compare à vontade: nenhum preço muda até a proposta de cada tabela ser aprovada. |
 
-### Proposta comercial (laboratório)
+### Proposta L2L (laboratório)
 
 - **id:** `simulador-lab` · **ícone:** `fa-handshake` · **permissão:** simulador:criar
 - **Objetivo:** Preço proposto × volume mensal, margem e PDF.
@@ -424,6 +448,29 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 8 | `#simulador-lab [onclick="salvarSimLab()"]` | clique | **Salvar** — Clique em salvar para guardar a proposta. |
 | 9 | `#simulador-lab [onclick="abrirPdfLab()"]` | ver | **PDF** — Gera a proposta em PDF com o texto de apresentação, pronta para enviar. |
 | 10 | — (cartão central) | ver | **Pronto!** — Uma proposta salva pode virar tabela de preço ou laboratório apoiado pelo botão de converter. |
+
+### Propostas Empresas
+
+- **id:** `simulador-emp` · **ícone:** `fa-building` · **permissão:** simulador:criar
+- **Objetivo:** Venda única: exames um a um ou a tabela toda, quantidade e custo sem o atendimento.
+
+| # | Alvo | Ação | Legenda |
+|---|---|---|---|
+| 1 | `#simulador-emp [onclick="novaSimMed()"]` | clique | **Nova proposta** — Clique em + para começar. Se pedir para descartar a atual, confirme na janela. |
+| 2 | `#pm-nome` | digitar (sugestão: "Empresa Exemplo — treinamento") | **Nome** — Nome da proposta. |
+| 3 | `#pm-medico` | digitar (sugestão: "Empresa Exemplo Ltda") | **Empresa** — Razão social: aparece no PDF. |
+| 4 | `#pm-crm` | digitar (sugestão: "00.000.000/0001-00 · RH") | **CNPJ / contato** — Opcional, aparece no PDF. |
+| 5 | `#pop-pmtab` | ver | **Tabela de referência** — Base de preço, perfil de custo e piso de margem. |
+| 6 | `#pop-pmbase` | ver | **Preço empresa** — Desconto sobre a tabela, valor da tabela ou sugestão de margem. Cada exame pode ter o preço digitado. |
+| 7 | `#pm-add` | digitar (sugestão: "GLI") | **Adicione exames** — Digite o mnemônico ou o nome. |
+| 8 | `#pm-sug.open button` | clique | **Escolha o exame** — Clique em uma sugestão. |
+| 9 | `#pm-todos` | ver | **Ou a tabela toda** — Inclui de uma vez todos os exames da tabela (ou do setor filtrado). Depois é só tirar o que não entra. |
+| 10 | `#pm-body` | ver | **Exames e quantidade** — Informe a quantidade de cada exame: é uma proposta de venda única, não um acordo mensal (como no orçamento de cliente). O custo total soma todos os custos menos o atendimento. |
+| 11 | `#pm-imp` | ver | **Resultado** — Quantidade de exames, total e lucro da proposta, margem ponderada pela quantidade e viabilidade pelo piso. |
+| 12 | `#pm-bulk` | ver · condicional | **Quantidade em lote** — Digite uma quantidade e clique em Qtd nos filtrados para aplicá-la a todos os exames da lista filtrada. Também dá para tirar os sem quantidade, os filtrados ou todos. |
+| 13 | `#simulador-emp [onclick="salvarSimMed()"]` | clique | **Salvar** — Clique em salvar. |
+| 14 | `#simulador-emp [onclick="abrirPdfMed()"]` | ver | **PDF da proposta** — Gera a proposta à empresa em PDF, com colunas Qtd e Total e o total da proposta (sem custo nem margem). O texto padrão fica em Configurar texto, nesta aba. |
+| 15 | — (cartão central) | ver | **Pronto!** — Proposta à empresa montada na simulação: venda única, pela quantidade de cada exame. |
 
 ### Proposta para cliente
 
@@ -446,7 +493,7 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 ### Proposta para médico
 
 - **id:** `simulador-med` · **ícone:** `fa-user-doctor` · **permissão:** simulador:criar
-- **Objetivo:** Desconto aos pacientes de um médico, com expectativa mensal.
+- **Objetivo:** Desconto aos pacientes de um médico, com expectativa mensal; custo sem a coleta.
 
 | # | Alvo | Ação | Legenda |
 |---|---|---|---|
@@ -458,9 +505,10 @@ Revisão: 15/10/2026 · 28 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 6 | `#pm-add` | digitar (sugestão: "GLI") | **Adicione exames** — Digite o mnemônico ou o nome. |
 | 7 | `#pm-sug.open button` | clique | **Escolha o exame** — Clique em uma sugestão. |
 | 8 | `#pm-todos` | ver | **Incluir vários** — Inclui de uma vez todos os exames do setor filtrado. |
-| 9 | `#pm-body` | ver | **Exames e expectativa** — Informe a expectativa mensal de envio de cada exame. |
-| 10 | `#simulador-med [onclick="salvarSimMed()"]` | clique | **Salvar** — Clique em salvar. |
-| 11 | — (cartão central) | ver | **Pronto!** — Proposta ao médico montada na simulação. O PDF fica no botão ao lado de salvar. |
+| 9 | `#pm-body` | ver | **Exames e expectativa** — Informe a expectativa mensal de envio de cada exame. O custo total não inclui a coleta: o paciente é atendido pelo médico. |
+| 10 | `#pm-imp` | ver | **Resultado** — Pacientes esperados, receita e lucro mensais, margem ponderada pelo volume e viabilidade pelo piso. |
+| 11 | `#simulador-med [onclick="salvarSimMed()"]` | clique | **Salvar** — Clique em salvar. |
+| 12 | — (cartão central) | ver | **Pronto!** — Proposta ao médico montada na simulação. O PDF fica no botão ao lado de salvar. |
 
 ## Pendências
 

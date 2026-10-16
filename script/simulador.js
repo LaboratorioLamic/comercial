@@ -12,8 +12,9 @@
 //   viabilidade pelo piso da tabela. Simulações ficam em simulacoes/{id}.
 // Proposta para cliente: exames incluídos pela busca × volume de exame, com um
 //   só atendimento dividido entre eles (simulacoes/{id} com tipo 'cli').
-// Proposta para médico: desconto aos pacientes encaminhados pelo médico. Custo normal de cada exame,
+// Proposta para médico: desconto aos pacientes encaminhados pelo médico. Custo de cada exame sem a coleta,
 //   volume = expectativa mensal de envio; exames pela busca ou todos da tabela (tipo 'med').
+// Propostas empresas: o mesmo módulo (pm aponta para o estado da aba), custo sem o atendimento (tipo 'emp').
 
 const SIM_POR_PAG = 50;
 // aba lembrada ao recarregar a página
@@ -32,27 +33,29 @@ const OPCOES_ARRED = [
 
 function renderSimulador() {
   const el = document.getElementById('s-simulador');
-  const nTipo = t => lista(ESTADO.simulacoes).filter(s => (s.tipo || 'lab') === t).length, salvas = nTipo('lab'), salvasCli = nTipo('cli'), salvasMed = nTipo('med');
+  const nTipo = t => lista(ESTADO.simulacoes).filter(s => (s.tipo || 'lab') === t).length, salvas = nTipo('lab'), salvasCli = nTipo('cli'), salvasMed = nTipo('med'), salvasEmp = nTipo('emp');
   el.innerHTML = `
     <div class="h-row"><div><h2>Simulador</h2><p>Veja o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada.</p></div></div>
     <div class="subnav-row"><div class="subnav" data-grupo="simulador">
       <button data-p="reajuste" class="${simAba === 'reajuste' ? 'on' : ''}"><i class="fa-solid fa-arrow-trend-up"></i>Reajuste de tabela</button>
       <button data-p="cmp" class="${simAba === 'cmp' ? 'on' : ''}"><i class="fa-solid fa-code-compare"></i>Comparar tabelas</button>
-      <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta comercial${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
+      <button data-p="lab" class="${simAba === 'lab' ? 'on' : ''}"><i class="fa-solid fa-handshake"></i>Proposta L2L${salvas ? `<span class="n-sub">${salvas}</span>` : ''}</button>
+      <button data-p="emp" class="${simAba === 'emp' ? 'on' : ''}"><i class="fa-solid fa-building"></i>Propostas Empresas${salvasEmp ? `<span class="n-sub">${salvasEmp}</span>` : ''}</button>
       <button data-p="cli" class="${simAba === 'cli' ? 'on' : ''}"><i class="fa-solid fa-user"></i>Proposta cliente${salvasCli ? `<span class="n-sub">${salvasCli}</span>` : ''}</button>
       <button data-p="med" class="${simAba === 'med' ? 'on' : ''}"><i class="fa-solid fa-user-doctor"></i>Proposta médico${salvasMed ? `<span class="n-sub">${salvasMed}</span>` : ''}</button>
     </div>
-    <button class="btn so-lab" onclick="_pdfModo=['cli','med'].includes(simAba)?simAba:'lab';abrirModeloPdf()" title="Texto padrão do PDF da aba (proposta comercial, orçamento de cliente ou proposta ao médico)"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
+    <button class="btn so-lab" onclick="_pdfModo=['cli','med','emp'].includes(simAba)?simAba:'lab';abrirModeloPdf()" title="Texto padrão do PDF da aba (proposta L2L, orçamento de cliente, proposta ao médico ou à empresa)"><i class="fa-solid fa-gear"></i>Configurar texto</button></div>
     <div class="pane ${simAba === 'reajuste' ? 'on' : ''}" id="simulador-reajuste"></div>
     <div class="pane ${simAba === 'cmp' ? 'on' : ''}" id="simulador-cmp"></div>
     <div class="pane ${simAba === 'lab' ? 'on' : ''}" id="simulador-lab"></div>
     <div class="pane ${simAba === 'cli' ? 'on' : ''}" id="simulador-cli"></div>
-    <div class="pane ${simAba === 'med' ? 'on' : ''}" id="simulador-med"></div>`;
+    <div class="pane ${simAba === 'med' ? 'on' : ''}" id="simulador-med"></div>
+    <div class="pane ${simAba === 'emp' ? 'on' : ''}" id="simulador-emp"></div>`;
   iniciarSubnav();
   if (simAba === 'reajuste') desenharSimReajuste();
   else if (simAba === 'cmp') desenharSimCmp();
   else if (simAba === 'cli') desenharSimCli();
-  else if (simAba === 'med') desenharSimMed();
+  else if (simAba === 'med' || simAba === 'emp') { pm = PMS[simAba]; desenharSimMed(); }
   else desenharSimLab();
 }
 
@@ -1536,14 +1539,35 @@ function exportarSimCli() {
 // Exames entram um a um pela busca ou todos da tabela de referência de uma vez (ou só de um setor).
 // itens: { chave: { v: volume esperado/mês, p: preço digitado } } (ordem de inclusão)
 // pdf: dados do PDF da proposta ao médico ou null
-const pm = { id: null, nome: '', medico: '', crm: '', tabelaId: '', base: 'desc', d: 10, itens: {}, pdf: null, sujo: false, filtro: 'todos', q: '', pag: 1, ordem: '', dir: 1 };
+// Médico e empresas usam o mesmo módulo: pm aponta para o estado da aba aberta (PMS.med | PMS.emp).
+// medico/crm guardam o nome e o documento do destinatário (na empresa: razão social e CNPJ).
+// sem: custos fixos fora da conta (médico: coleta; empresa: atendimento)
+const PM_MODOS = {
+  med: { tipo: 'med', chave: 'rascunhoPropostaMed', sem: ['coleta'], icone: 'fa-user-doctor', cor: '#10b981',
+    sub: 'Desconto aos pacientes do médico · custo de cada exame sem a coleta × expectativa mensal de envio', phNome: 'Ex.: Dr. Silva — out/2026',
+    rotPessoa: 'Médico', phPessoa: 'Nome do médico', rotDoc: 'CRM / especialidade', phDoc: 'Ex.: CRM-CE 12345 · Endocrinologia',
+    rotPreco: 'Preço paciente', titVol: 'Expectativa de pacientes enviados pelo médico por mês', impVol: 'Pacientes esperados', subVol: 'exames encaminhados pelo médico',
+    mes: '/mês', rotVol: 'Volume/mês', rotTot: 'Receita/mês', impRec: 'Receita mensal', subRec: 'pela expectativa de envio', impLuc: 'Lucro mensal', phVol: 'informe o volume/mês',
+    intro: 'Monte a lista de exames com desconto para os pacientes do médico', introVol: 'que o médico deve encaminhar', semTxt: 'sem a coleta',
+    titSalvas: 'Propostas de médico salvas', reg: 'Proposta médico', pdfTit: 'Proposta de desconto em PDF para o médico', semVolTxt: 'Fica só o que o médico deve encaminhar' },
+  emp: { tipo: 'emp', chave: 'rascunhoPropostaEmp', sem: ['atendimento'], icone: 'fa-building', cor: '#f59e0b',
+    sub: 'Proposta de venda à empresa · custo de cada exame sem o atendimento × quantidade de exames', phNome: 'Ex.: Empresa X — out/2026',
+    rotPessoa: 'Empresa', phPessoa: 'Razão social', rotDoc: 'CNPJ / contato', phDoc: 'Ex.: 00.000.000/0001-00 · RH',
+    rotPreco: 'Preço empresa', titVol: 'Quantidade de exames na proposta', impVol: 'Quantidade de exames', subVol: 'exames vendidos na proposta',
+    mes: '', rotVol: 'Qtd', rotTot: 'Total', impRec: 'Total da proposta', subRec: 'preço × quantidade', impLuc: 'Lucro da proposta', phVol: 'informe a quantidade',
+    intro: 'Monte a lista de exames da proposta à empresa', introVol: 'de cada exame (venda única, não é acordo mensal)', semTxt: 'sem o atendimento',
+    titSalvas: 'Propostas de empresa salvas', reg: 'Proposta empresa', pdfTit: 'Proposta em PDF para a empresa', semVolTxt: 'Fica só o que tem quantidade' }
+};
+const novoPm = modo => ({ modo, id: null, nome: '', medico: '', crm: '', tabelaId: '', base: 'desc', d: 10, itens: {}, pdf: null, sujo: false, filtro: 'todos', q: '', pag: 1, ordem: '', dir: 1 });
+const PMS = { med: novoPm('med'), emp: novoPm('emp') };
 // Rascunho no navegador: sobrevive ao recarregar a página até "Tirar todos"
-const RASCUNHO_MED = 'rascunhoPropostaMed';
-try { Object.assign(pm, JSON.parse(localStorage.getItem(RASCUNHO_MED)) || {}, { q: '', pag: 1 }); } catch {}
+Object.values(PMS).forEach(o => { try { Object.assign(o, JSON.parse(localStorage.getItem(PM_MODOS[o.modo].chave)) || {}, { q: '', pag: 1, modo: o.modo }); } catch {} });
+let pm = PMS[simAba === 'emp' ? 'emp' : 'med'];
+const PMM = () => PM_MODOS[pm.modo];
 function guardarRascunhoMed() {
-  try {
-    if (Object.keys(pm.itens).length || pm.nome || pm.medico) localStorage.setItem(RASCUNHO_MED, JSON.stringify(pm));
-  } catch {}
+  Object.values(PMS).forEach(o => {
+    try { if (Object.keys(o.itens).length || o.nome || o.medico) localStorage.setItem(PM_MODOS[o.modo].chave, JSON.stringify(o)); } catch {}
+  });
 }
 window.addEventListener('beforeunload', guardarRascunhoMed);
 let _pmSug = [], _pmHi = 0, _pmLinhas = [];
@@ -1551,12 +1575,12 @@ let _pmSug = [], _pmHi = 0, _pmLinhas = [];
 const ctxMed = () => ctxLabSim(pm);
 function precoPadraoMed(cl, e, ref) {
   if (pm.base === 'desc') return ref != null ? Math.round(ref * (1 - (pm.d || 0) / 100)) : null;
-  if (pm.base === 'msug') { const c = calcular(e, null, cl.tab); return precoParaMargem(c, c.margemSug ?? cl.margemSug ?? c.alvo) ?? null; }
+  if (pm.base === 'msug') { const c = calcular(e, null, cl.tab, PMM().sem); return precoParaMargem(c, c.margemSug ?? cl.margemSug ?? c.alvo) ?? null; }
   return ref;
 }
 function linhaMed(cl, k) {
   const e = { ...ESTADO.exames[k], id: k }, it = pm.itens[k] || {}, ref = cl.ref(k), padrao = precoPadraoMed(cl, e, ref);
-  const preco = it.p ?? padrao, vol = it.v || 0, c = calcular(e, preco, cl.tab);
+  const preco = it.p ?? padrao, vol = it.v || 0, c = calcular(e, preco, cl.tab, PMM().sem);
   return { e, k, ref, padrao, preco, man: it.p != null, vol, c, receita: preco != null ? preco * vol : 0, lucro: c.lucro != null ? c.lucro * vol : null,
     prazo: diasPrazo(k), desc: ref && preco != null ? 1 - preco / ref : null };
 }
@@ -1582,26 +1606,26 @@ function resumoMed(cl, ls) {
 }
 
 function desenharSimMed() {
-  const el = document.getElementById('simulador-med');
+  const el = document.getElementById(`simulador-${pm.modo}`), M = PMM();
   if (!el) return;
   if (pm.tabelaId && !ESTADO.tabelas[pm.tabelaId]) pm.tabelaId = '';
   const cria = pode('simulador', 'criar'), sv = pm.id ? ESTADO.simulacoes[pm.id] : null, cl = ctxMed();
   el.innerHTML = `<div class="card">
-      <div class="sec-card-h"><span class="tc-ic" style="--c:#10b981"><i class="fa-solid fa-user-doctor"></i></span>
+      <div class="sec-card-h"><span class="tc-ic" style="--c:${M.cor}"><i class="fa-solid ${M.icone}"></i></span>
         <div style="min-width:0;flex:1"><h3>${esc(pm.nome || 'Nova proposta')}${pm.sujo ? ' <span class="badge-s warn">não salva</span>' : sv ? ' <span class="badge-s ok">salva</span>' : ''}</h3>
-          <div class="sub">${sv ? `${esc(sv.autor)} · ${dataHora(sv.atualizadoEm || sv.em)}` : 'Desconto aos pacientes do médico · custo normal de cada exame × expectativa mensal de envio'}</div></div>
+          <div class="sub">${sv ? `${esc(sv.autor)} · ${dataHora(sv.atualizadoEm || sv.em)}` : M.sub}</div></div>
         <div class="rt"><button class="btn qd" onclick="novaSimMed()" title="Nova proposta"><i class="fa-solid fa-plus" style="color:var(--cyan)"></i></button>
           <div id="pop-pmsalvas"></div>
           <button class="btn qd" onclick="exportarSimMed()" title="Exportar planilha"><i class="fa-solid fa-file-csv"></i></button>
-          <button class="btn qd" onclick="abrirPdfMed()" title="Proposta de desconto em PDF para o médico"><i class="fa-solid fa-file-pdf"></i></button>
+          <button class="btn qd" onclick="abrirPdfMed()" title="${M.pdfTit}"><i class="fa-solid fa-file-pdf"></i></button>
           ${sv && (usuarioAtual().admin || sv.autorId === usuarioAtual().id || pode('simulador', 'aprovar')) ? `<button class="btn qd perigo-txt" onclick="excluirSimMed()" title="Excluir proposta"><i class="fa-solid fa-trash"></i></button>` : ''}
           ${cria ? `<button class="btn qd pri" onclick="salvarSimMed()" title="Salvar"><i class="fa-solid fa-floppy-disk"></i></button>` : ''}</div></div>
       <div class="fgrid pl-dados">
-        ${campo('pm-nome', 'Nome da proposta', pm.nome, { tipo: 'text', ph: 'Ex.: Dr. Silva — out/2026', aoMudar: 'pm.nome=this.value;pm.sujo=true' })}
-        ${campo('pm-medico', 'Médico', pm.medico, { tipo: 'text', ph: 'Nome do médico', aoMudar: 'pm.medico=this.value;pm.sujo=true' })}
-        ${campo('pm-crm', 'CRM / especialidade', pm.crm, { tipo: 'text', ph: 'Ex.: CRM-CE 12345 · Endocrinologia', aoMudar: 'pm.crm=this.value;pm.sujo=true' })}
+        ${campo('pm-nome', 'Nome da proposta', pm.nome, { tipo: 'text', ph: M.phNome, aoMudar: 'pm.nome=this.value;pm.sujo=true' })}
+        ${campo('pm-medico', M.rotPessoa, pm.medico, { tipo: 'text', ph: M.phPessoa, aoMudar: 'pm.medico=this.value;pm.sujo=true' })}
+        ${campo('pm-crm', M.rotDoc, pm.crm, { tipo: 'text', ph: M.phDoc, aoMudar: 'pm.crm=this.value;pm.sujo=true' })}
         <div class="field"><label>Tabela de referência</label><div id="pop-pmtab" class="block"></div></div>
-        <div class="field"><label>Preço ao paciente</label><div id="pop-pmbase" class="block"></div></div>
+        <div class="field"><label>${M.rotPreco}</label><div id="pop-pmbase" class="block"></div></div>
         ${pm.base === 'desc' ? campo('pm-d', 'Desconto', pm.d, { suf: '%', passo: '0.5', aoMudar: 'pm.d=parseFloat(this.value)||0;pm.sujo=true;desenharTabelaMed()' }) : ''}
       </div>
       <div class="impact" id="pm-imp" style="padding-top:0"></div>
@@ -1628,7 +1652,7 @@ function desenharSimMed() {
   });
   POPS['pop-pmtab'].valor = pm.tabelaId; desenharBotaoPop('pop-pmtab');
   criarPop('pop-pmbase', {
-    rotulo: 'Preço ao paciente', titulo: 'Preço dos exames não digitados', icone: 'fa-tag', padrao: 'desc',
+    rotulo: M.rotPreco, titulo: 'Preço dos exames não digitados', icone: 'fa-tag', padrao: 'desc',
     opcoes: () => [{ valor: 'desc', rotulo: 'Desconto sobre a tabela', icone: 'fa-percent', desc: `${esc(cl.refNome)} menos o percentual, sem centavos` },
       { valor: 'tab', rotulo: `Valor da ${cl.refNome}`, icone: 'fa-equals', desc: 'Sem desconto: ajuste exame a exame' },
       { valor: 'msug', rotulo: 'Sugestão de margem', icone: 'fa-bullseye', desc: cl.margemSug != null ? `Preço que atinge ${pct(cl.margemSug, 0)}` : 'Preço que atinge a margem alvo' }],
@@ -1640,11 +1664,11 @@ function desenharSimMed() {
     opcoes: () => opcoesSetorPop('Todos os setores'), aoMudar: () => { pm.pag = 1; desenharTabelaMed(); }
   });
   criarPop('pop-pmsalvas', {
-    rotulo: 'Salvas', titulo: 'Propostas de médico salvas', icone: 'fa-folder-open', padrao: '', busca: 'Buscar…',
-    opcoes: () => { const ss = lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).filter(s => s.tipo === 'med');
+    rotulo: 'Salvas', titulo: M.titSalvas, icone: 'fa-folder-open', padrao: '', busca: 'Buscar…',
+    opcoes: () => { const ss = lista(ESTADO.simulacoes, (a, b) => (b.atualizadoEm || b.em || 0) - (a.atualizadoEm || a.em || 0)).filter(s => s.tipo === M.tipo);
       return [{ valor: '', rotulo: ss.length ? 'Abrir…' : 'Nenhuma salva', icone: 'fa-folder-open' },
-        ...ss.map(s => ({ valor: s.id, rotulo: s.nome || 'Sem nome', icone: 'fa-user-doctor', cor: '#10b981',
-          desc: `${s.medico ? s.medico + ' · ' : ''}${s.resumo ? `${s.resumo.n} exames · ${num(s.resumo.vol || 0, 0)}/mês · ${fmt(s.resumo.receita)}` : ''} · ${s.autor || ''} ${dataHora(s.atualizadoEm || s.em)}` }))]; },
+        ...ss.map(s => ({ valor: s.id, rotulo: s.nome || 'Sem nome', icone: M.icone, cor: M.cor,
+          desc: `${s.medico ? s.medico + ' · ' : ''}${s.resumo ? `${s.resumo.n} exames · ${num(s.resumo.vol || 0, 0)}${M.mes || ' exames'} · ${fmt(s.resumo.receita)}` : ''} · ${s.autor || ''} ${dataHora(s.atualizadoEm || s.em)}` }))]; },
     aoMudar: id => { POPS['pop-pmsalvas'].valor = ''; if (id) abrirSimMed(id); }
   });
   garantirCatalogo().then(() => desenharTabelaMed());
@@ -1679,9 +1703,9 @@ function desenharTabelaMed() {
   if (pm.pag > n) pm.pag = n;
   const th = (r, k, cls) => thOrdem(r, k, pm.ordem, pm.dir, 'ordenarMed', cls);
   document.getElementById('pm-head').innerHTML = `<tr>${th('MN', 'mn')}${th('Descrição', 'desc')}${th('Prazo', 'prazo', 'col-opt')}${th('Custo total', 'custo', 'num')}${th(esc(cl.refNome), 'ref', 'num')}
-    ${th('Preço paciente', 'preco', 'num')}${th('Desc.', 'pd', 'num col-opt')}${th('Margem', 'margem', 'num')}${th('<span title="Expectativa de pacientes enviados pelo médico por mês">Volume/mês</span>', 'vol', 'num')}${th('Receita/mês', 'receita', 'num')}<th>Situação</th><th></th></tr>`;
+    ${th(PMM().rotPreco, 'preco', 'num')}${th('Desc.', 'pd', 'num col-opt')}${th('Margem', 'margem', 'num')}${th(`<span title="${PMM().titVol}">${PMM().rotVol}</span>`, 'vol', 'num')}${th(PMM().rotTot, 'receita', 'num')}<th>Situação</th><th></th></tr>`;
   body.innerHTML = ls.slice((pm.pag - 1) * SIM_POR_PAG, pm.pag * SIM_POR_PAG).map(x => htmlLinhaMed(x)).join('')
-    || `<tr><td colspan="12">${vazio(todas.length ? 'fa-magnifying-glass' : 'fa-user-doctor', todas.length ? 'Nenhum exame com esses filtros'
+    || `<tr><td colspan="12">${vazio(todas.length ? 'fa-magnifying-glass' : PMM().icone, todas.length ? 'Nenhum exame com esses filtros'
       : `Nenhum exame ainda: busque pelo mnemônico ou nome e tecle Enter, ou use <b>Incluir todos da ${esc(cl.refNome)}</b>.`)}</td></tr>`;
   document.getElementById('pm-foot').innerHTML = paginacao(ls.length, pm.pag, SIM_POR_PAG, 'paginaMed');
   botaoTodosMed(cl);
@@ -1701,8 +1725,8 @@ function htmlLinhaMed(x) {
     <td class="num muted">${ref != null ? fmt(ref) : '—'}</td>
     <td class="num">${inp('p', preco != null ? preco.toFixed(2) : '', man)}</td>
     <td class="num muted col-opt">${desc != null ? pct(desc) : '—'}</td>
-    <td class="num" style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">${c.margem != null ? pct(c.margem) : '—'}${lucro != null ? `<div class="sub-num" style="color:var(--${lucro < 0 ? 'red' : 'green'})">lucro ${fmt(lucro)}${vol > 0 ? '/mês' : ''}</div>` : ''}</td>
-    <td class="num">${inp('v', vol || '', vol > 0, ' title="Pacientes esperados por mês"')}</td>
+    <td class="num" style="color:${c.status === 'r' ? 'var(--red)' : 'inherit'}">${c.margem != null ? pct(c.margem) : '—'}${lucro != null ? `<div class="sub-num" style="color:var(--${lucro < 0 ? 'red' : 'green'})">lucro ${fmt(lucro)}${vol > 0 ? PMM().mes || ' total' : ''}</div>` : ''}</td>
+    <td class="num">${inp('v', vol || '', vol > 0, ` title="${PMM().titVol}"`)}</td>
     <td class="num">${vol > 0 && preco != null ? fmt(x.receita) : '<span class="muted">—</span>'}</td>
     <td>${preco == null ? tagSt('p', 'fa-circle-minus', 'Sem preço') : c.status === 'x' ? tagStatus('x') : c.status === 'r' ? tagSt('r', 'fa-circle-xmark', 'Abaixo do piso') : tagSt('g', 'fa-circle-check', 'OK')}</td>
     <td class="acts"><button title="Tirar da proposta" onclick="removerMed(this)"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
@@ -1746,14 +1770,14 @@ function desenharImpactoMed(cl, ls) {
   guardarRascunhoMed();
   const el = document.getElementById('pm-imp');
   if (!el) return;
-  const s = resumoMed(cl, ls);
+  const s = resumoMed(cl, ls), M = PMM();
   const imp = (ic, rot, v, d, cls = '') => `<div class="imp"><div class="l"><i class="fa-solid ${ic}"></i>${rot}</div><div class="v">${v}</div><div class="d ${cls}">${d}</div></div>`;
-  el.innerHTML = !s.n ? `<div class="alert x" style="grid-column:1/-1;margin:0"><i class="fa-solid fa-circle-info"></i><div>Monte a lista de exames com desconto para os pacientes do médico: adicione um a um pela busca ou <b>inclua todos da ${esc(cl.refNome)}</b> e tire o que não entra.
-      Informe o <b>volume/mês</b> que o médico deve encaminhar; a margem usa o custo normal de cada exame (piso ${pct(cl.piso, 0)}).</div></div>`
+  el.innerHTML = !s.n ? `<div class="alert x" style="grid-column:1/-1;margin:0"><i class="fa-solid fa-circle-info"></i><div>${M.intro}: adicione um a um pela busca ou <b>inclua todos da ${esc(cl.refNome)}</b> e tire o que não entra.
+      Informe ${M.mes ? 'o <b>volume/mês</b>' : 'a <b>quantidade</b>'} ${M.introVol}; a margem usa o custo de cada exame ${M.semTxt} (piso ${pct(cl.piso, 0)}).</div></div>`
     : imp('fa-flask-vial', 'Exames na proposta', num(s.n, 0), `<span class="muted">${s.desc != null ? `desconto médio ${pct(s.desc)} s/ ${esc(cl.refNome)}` : ''}${s.semPreco ? ` · ${s.semPreco} sem preço` : ''}</span>`)
-    + imp('fa-users', 'Pacientes esperados', `${num(s.vol, 0)}<small>/mês</small>`, `<span class="muted">${s.vol ? 'exames encaminhados pelo médico' : 'informe o volume/mês'}</span>`)
-    + imp('fa-sack-dollar', 'Receita mensal', s.vol ? fmt(s.receita) : '—', `<span class="muted">pela expectativa de envio</span>`)
-    + imp('fa-coins', 'Lucro mensal', s.vol ? fmt(s.lucro) : '—', `<span class="muted">após custo total e imposto${s.semCusto ? ` · ${s.semCusto} sem custo fora da conta` : ''}</span>`, s.vol ? (s.lucro < 0 ? 'dn' : 'up') : '')
+    + imp('fa-users', M.impVol, `${num(s.vol, 0)}${M.mes ? '<small>/mês</small>' : ''}`, `<span class="muted">${s.vol ? M.subVol : M.phVol}</span>`)
+    + imp('fa-sack-dollar', M.impRec, s.vol ? fmt(s.receita) : '—', `<span class="muted">${M.subRec}</span>`)
+    + imp('fa-coins', M.impLuc, s.vol ? fmt(s.lucro) : '—', `<span class="muted">após custo ${M.semTxt} e imposto${s.semCusto ? ` · ${s.semCusto} sem custo fora da conta` : ''}</span>`, s.vol ? (s.lucro < 0 ? 'dn' : 'up') : '')
     + imp('fa-percent', s.comVol ? 'Margem ponderada' : 'Margem média', s.margem != null ? pct(s.margem) : '—', `piso ${pct(cl.piso, 0)}${s.comVol ? ' · pelo volume' : ' · sem volume, por exame'}`, s.margem == null ? 'muted' : s.viavel ? 'up' : 'dn')
     + `<div class="imp viab ${s.viavel ? 'ok' : 'bad'}"><div class="l"><i class="fa-solid ${s.viavel ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>Viabilidade</div><div class="v">${s.margem == null ? '—' : s.viavel ? 'Viável' : 'Inviável'}</div>
       <div class="d">${s.ab ? `${s.ab} exame(s) abaixo do piso` : 'todos os exames acima do piso'}</div></div>`;
@@ -1765,11 +1789,11 @@ function desenharBulkMed(s) {
   if (!el) return;
   const its = Object.values(pm.itens), nMan = its.filter(i => i.p != null).length, nVol = its.filter(i => i.v > 0).length, nSemVol = s.n - nVol;
   el.innerHTML = `<b>${num(s.n, 0)} exame(s)</b>${_pmLinhas.length !== s.n ? `<span class="tag"><i class="fa-solid fa-filter"></i>${num(_pmLinhas.length, 0)} filtrado(s)</span>` : ''}
-    ${s.n ? `<div class="inp" style="width:110px"><input id="pm-vlote" type="number" step="1" min="0" placeholder="Volume" onkeydown="if(event.key==='Enter')volumeLoteMed()"><span class="suf">/mês</span></div>
-      <button class="btn sm" onclick="volumeLoteMed()" title="Aplica o volume aos exames filtrados"><i class="fa-solid fa-cart-plus"></i>Volume nos filtrados</button>` : ''}
+    ${s.n ? `<div class="inp" style="width:110px"><input id="pm-vlote" type="number" step="1" min="0" placeholder="${PMM().mes ? 'Volume' : 'Qtd'}" onkeydown="if(event.key==='Enter')volumeLoteMed()"><span class="suf">${PMM().mes || 'exames'}</span></div>
+      <button class="btn sm" onclick="volumeLoteMed()" title="Aplica ${PMM().mes ? 'o volume' : 'a quantidade'} aos exames filtrados"><i class="fa-solid fa-cart-plus"></i>${PMM().mes ? 'Volume' : 'Qtd'} nos filtrados</button>` : ''}
     ${nVol ? `<button class="btn sm" onclick="zerarVolumesMed()"><i class="fa-solid fa-eraser"></i>Zerar volumes</button>` : ''}
     ${nMan ? `<button class="btn sm" onclick="limparPrecosMed()"><i class="fa-solid fa-rotate-left"></i>Desfazer ${nMan} preço(s) digitado(s)</button>` : ''}
-    ${nVol && nSemVol ? `<button class="btn sm" onclick="tirarSemVolumeMed()" title="Fica só o que o médico deve encaminhar"><i class="fa-solid fa-filter-circle-xmark"></i>Tirar ${nSemVol} sem volume</button>` : ''}
+    ${nVol && nSemVol ? `<button class="btn sm" onclick="tirarSemVolumeMed()" title="${PMM().semVolTxt}"><i class="fa-solid fa-filter-circle-xmark"></i>Tirar ${nSemVol} sem volume</button>` : ''}
     ${_pmLinhas.length && _pmLinhas.length !== s.n ? `<button class="btn sm" onclick="tirarFiltradosMed()"><i class="fa-solid fa-xmark"></i>Tirar os ${num(_pmLinhas.length, 0)} filtrados</button>` : ''}
     ${s.n ? `<button class="btn sm" onclick="tirarTodosMed()"><i class="fa-solid fa-trash-can"></i>Tirar todos</button>` : ''}`;
 }
@@ -1856,7 +1880,7 @@ function volumeLoteMed() {
   _pmLinhas.forEach(x => { const it = pm.itens[x.k]; if (!it) return; if (v > 0) it.v = v; else delete it.v; });
   pm.sujo = true;
   desenharTabelaMed();
-  toast(`Volume ${v}/mês em ${_pmLinhas.length} exame(s)`);
+  toast(`${PMM().mes ? 'Volume' : 'Quantidade'} ${v}${PMM().mes} em ${_pmLinhas.length} exame(s)`);
 }
 async function zerarVolumesMed() {
   if (!await confirmar({ titulo: 'Zerar volumes?', texto: 'Os exames continuam na proposta, sem volume.', botao: 'Zerar', perigo: true })) return;
@@ -1872,7 +1896,7 @@ async function limparPrecosMed() {
 }
 async function tirarSemVolumeMed() {
   const ks = Object.keys(pm.itens).filter(k => !(pm.itens[k].v > 0));
-  if (!await confirmar({ titulo: `Tirar ${ks.length} exame(s) sem volume?`, texto: 'Ficam só os exames com expectativa de envio.', botao: 'Tirar', perigo: true })) return;
+  if (!await confirmar({ titulo: `Tirar ${ks.length} exame(s) sem volume?`, texto: PMM().mes ? 'Ficam só os exames com expectativa de envio.' : 'Ficam só os exames com quantidade.', botao: 'Tirar', perigo: true })) return;
   ks.forEach(k => { delete pm.itens[k]; });
   pm.sujo = true;
   desenharTabelaMed();
@@ -1888,7 +1912,7 @@ async function tirarTodosMed() {
   if (!await confirmar({ titulo: 'Tirar todos os exames?', texto: 'A proposta fica sem exames.', botao: 'Tirar', perigo: true })) return;
   pm.itens = {};
   pm.sujo = true;
-  try { localStorage.removeItem(RASCUNHO_MED); } catch {}
+  try { localStorage.removeItem(PMM().chave); } catch {}
   desenharTabelaMed();
 }
 function paginaMed(p) { pm.pag = p; desenharTabelaMed(); }
@@ -1897,8 +1921,8 @@ function ordenarMed(k) { pm.dir = pm.ordem === k ? -pm.dir : (['vol', 'receita',
 // ── Salvar, abrir, nova, exportar ─────────────────────────────
 async function novaSimMed() {
   if (pm.sujo && !await confirmar({ titulo: 'Descartar a proposta atual?', texto: 'As alterações não salvas serão perdidas.', botao: 'Descartar', perigo: true })) return;
-  Object.assign(pm, { id: null, nome: '', medico: '', crm: '', tabelaId: '', base: 'desc', d: 10, itens: {}, pdf: null, sujo: false, filtro: 'todos', q: '', pag: 1, ordem: '' });
-  try { localStorage.removeItem(RASCUNHO_MED); } catch {}
+  Object.assign(pm, novoPm(pm.modo));
+  try { localStorage.removeItem(PMM().chave); } catch {}
   desenharSimMed();
 }
 
@@ -1921,14 +1945,14 @@ async function salvarSimMed() {
   const id = pm.id || DB.novaChave('simulacoes'), antes = ESTADO.simulacoes[id];
   // "o" guarda a ordem e evita item vazio (o banco não grava objeto vazio)
   const itens = Object.fromEntries(Object.entries(pm.itens).map(([k, it], i) => [k, { ...it, o: i }]));
-  const dados = { tipo: 'med', nome: pm.nome, medico: pm.medico.trim() || null, crm: pm.crm.trim() || null, tabelaId: pm.tabelaId || '', base: pm.base, d: pm.d, itens,
-    pdf: pdfParaSalvar(pm.pdf, modeloPropostaMed()),
+  const dados = { tipo: PMM().tipo, nome: pm.nome, medico: pm.medico.trim() || null, crm: pm.crm.trim() || null, tabelaId: pm.tabelaId || '', base: pm.base, d: pm.d, itens,
+    pdf: pdfParaSalvar(pm.pdf, PDF_MODOS[pm.modo].modelo()),
     resumo: { n: r.n, vol: r.vol, receita: Math.round(r.receita * 100) / 100, margem: r.margem, viavel: r.viavel },
     autor: antes?.autor || u.nome, autorId: antes?.autorId || u.id, em: antes?.em || DB.agora(), atualizadoEm: DB.agora(), atualizadoPor: u.nome };
   await DB.gravar(`${CAMINHOS.simulacoes}/${id}`, dados);
   ESTADO.simulacoes[id] = { ...dados, em: antes?.em || Date.now(), atualizadoEm: Date.now() };
   pm.id = id; pm.sujo = false;
-  registrar('simulador', `Proposta médico "${pm.nome}" salva (${r.n} exames, ${num(r.vol, 0)}/mês, ${fmt(r.receita)}/mês)`);
+  registrar('simulador', `${PMM().reg} "${pm.nome}" salva (${r.n} exames, ${num(r.vol, 0)}${PMM().mes || ' exames'}, ${fmt(r.receita)}${PMM().mes})`);
   renderSimulador();
   toast('Proposta salva');
 }
@@ -1949,8 +1973,8 @@ function exportarSimMed() {
   const dec = v => v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ',');
   const q = s => `"${String(s || '').replace(/"/g, '""')}"`;
   const s = resumoMed(cl, ls);
-  const csv = [['Mnemônico', 'Exame', 'Prazo', cl.refNome, 'Preço paciente', 'Desconto', 'Volume/mês', 'Receita/mês'].join(';'),
+  const csv = [['Mnemônico', 'Exame', 'Prazo', cl.refNome, PMM().rotPreco, 'Desconto', PMM().rotVol, PMM().rotTot].join(';'),
     ...ls.map(x => [x.e.mn, q(x.e.descricao), q(textoPrazo(x.k)), dec(x.ref), dec(x.preco), x.desc != null ? pct(x.desc) : '', x.vol || '', x.vol ? dec(x.receita) : ''].join(';')),
     ['', q('Total'), '', '', '', s.desc != null ? pct(s.desc) : '', s.vol || '', s.vol ? dec(s.receita) : ''].join(';')].join('\r\n') + '\r\n';
-  baixarArquivo(`Proposta médico - ${pm.nome || pm.medico || 'sem nome'}.csv`, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+  baixarArquivo(`${PMM().reg} - ${pm.nome || pm.medico || 'sem nome'}.csv`, new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
 }

@@ -16,7 +16,8 @@ const CTRL_EXAME = {
   sist: { rotulo: 'Fora do sistema',      icone: 'fa-plug-circle-xmark',       cor: 'var(--text-muted)', desc: 'Mnemônico não existe no catálogo',     f: e => !!e.foraDoSistema },
   efet: { rotulo: 'Não efetua na Particular', icone: 'fa-ban',                 cor: 'var(--text-muted)', desc: 'Efetua = N na tabela Particular do Unilab', f: e => !!e.inativoNoSistema },
   nneg: { rotulo: 'Apoio não negociado',  icone: 'fa-handshake-slash',         cor: 'var(--red)',        desc: 'Exame de apoio sem valor negociado',   f: e => e.origem === 'apoio' && !negociadoExame(e) },
-  rasc: { rotulo: 'No meu rascunho',      icone: 'fa-pen-to-square',           cor: 'var(--cyan)',       desc: 'Preço alterado na ficha, ainda não enviado', f: e => emRascExame(e.id) }
+  scus: { rotulo: 'Sem custo',            icone: 'fa-circle-question',         cor: 'var(--amber)',      desc: 'Custo do teste não informado (margem desconhecida)', f: e => calcular(e).semCusto },
+  rasc: { rotulo: 'No meu rascunho',     icone: 'fa-pen-to-square',           cor: 'var(--cyan)',       desc: 'Preço alterado na ficha, ainda não enviado', f: e => emRascExame(e.id) }
 };
 const iconesExame = e =>
   (e.origem !== 'apoio' ? '' : negociadoExame(e) ? ' <i class="fa-solid fa-handshake flag" style="color:var(--green)" title="Apoio com negociação"></i>'

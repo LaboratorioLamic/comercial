@@ -87,6 +87,26 @@ Os prazos de entrega estão ao lado de cada {item} e contam a partir da coleta.`
 };
 const modeloPropostaMed = () => ({ ...MODELO_MEDICO_PADRAO, ...(ESTADO.modeloPropostaMed || {}) });
 
+const MODELO_EMPRESA_PADRAO = {
+  apresentacao: `Prezados(as) {destinatario},
+
+O Laboratório LAMIC tem a satisfação de apresentar a sua proposta de prestação de serviços laboratoriais: os {itens} relacionados a seguir, com os valores especiais desta proposta.
+
+Atendimento e coleta:
+• Segunda-feira a sexta-feira: 06h00 às 17h00
+• Sábado: 06h00 às 12h00
+
+Entrega dos resultados:
+Os prazos de entrega estão ao lado de cada {item} e contam a partir da coleta.`,
+  encerramento: 'Agradecemos a oportunidade e ficamos à disposição para esclarecer dúvidas ou incluir outros {itens} nesta proposta.',
+  assinatura: 'Laboratório LAMIC',
+  cargo: 'Comercial',
+  rodape: MODELO_PROPOSTA_PADRAO.rodape,
+  validade: 30,
+  itExame: true, itVacina: false
+};
+const modeloPropostaEmp = () => ({ ...MODELO_EMPRESA_PADRAO, ...(ESTADO.modeloPropostaEmp || {}) });
+
 // 'lab' = proposta comercial (pl) · 'cli' = proposta para cliente (pc) · 'med' = proposta ao médico (pm)
 // todos: a quem vale o texto padrão · doc: nome no registro de alterações
 let _pdfModo = 'lab';
@@ -95,8 +115,10 @@ const PDF_MODOS = {
     todos: 'todas as propostas', aba: 'Proposta', tituloPadrao: 'Texto padrão do PDF', doc: 'da proposta' },
   cli: { st: () => pc, modelo: modeloPropostaCli, original: MODELO_CLIENTE_PADRAO, caminho: 'modeloPropostaCli', itens: () => itensPdfCli(), prefixo: 'OR', nome: 'Orçamento', abrir: () => abrirPdfCli(),
     todos: 'todos os orçamentos', aba: 'Proposta cliente', tituloPadrao: 'Texto padrão do orçamento', doc: 'do orçamento' },
-  med: { st: () => pm, modelo: modeloPropostaMed, original: MODELO_MEDICO_PADRAO, caminho: 'modeloPropostaMed', itens: () => itensPdfMed(), prefixo: 'PM', nome: 'Proposta', abrir: () => abrirPdfMed(),
-    todos: 'todas as propostas ao médico', aba: 'Proposta médico', tituloPadrao: 'Texto padrão da proposta ao médico', doc: 'da proposta ao médico' }
+  med: { st: () => PMS.med, modelo: modeloPropostaMed, original: MODELO_MEDICO_PADRAO, caminho: 'modeloPropostaMed', itens: () => itensPdfMed(), prefixo: 'PM', nome: 'Proposta', abrir: () => abrirPdfMed(),
+    todos: 'todas as propostas ao médico', aba: 'Proposta médico', tituloPadrao: 'Texto padrão da proposta ao médico', doc: 'da proposta ao médico' },
+  emp: { st: () => PMS.emp, modelo: modeloPropostaEmp, original: MODELO_EMPRESA_PADRAO, caminho: 'modeloPropostaEmp', itens: () => itensPdfMed(), prefixo: 'PE', nome: 'Proposta', abrir: () => abrirPdfMed(),
+    todos: 'todas as propostas a empresas', aba: 'Propostas Empresas', tituloPadrao: 'Texto padrão da proposta à empresa', doc: 'da proposta à empresa' }
 };
 const PM = () => PDF_MODOS[_pdfModo];
 // estado do PDF em edição (pl.pdf ou pc.pdf), usado nos campos da gaveta
@@ -260,40 +282,40 @@ function abrirPdfCli() {
 
 // ── Gaveta: proposta de desconto ao médico ───────────────────
 function abrirPdfMed() {
-  _pdfModo = 'med';
-  const itens = itensPdfMed();
+  _pdfModo = pm.modo;
+  const emp = pm.modo === 'emp', itens = itensPdfMed();
   if (!itens.length) return toast('Adicione exames com preço à proposta', 'erro');
   garantirCatalogo();
-  const m = modeloPropostaMed(), dr = n => !n || /^dr/i.test(n) ? n || '' : `Dr(a). ${n}`;
+  const m = PM().modelo(), dr = n => emp || !n || /^dr/i.test(n) ? n || '' : `Dr(a). ${n}`;
   pm.pdf = { destinatario: dr(pm.medico.trim()), cnpj: pm.crm || '', aosCuidados: '', totais: false, ref: true, setor: true, material: true,
     ...Object.fromEntries(TEXTOS_PDF.map(k => [k, m[k]])), ...(pm.pdf || {}) };
   if (!pm.pdf.destinatario && pm.medico) pm.pdf.destinatario = dr(pm.medico.trim());
   const semVol = !itens.some(x => x.vol > 0);
   const f = pm.pdf, sw = (k, t, d, ic) => `<div class="casc-r"><div class="lft"><i class="fa-solid ${ic}"></i><div>${t}<div class="s">${d}</div></div></div>${chave(f[k], `pm.pdf.${k}=!pm.pdf.${k};this.classList.toggle('on')`)}</div>`;
   abrirGaveta({
-    sobre: 'Gerar PDF da proposta ao médico', titulo: pm.nome || 'Proposta ao médico',
+    sobre: `Gerar PDF da proposta ${emp ? 'à empresa' : 'ao médico'}`, titulo: pm.nome || (emp ? 'Proposta à empresa' : 'Proposta ao médico'),
     meta: `<span class="tag"><i class="fa-solid fa-flask-vial"></i>${itens.length} exame(s)</span><span class="tag"><i class="fa-solid fa-hashtag"></i>${numeroProposta()}</span>`,
     corpo: `<div class="form-col">
-      <div class="sec-t"><i class="fa-solid fa-user-doctor"></i>Médico</div>
-      ${campo('pdf-dest', 'Nome do médico', f.destinatario, { tipo: 'text', ph: 'Dr(a). Nome', aoMudar: 'pm.pdf.destinatario=this.value' })}
+      <div class="sec-t"><i class="fa-solid ${emp ? 'fa-building' : 'fa-user-doctor'}"></i>${emp ? 'Empresa' : 'Médico'}</div>
+      ${campo('pdf-dest', emp ? 'Razão social' : 'Nome do médico', f.destinatario, { tipo: 'text', ph: emp ? 'Nome da empresa' : 'Dr(a). Nome', aoMudar: 'pm.pdf.destinatario=this.value' })}
       <div class="fgrid sem-pad">
-        ${campo('pdf-cnpj', 'CRM / especialidade', f.cnpj, { tipo: 'text', ph: 'opcional', aoMudar: 'pm.pdf.cnpj=this.value' })}
-        ${campo('pdf-ac', 'Clínica / consultório', f.aosCuidados, { tipo: 'text', ph: 'opcional', aoMudar: 'pm.pdf.aosCuidados=this.value' })}
+        ${campo('pdf-cnpj', emp ? 'CNPJ' : 'CRM / especialidade', f.cnpj, { tipo: 'text', ph: 'opcional', aoMudar: 'pm.pdf.cnpj=this.value' })}
+        ${campo('pdf-ac', emp ? 'A/C (contato)' : 'Clínica / consultório', f.aosCuidados, { tipo: 'text', ph: 'opcional', aoMudar: 'pm.pdf.aosCuidados=this.value' })}
       </div>
       <div class="sec-t"><i class="fa-solid fa-align-left"></i>Textos desta proposta</div>
       <div id="pdf-selo"></div>
       ${htmlTextosPdf(f, 'pm.pdf', 'pm.sujo=true;seloTextoPdf()')}
       <div class="sec-t"><i class="fa-solid fa-sliders"></i>Conteúdo</div>
       <div class="casc">
-        ${sw('ref', 'Valor de tabela e desconto', 'colunas com o valor normal e o percentual de desconto ao lado do valor ao paciente', 'fa-tags')}
-        ${semVol ? `<div class="casc-r muted"><div class="lft"><i class="fa-solid fa-calculator"></i><div>Expectativa mensal e totais<div class="s">sem volume informado</div></div></div><span class="badge-s off">sem volume</span></div>`
-          : sw('totais', 'Expectativa mensal e totais', 'colunas Qtd/mês e Total/mês com o volume esperado de pacientes', 'fa-calculator')}
+        ${sw('ref', 'Valor de tabela e desconto', `colunas com o valor normal e o percentual de desconto ao lado do valor ${emp ? 'da proposta' : 'ao paciente'}`, 'fa-tags')}
+        ${semVol ? `<div class="casc-r muted"><div class="lft"><i class="fa-solid fa-calculator"></i><div>${emp ? 'Quantidade e totais' : 'Expectativa mensal e totais'}<div class="s">sem ${emp ? 'quantidade informada' : 'volume informado'}</div></div></div><span class="badge-s off">sem volume</span></div>`
+          : sw('totais', emp ? 'Quantidade e totais' : 'Expectativa mensal e totais', emp ? 'colunas Qtd e Total, com o total da proposta' : 'colunas Qtd/mês e Total/mês com o volume esperado de pacientes', 'fa-calculator')}
         ${sw('setor', 'Agrupar por setor', 'exames separados por setor, em ordem alfabética', 'fa-layer-group')}
         ${sw('material', 'Coluna de material', 'material biológico do catálogo', 'fa-vial')}
       </div>
       <div class="hint"><i class="fa-solid fa-lock"></i> Custo, margem e lucro nunca saem no PDF.</div>
     </div>`,
-    rodape: `${pode('simulador', 'criar') ? `<button class="btn" style="margin-right:auto" onclick="salvarModeloPdf(pdfAtual())" title="Os textos desta proposta passam a ser o padrão de todas as propostas ao médico"><i class="fa-solid fa-bookmark"></i>Salvar como padrão</button>` : '<span style="margin-right:auto"></span>'}
+    rodape: `${pode('simulador', 'criar') ? `<button class="btn" style="margin-right:auto" onclick="salvarModeloPdf(pdfAtual())" title="Os textos desta proposta passam a ser o padrão de ${PM().todos}"><i class="fa-solid fa-bookmark"></i>Salvar como padrão</button>` : '<span style="margin-right:auto"></span>'}
       <button class="btn" onclick="fecharGaveta()">Fechar</button>
       <button class="btn pri" id="pdf-gerar" onclick="gerarPdfLab()"><i class="fa-solid fa-file-pdf"></i>Gerar PDF</button>`
   });
@@ -356,7 +378,7 @@ async function gerarPdfLab() {
   try {
     await Promise.all([carregarLibsPdf(), garantirCatalogo()]);
     const doc = montarPdfLab(await logoPdf()), P = PM(), st = P.st();
-    const nome = `${P.nome} LAMIC - ${(st.pdf.destinatario || st.nome || ({ cli: 'cliente', med: 'médico' }[_pdfModo] || 'laboratório')).trim()}.pdf`.replace(/[\\/:*?"<>|]/g, '-');
+    const nome = `${P.nome} LAMIC - ${(st.pdf.destinatario || st.nome || ({ cli: 'cliente', med: 'médico', emp: 'empresa' }[_pdfModo] || 'laboratório')).trim()}.pdf`.replace(/[\\/:*?"<>|]/g, '-');
     doc.save(nome);
     st.sujo = true;
     registrar('simulador', `PDF ${P.doc} "${st.nome || st.pdf.destinatario}" gerado (${P.itens().length} exames)`);
@@ -370,7 +392,7 @@ async function gerarPdfLab() {
 }
 
 function montarPdfLab(logo) {
-  const { jsPDF } = window.jspdf, f = pdfAtual(), C = COR_PDF, cli = _pdfModo === 'cli', med = _pdfModo === 'med';
+  const { jsPDF } = window.jspdf, f = pdfAtual(), C = COR_PDF, cli = _pdfModo === 'cli', med = _pdfModo === 'med' || _pdfModo === 'emp', emp = _pdfModo === 'emp';
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   doc.setLineHeightFactor(1.42);
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 42, LW = W - 2 * M;
@@ -386,7 +408,7 @@ function montarPdfLab(logo) {
   // ── Página 1: faixa de título e destinatário ──
   y = 128;
   fonte('bold', 19); cor(C.navy);
-  doc.text(cli ? `Orçamento de ${f.itVacina ? (f.itExame !== false ? 'Exames e Vacinas' : 'Vacinas') : 'Exames Laboratoriais'}` : med ? 'Proposta de Desconto para Pacientes' : 'Proposta de Prestação de Serviços Laboratoriais', M, y);
+  doc.text(cli ? `Orçamento de ${f.itVacina ? (f.itExame !== false ? 'Exames e Vacinas' : 'Vacinas') : 'Exames Laboratoriais'}` : emp ? 'Proposta de Prestação de Serviços Laboratoriais' : med ? 'Proposta de Desconto para Pacientes' : 'Proposta de Prestação de Serviços Laboratoriais', M, y);
   y += 10;
   cor(C.azul, 'fill'); doc.rect(M, y, 46, 3, 'F');
   cor(C.cinza, 'fill'); doc.rect(M + 50, y, 14, 3, 'F');
@@ -403,13 +425,13 @@ function montarPdfLab(logo) {
   doc.roundedRect(M, y, LW, cardH, 6, 6, 'FD');
   cor(C.azul, 'fill'); doc.rect(M, y + 10, 3, cardH - 20, 'F');
   const rot = (t, x, yy) => { fonte('bold', 7.5); cor(C.muted); doc.text(t.toUpperCase(), x, yy, { charSpace: 0.6 }); };
-  rot(med ? 'Médico' : 'Destinatário', M + 16, y + 18);
+  rot(emp ? 'Empresa' : med ? 'Médico' : 'Destinatário', M + 16, y + 18);
   fonte('bold', 12.5); cor(C.navy);
   const dest = doc.splitTextToSize(f.destinatario || '—', colD - 30);
   doc.text(dest.slice(0, 2), M + 16, y + 34);
   fonte('normal', 9); cor(C.texto);
   // médico: CRM/especialidade e clínica saem como digitados
-  const extra = [f.cnpj ? `${cli ? 'CPF/CNPJ ' : med ? '' : 'CNPJ '}${f.cnpj}` : '', f.aosCuidados ? `${med ? '' : 'A/C '}${f.aosCuidados}` : ''].filter(Boolean).join('   ·   ');
+  const extra = [f.cnpj ? `${cli ? 'CPF/CNPJ ' : med && !emp ? '' : 'CNPJ '}${f.cnpj}` : '', f.aosCuidados ? `${med && !emp ? '' : 'A/C '}${f.aosCuidados}` : ''].filter(Boolean).join('   ·   ');
   if (extra) doc.text(extra, M + 16, y + 34 + dest.slice(0, 2).length * 14);
   const xD = M + colD + 10;
   cor(C.linha, 'draw'); doc.line(xD - 12, y + 12, xD - 12, y + cardH - 12);
@@ -448,7 +470,11 @@ function montarPdfLab(logo) {
   const caixas = [[cli ? 'Exames no orçamento' : med ? 'Exames com desconto' : 'Exames na proposta', String(itens.length)]];
   // médico: desconto médio por exame sobre o valor normal
   const cRef = itens.filter(x => x.ref), descMed = cRef.length ? 1 - cRef.reduce((s, x) => s + x.preco, 0) / cRef.reduce((s, x) => s + x.ref, 0) : null;
-  if (med) {
+  if (emp) {
+    // venda única: quantidade de exames e total, como no orçamento
+    if (f.ref && descMed != null) caixas.push(['Desconto médio', pct(descMed)]);
+    caixas.push(...(comVol ? [['Quantidade de exames', vol.toLocaleString('pt-BR')], ['Total da proposta', brl(total)]] : [['Validade da proposta', f.validade ? `${f.validade} dias` : '—']]));
+  } else if (med) {
     if (f.ref && descMed != null) caixas.push(['Desconto médio', pct(descMed)]);
     caixas.push(comVol ? ['Pacientes/mês estimados', vol.toLocaleString('pt-BR')] : ['Validade da proposta', f.validade ? `${f.validade} dias` : '—']);
   } else if (cli) caixas.push(['Quantidade de exames', vol.toLocaleString('pt-BR')], ['Total do orçamento', brl(total)]);
@@ -468,14 +494,14 @@ function montarPdfLab(logo) {
   // ── Relação de exames ──
   quebra(80);
   fonte('bold', 12); cor(C.navy); doc.text(`Relação de ${trocarItensPdf('{itens}', f).replace(' e ', ', ')} e valores`, M, y);
-  fonte('normal', 8.5); cor(C.muted); doc.text(med ? 'Valores ao paciente em reais (R$), por exame realizado.' : 'Valores unitários em reais (R$), por exame realizado.', W - M, y, { align: 'right' });
+  fonte('normal', 8.5); cor(C.muted); doc.text(med && !emp ? 'Valores ao paciente em reais (R$), por exame realizado.' : 'Valores unitários em reais (R$), por exame realizado.', W - M, y, { align: 'right' });
   y += 8;
   const cols = [{ k: 'mn', t: 'Mnemônico', w: 62 }, { k: 'ex', t: 'Exame' }];
   if (f.material) cols.push({ k: 'mat', t: 'Material', w: 70 });
   cols.push({ k: 'pz', t: 'Prazo', w: 64, a: 'center' });
   if (med && f.ref) cols.push({ k: 'rf', t: 'Valor normal', w: 62, a: 'right' }, { k: 'dc', t: 'Desc.', w: 40, a: 'center' });
-  cols.push({ k: 'vl', t: med ? 'Valor paciente' : 'Valor', w: med ? 66 : 62, a: 'right' });
-  if (comVol) cols.push({ k: 'qt', t: cli ? 'Qtd' : 'Qtd/mês', w: 44, a: 'center' }, { k: 'tt', t: cli ? 'Total' : 'Total/mês', w: 68, a: 'right' });
+  cols.push({ k: 'vl', t: med && !emp ? 'Valor paciente' : 'Valor', w: med ? 66 : 62, a: 'right' });
+  if (comVol) cols.push({ k: 'qt', t: cli || emp ? 'Qtd' : 'Qtd/mês', w: 44, a: 'center' }, { k: 'tt', t: cli || emp ? 'Total' : 'Total/mês', w: 68, a: 'right' });
   const linhaTab = x => ({ mn: x.e.mn, ex: x.e.descricao || '', mat: x.material || '-', pz: textoPrazoPdf(x.k) || '-', vl: brl(x.preco), qt: x.vol ? String(x.vol) : '-', tt: x.vol ? brl(x.tot) : '-',
     rf: x.ref != null ? brl(x.ref) : '-', dc: x.desc != null && x.desc > 0.0005 ? pct(x.desc, 0) : '-' });
   const ord = (a, b) => a.e.mn.localeCompare(b.e.mn, 'pt-BR', { sensitivity: 'base' });
@@ -495,7 +521,7 @@ function montarPdfLab(logo) {
   colStyles[iVl].fontStyle = 'bold';
   doc.autoTable({
     startY: y, head: [cols.map(c => c.t)], body: corpo,
-    foot: comVol ? [[{ content: cli ? 'Total do orçamento' : med ? 'Total mensal estimado (expectativa de envio)' : 'Total mensal estimado', colSpan: cols.length - 2, styles: { halign: 'right' } }, { content: vol.toLocaleString('pt-BR'), styles: { halign: 'center' } }, { content: brl(total), styles: { halign: 'right' } }]] : undefined,
+    foot: comVol ? [[{ content: cli ? 'Total do orçamento' : emp ? 'Total da proposta' : med ? 'Total mensal estimado (expectativa de envio)' : 'Total mensal estimado', colSpan: cols.length - 2, styles: { halign: 'right' } }, { content: vol.toLocaleString('pt-BR'), styles: { halign: 'center' } }, { content: brl(total), styles: { halign: 'right' } }]] : undefined,
     showFoot: 'lastPage', theme: 'plain',
     margin: { left: M, right: M, top: TOPO + 6, bottom: H - BASE + 4 },
     styles: { font: 'helvetica', fontSize: 8.4, cellPadding: { top: 4.5, bottom: 4.5, left: 5, right: 5 }, textColor: C.texto, lineColor: C.linha, lineWidth: { bottom: 0.5 }, valign: 'middle', overflow: 'linebreak' },
@@ -528,13 +554,13 @@ function montarPdfLab(logo) {
     cor(C.azul, 'fill'); doc.rect(W * 0.62, 0, W * 0.38, 5, 'F');
     if (i === 1) {
       if (logo) { const p = doc.getImageProperties(logo), lw = 150; doc.addImage(logo, 'PNG', M - 14, 18, lw, lw * p.height / p.width); }
-      fonte('bold', 8); cor(C.azul); doc.text(cli ? 'ORÇAMENTO' : med ? 'PROPOSTA AO MÉDICO' : 'PROPOSTA COMERCIAL', W - M, 38, { align: 'right', charSpace: 1.2 });
+      fonte('bold', 8); cor(C.azul); doc.text(cli ? 'ORÇAMENTO' : emp ? 'PROPOSTA À EMPRESA' : med ? 'PROPOSTA AO MÉDICO' : 'PROPOSTA COMERCIAL', W - M, 38, { align: 'right', charSpace: 1.2 });
       fonte('bold', 15); cor(C.navy); doc.text(nProp, W - M, 56, { align: 'right' });
       fonte('normal', 8.5); cor(C.muted); doc.text(`Emitida em ${dt(hoje)}`, W - M, 70, { align: 'right' });
       cor(C.linha, 'draw'); doc.setLineWidth(0.6); doc.line(M, 86, W - M, 86);
     } else {
       if (logo) { const p = doc.getImageProperties(logo), lw = 92; doc.addImage(logo, 'PNG', M - 8, 16, lw, lw * p.height / p.width); }
-      fonte('bold', 9); cor(C.navy); doc.text(f.destinatario || (cli ? 'Orçamento' : med ? 'Proposta ao médico' : 'Proposta comercial'), W - M, 38, { align: 'right' });
+      fonte('bold', 9); cor(C.navy); doc.text(f.destinatario || (cli ? 'Orçamento' : emp ? 'Proposta à empresa' : med ? 'Proposta ao médico' : 'Proposta comercial'), W - M, 38, { align: 'right' });
       fonte('normal', 8); cor(C.muted); doc.text(`${PM().nome} ${nProp} · continuação`, W - M, 51, { align: 'right' });
       cor(C.linha, 'draw'); doc.setLineWidth(0.6); doc.line(M, 66, W - M, 66);
     }

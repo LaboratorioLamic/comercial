@@ -13,11 +13,15 @@ const qsTut = s => document.querySelector(s);
 const gavetaAbertaTut = () => document.getElementById('gaveta').classList.contains('open');
 const gavetaFechadaTut = () => !gavetaAbertaTut();
 const preparaTut = fn => () => { if (gavetaAbertaTut()) fecharGaveta(); fecharPop(); if (celularTut()) fecharMenu(); fn?.(); };
-// Preço atual do exame da primeira linha + 10%, arredondado
+// Preço atual do exame da primeira linha + 10%, arredondado (lê campo com vírgula automática ou numérico)
 const precoSugeridoTut = (sel, fator = 1.1) => () => {
-  const v = parseFloat(qsTut(sel)?.value);
+  const v = lerMoeda(qsTut(sel)?.value);
   return v > 0 ? (Math.ceil(v * fator * 100) / 100).toFixed(2) : '50.00';
 };
+// Janelas de proposta sempre na vista analítica (indicadores e quadro completo existem só nela)
+const vistaAnaliticaTut = () => { _ppVista = 'analitico'; };
+// Lista de propostas: primeira pendente que abre uma proposta só (lote abre outro quadro)
+const linhaPropostaTut = () => qsTut('#prop-corpo tbody tr.row[onclick^="abrirProposta"]') || qsTut('#prop-corpo tbody tr.row');
 // Sino: o clique no Próximo fecha o painel (clique fora); reabre depois que o clique termina
 const abrirSinoTut = () => setTimeout(() => { if (!_sinoAberto && qsTut('#sino')) alternarSino(); }, 0);
 const semItemSinoTut = () => !(_sinoAba === 'prop' ? sinoPendentes().length : SINO_EXAMES[_sinoAba] ? sinoExames(_sinoAba).length : 0);
@@ -66,9 +70,9 @@ const TUTORIAIS = [
         ['custos', 'Custos', 'fa-boxes-stacked', 'Base do custo de cada exame. Uma alteração aqui vale para todos os exames que usam aquele custo.', '#s-custos .subnav', 'Abas de Custos',
           '<b>Custos fixos</b> (linear ou rateado por atendimento), <b>Reagentes e insumos</b> e <b>Laboratórios de apoio</b> com seus vínculos.'],
         ['tabelas', 'Tabelas de Preço', 'fa-table-list', 'Preços de cada tabela. As edições ficam no seu <b>rascunho</b> até serem enviadas para aprovação.', '#s-tabelas .subnav', 'Abas de Tabelas',
-          '<b>Tabelas</b>, <b>Laboratórios apoiados</b>, <b>Conveniados</b>, <b>Hierarquia</b> de valor entre tabelas e <b>Propostas</b> aguardando aprovação.'],
+          '<b>Tabelas</b>, <b>Laboratórios apoiados</b>, <b>Conveniados</b>, <b>Hierarquia</b> de valor entre tabelas e <b>Propostas</b> (pendentes e histórico).'],
         ['simulador', 'Simulador', 'fa-chart-line', 'Mostra o impacto antes de aplicar. Nenhum preço muda até a proposta ser aprovada.', '#s-simulador .subnav', 'Abas do Simulador',
-          '<b>Reajuste de tabela</b>, <b>Comparar tabelas</b>, <b>Proposta comercial</b> para laboratórios, <b>Proposta cliente</b> (orçamento) e <b>Proposta médico</b>, com PDF.'],
+          '<b>Reajuste de tabela</b>, <b>Comparar tabelas</b>, <b>Proposta L2L</b> para laboratórios, <b>Propostas Empresas</b>, <b>Proposta cliente</b> (orçamento) e <b>Proposta médico</b>, com PDF.'],
         ['pendencias', 'Pendências', 'fa-triangle-exclamation', 'Exames com algo que impede um preço confiável: sem custo, sem setor, abaixo do mínimo, divergência com o Unilab…', '#s-pendencias .tabs', 'Categorias',
           'Cada aba é um tipo de pendência, com a quantidade de exames. Clique em um exame para abrir a ficha e resolver.'],
         ['instrucoes', 'Instruções', 'fa-book-medical', 'Instruções de coleta e preparo de cada exame, com anexos. É o que aparece para os laboratórios apoiados.', '#s-instrucoes .subnav', 'Ativos e inativos',
@@ -150,7 +154,7 @@ const TUTORIAIS = [
       { alvo: '#pop-exorigem .pop-btn', titulo: 'Origem', icone: 'fa-route', acao: 'ver', antes: () => fecharPop(),
         texto: 'Separa exames <b>internos</b> (feitos no LAMIC) dos enviados a <b>laboratórios de apoio</b>.' },
       { alvo: '#pop-exctrl .pop-btn', titulo: 'Controle interno', icone: 'fa-clipboard-check', acao: 'ver',
-        texto: 'Mostra só os exames marcados: a auditar, valor não atualizado no sistema, fora do sistema, apoio não negociado…' },
+        texto: 'Mostra só os exames marcados: valor não atualizado no sistema, fora do sistema, não efetua na Particular, apoio não negociado, <b>sem custo</b> (custo do teste não informado) e no meu rascunho.' },
       { alvo: '#ex-chips', titulo: 'Status da margem', icone: 'fa-circle-half-stroke', acao: 'ver',
         texto: 'Atalhos por status, com a contagem de cada um. Clique em um para filtrar.' },
       { alvo: '#ex-head', titulo: 'Ordenar', icone: 'fa-arrow-down-wide-short', acao: 'ver',
@@ -196,23 +200,23 @@ const TUTORIAIS = [
     titulo: 'Alterar preço e enviar para aprovação', desc: 'Novo preço praticado, justificativa e proposta para aprovação.',
     passos: [
       { alvo: '#ex-body tr.row', titulo: 'Abra um exame', icone: 'fa-hand-pointer', acao: 'clique',
-        antes: preparaTut(() => { Object.assign(exF, { q: '', status: '', pag: 1, inativos: false }); irTelaTut('exames')(); }),
+        antes: preparaTut(() => { vistaAnaliticaTut(); Object.assign(exF, { q: '', status: '', pag: 1, inativos: false }); irTelaTut('exames')(); }),
         texto: 'Clique em um exame para abrir a ficha.' },
       { alvo: '#fx-preco', esperar: '#gaveta.open', titulo: 'Novo preço praticado', icone: 'fa-tag', acao: 'digitar', valor: precoSugeridoTut('#fx-preco'),
         pular: () => qsTut('#fx-preco')?.disabled,
-        texto: 'Digite o novo preço. A margem, o status e a composição são recalculados na hora.' },
+        texto: 'Digite só os números: a vírgula entra sozinha pelos centavos (5730 vira 57,30). A margem, o status e a composição são recalculados na hora. Os preços das outras tabelas, logo abaixo, funcionam igual.' },
       { alvo: '#fx-st', titulo: 'Confira a margem', icone: 'fa-percent', acao: 'ver',
         texto: 'Veja a nova margem e o status. Preço abaixo do mínimo fica em vermelho.' },
       { alvo: '#fx-just', titulo: 'Justificativa', icone: 'fa-comment-dots', acao: 'digitar', valor: 'Reajuste anual (treinamento)',
         texto: 'Explique o motivo. Quem aprova vê este texto.' },
       { alvo: '#gaveta .dr-f', titulo: 'Opções de envio', icone: 'fa-paper-plane', acao: 'ver',
-        texto: '<b>Rascunho</b> guarda para enviar depois · <b>Enviar proposta</b> abre o rascunho para conferir e confirmar · <b>Aprovar e publicar</b> (só para quem aprova) publica na hora, depois de confirmar que vai publicar sem revisão.' },
+        texto: '<b>Rascunho</b> guarda para enviar depois · <b>Enviar proposta</b> abre o rascunho para conferir e confirmar · <b>Aprovar e publicar</b> (só para quem aprova) publica na hora e fecha a ficha. Se algum valor ficar diferente do UniLab, antes aparece a janela para marcar os já lançados lá.' },
       { alvo: '#gaveta [onclick="salvarFicha(\'confirmar\')"]', titulo: 'Enviar proposta', icone: 'fa-paper-plane', acao: 'clique', avancaSe: () => !!qsTut('#rx-lista'),
         texto: 'Clique em <b>Enviar proposta</b>. O preço vai para o seu rascunho e abre o <b>Rascunho de exames</b>, já neste exame.' },
       { alvo: '#rx-lista', esperar: '#rx-lista', titulo: 'Confira o rascunho', icone: 'fa-pen-to-square', acao: 'ver',
-        texto: 'Um quadro por tabela alterada, como no envio da proposta: atual, proposto, desconto, margem, médias e a chave UniLab. A justificativa da ficha já vem preenchida abaixo.' },
+        texto: 'Um quadro por tabela alterada, como no envio da proposta: atual, proposto (editável aqui mesmo), desconto, margem e médias. A chave UniLab só aparece nos exames cujo valor difere do UniLab. A justificativa da ficha já vem preenchida abaixo.' },
       { alvo: '#rx-enviar', titulo: 'Confirmar envio', icone: 'fa-paper-plane', acao: 'clique', avancaSe: gavetaFechadaTut,
-        texto: 'Clique em <b>Enviar para aprovação</b>. Uma proposta é criada para cada tabela alterada.' },
+        texto: 'Clique em <b>Enviar para aprovação</b>. Uma proposta é criada para cada tabela alterada, todas num <b>lote</b> só.' },
       { alvo: '#sino .sino-btn', titulo: 'Proposta criada', icone: 'fa-bell', acao: 'ver', pular: () => !qsTut('#sino'),
         texto: 'A proposta (simulada) aparece no sino de quem aprova e em <b>Tabelas de Preço › Propostas</b>. O preço só muda depois da aprovação.' },
       fimTut('Preço alterado e enviado para aprovação. Na simulação nada foi gravado de verdade.')
@@ -260,7 +264,7 @@ const TUTORIAIS = [
     titulo: 'Rascunho de exames', desc: 'Preços alterados nas fichas: conferir, marcar e enviar como proposta.',
     passos: [
       { alvo: '#ex-body tr.row', titulo: 'Abra um exame', icone: 'fa-hand-pointer', acao: 'clique',
-        antes: preparaTut(() => { Object.assign(exF, { q: '', status: '', pag: 1, inativos: false }); irTelaTut('exames')(); }),
+        antes: preparaTut(() => { vistaAnaliticaTut(); Object.assign(exF, { q: '', status: '', pag: 1, inativos: false }); irTelaTut('exames')(); }),
         texto: 'Primeiro, um preço no rascunho. Clique em um exame para abrir a ficha.' },
       { alvo: '#fx-preco', esperar: '#gaveta.open', titulo: 'Novo preço', icone: 'fa-tag', acao: 'digitar', valor: precoSugeridoTut('#fx-preco'),
         pular: () => qsTut('#fx-preco')?.disabled,
@@ -272,13 +276,19 @@ const TUTORIAIS = [
         antes: () => { if (gavetaAbertaTut()) fecharGaveta(); },
         texto: 'O número mostra quantos exames têm preço no seu rascunho. No filtro <b>Controle interno › No meu rascunho</b> a lista mostra só eles. Clique em <b>Rascunho</b>.' },
       { alvo: '#rx-lista', esperar: '#rx-lista', titulo: 'Exames no rascunho', icone: 'fa-list-check', acao: 'ver',
-        texto: 'Um quadro por tabela, como no envio da proposta: Particular, custo, atual, proposto, desconto e margem, com as médias e a tabela toda. A chave <b>UniLab</b> marca os valores já lançados no sistema. Clique no exame para abrir a ficha (ao fechar, volta aqui); <i class="fa-solid fa-rotate-left"></i> tira a linha do rascunho.' },
+        texto: 'Um quadro por tabela, como no envio da proposta: Particular, custo, atual, proposto, desconto e margem, com as médias e a tabela toda. Se o exame ainda está no rascunho da Particular, o desconto das outras tabelas já usa esse valor. A chave <b>UniLab</b> aparece só nos exames cujo valor difere do UniLab. Clique no exame para abrir a ficha (ao fechar, volta aqui); <i class="fa-solid fa-rotate-left"></i> tira a linha do rascunho.' },
+      { alvo: '#rx-lista .price-in input', titulo: 'Edite o valor', icone: 'fa-pen', acao: 'digitar', valor: precoSugeridoTut('#rx-lista .price-in input', 1.05), pular: () => !qsTut('#rx-lista .price-in input'),
+        texto: 'O valor proposto pode ser alterado aqui mesmo, com a vírgula automática. Vale na hora para o envio, mesmo sem sair do campo; ao sair, margem e desconto são recalculados. Vazio retira o exame da tabela.' },
+      { alvo: '#rx-arred .pp-arred', titulo: 'Arredondar', icone: 'fa-coins', acao: 'ver', pular: () => !qsTut('#rx-arred .pp-arred'),
+        texto: 'Arredonda <b>para cima</b> todos os valores propostos no múltiplo de <b>R$ 1, 5, 10 ou 100</b>. Clique de novo no botão ativo para voltar aos centavos.' },
+      { alvo: '#rx-arred .pp-vista', titulo: 'Analítico ou sintético', icone: 'fa-list', acao: 'ver', pular: () => !qsTut('#rx-arred .pp-vista'),
+        texto: '<b>Analítico</b>: um quadro completo por tabela. <b>Sintético</b>: uma linha por exame e uma coluna por tabela, com o valor editável e margem e desconto logo abaixo (<b>+ sem custo</b> abre a aba de custos do exame). A escolha fica lembrada neste navegador; a chave UniLab só existe no Analítico.' },
       { alvo: '.rx-ck', titulo: 'Marque o que enviar', icone: 'fa-square-check', acao: 'ver', pular: () => !qsTut('.rx-ck'),
-        texto: 'A caixa ao lado do mnemônico marca o exame: só os <b>marcados</b> são enviados ou descartados. <b>Marcar todos</b> e o filtro agilizam.' },
+        texto: 'A caixa à esquerda do mnemônico marca o exame (cinza = desmarcado): só os <b>marcados</b> são enviados ou descartados. <b>Marcar todos</b> e o filtro agilizam.' },
       { alvo: '#rx-just', titulo: 'Justificativa', icone: 'fa-comment-dots', acao: 'digitar', valor: 'Reajuste de treinamento',
         texto: 'Explique o motivo. Quem aprova vê este texto.' },
       { alvo: '#gaveta .dr-f', titulo: 'Enviar', icone: 'fa-paper-plane', acao: 'ver',
-        texto: '<b>Enviar para aprovação</b> cria uma proposta por tabela, no mesmo lote. <b>Aprovar e publicar</b> (só para quem aprova) pede confirmação antes de publicar sem revisão.' },
+        texto: '<b>Enviar para aprovação</b> cria uma proposta por tabela, todas num <b>lote</b> só (uma linha nas pendentes). <b>Aprovar e publicar</b> (só para quem aprova) publica direto; se algum valor ficar diferente do UniLab, antes aparece a janela para marcar os já lançados lá.' },
       { alvo: '#rx-enviar', titulo: 'Enviar para aprovação', icone: 'fa-paper-plane', acao: 'clique', avancaSe: gavetaFechadaTut, pular: () => !qsTut('#rx-enviar:not([disabled])'),
         texto: 'Clique em <b>Enviar para aprovação</b>.' },
       fimTut('Rascunho enviado (na simulação). As propostas aparecem em <b>Tabelas de Preço › Propostas</b> e no sino de quem aprova.')
@@ -352,7 +362,7 @@ const TUTORIAIS = [
     titulo: 'Editar preços na tabela', desc: 'Rascunho, atalhos de preço e envio da proposta.',
     passos: [
       { ...passoMenuTut('tabelas', 'Abra Tabelas de Preço', 'Clique em <b>Tabelas de Preço</b> no menu.'),
-        antes: preparaTut(() => { tabAba = 'tabelas'; tabSel = 'particular'; if (celularTut()) abrirMenu(); }) },
+        antes: preparaTut(() => { vistaAnaliticaTut(); tabAba = 'tabelas'; tabSel = 'particular'; if (celularTut()) abrirMenu(); }) },
       { alvo: '#tab-cards', titulo: 'Tabelas', icone: 'fa-table-list', acao: 'ver',
         texto: 'Cada cartão é uma tabela: exames, margem média, abaixo do piso, propostas e rascunho. Clique num cartão para abrir a grade de preços.' },
       { alvo: '#tab-detalhe .sec-card-h', titulo: 'Cabeçalho da tabela', icone: 'fa-sliders', acao: 'ver',
@@ -369,10 +379,12 @@ const TUTORIAIS = [
         texto: 'Resumo do rascunho: quantos sobem, descem e a margem média antes e depois.' },
       { alvo: '#gr-bar [onclick="abrirEnvioProposta()"]', titulo: 'Revisar e enviar', icone: 'fa-paper-plane', acao: 'clique',
         texto: 'Clique em <b>Revisar e enviar</b>.' },
+      { alvo: '#gaveta .pp-barra', esperar: '#gaveta.open', titulo: 'Vista e arredondamento', icone: 'fa-coins', acao: 'ver', pular: () => !qsTut('#gaveta .pp-barra'),
+        texto: '<b>Analítico</b> mostra o quadro completo; <b>Sintético</b>, uma linha por exame com o essencial. Os botões <b>R$ 1, 5, 10 e 100</b> arredondam para cima todos os valores propostos (clique de novo para desligar). A chave UniLab aparece só nos exames cujo valor difere do UniLab.' },
       { alvo: '#pp-just', esperar: '#gaveta.open', titulo: 'Justificativa', icone: 'fa-comment-dots', acao: 'digitar', valor: 'Reajuste de treinamento',
         texto: 'Confira os preços e explique o motivo da proposta.' },
       { alvo: '#gaveta [onclick="enviarProposta(true)"]', titulo: 'Aprovar e publicar', icone: 'fa-stamp', acao: 'ver', pular: () => !qsTut('#gaveta [onclick="enviarProposta(true)"]'),
-        texto: 'Só para quem aprova: publica na hora, sem passar por outra pessoa. Antes, uma janela pede para confirmar que vai <b>publicar sem revisão</b>, com os preços abaixo do piso ou acima do desconto máximo.' },
+        texto: 'Só para quem aprova: publica na hora, sem passar por outra pessoa. Se algum valor ficar diferente do UniLab, antes aparece a janela para marcar os já lançados lá; senão, publica direto.' },
       { alvo: '#gaveta [onclick="enviarProposta(false)"]', titulo: 'Enviar para aprovação', icone: 'fa-paper-plane', acao: 'clique', avancaSe: gavetaFechadaTut,
         texto: 'Clique em <b>Enviar para aprovação</b>.' },
       fimTut('Proposta enviada (na simulação). Ela aparece em <b>Propostas</b> e no sino de quem aprova.')
@@ -411,27 +423,52 @@ const TUTORIAIS = [
     titulo: 'Aprovar ou rejeitar proposta', desc: 'Revisar os preços propostos e publicar.',
     passos: [
       { alvo: '#tabelas-propostas', titulo: 'Propostas', icone: 'fa-stamp', acao: 'ver',
-        antes: preparaTut(irTelaTut('tabelas', () => { tabAba = 'propostas'; })),
-        texto: 'Aqui ficam as propostas <b>pendentes</b> e o <b>histórico</b> das decididas.' },
+        antes: preparaTut(irTelaTut('tabelas', () => { vistaAnaliticaTut(); tabAba = 'propostas'; propFiltro = 'pendente'; })),
+        texto: 'Aqui ficam as propostas <b>pendentes</b> e o <b>histórico</b> das decididas. Envios do rascunho de exames com várias tabelas viram uma linha só (um <b>lote</b>).' },
       { titulo: 'Nenhuma proposta pendente', icone: 'fa-circle-info', acao: 'ver', pular: () => sinoPendentes().length > 0,
         texto: 'Não há propostas aguardando agora. Faça antes o tutorial <b>Editar preços na tabela</b> e escolha <b>Explorar livremente</b> no final: a proposta simulada aparece aqui e você volta a este tutorial.' },
-      { alvo: '#prop-corpo tbody tr.row', titulo: 'Abra a proposta', icone: 'fa-hand-pointer', acao: 'clique', pular: () => !sinoPendentes().length,
+      { alvo: linhaPropostaTut, titulo: 'Abra a proposta', icone: 'fa-hand-pointer', acao: 'clique', pular: () => !sinoPendentes().length,
         texto: 'Clique em uma proposta pendente.' },
       { alvo: '#gaveta .dr-b', esperar: '#gaveta.open', titulo: 'Revise', icone: 'fa-magnifying-glass', acao: 'ver', pular: () => !sinoPendentes().length,
-        texto: 'Preço de hoje → preço proposto, margem e alertas de piso de cada exame, com a justificativa do autor.' },
+        texto: 'Preço de hoje → preço proposto, margem e alertas de piso de cada exame, com a justificativa do autor. O valor proposto pode ser revisado no campo, com a vírgula automática: vale o que estiver digitado, mesmo sem Enter.' },
+      { alvo: '#gaveta [onclick^="aprovarLote"]', titulo: 'Aprovar o lote', icone: 'fa-layer-group', acao: 'ver', pular: () => !qsTut('#gaveta [onclick^="aprovarLote"]'),
+        texto: 'Abriu um <b>lote</b>: as tabelas enviadas juntas. <b>Aprovar lote</b> publica todas de uma vez; o link <b>detalhe</b> de cada tabela abre a proposta dela para revisar, editar ou rejeitar só ela.' },
+      { alvo: '#pp-arred-w', titulo: 'Arredondar', icone: 'fa-coins', acao: 'ver', pular: () => !qsTut('#pp-arred-w'),
+        texto: 'Arredonda para cima todos os valores propostos no múltiplo de <b>R$ 1, 5, 10 ou 100</b>: viram valores revisados. Clique de novo no ativo para voltar ao proposto.' },
       { alvo: '#pp-motivo', titulo: 'Observação', icone: 'fa-comment', acao: 'digitar', valor: 'Aprovado no treinamento', pular: () => !qsTut('#pp-motivo'),
         texto: 'Opcional para aprovar; <b>obrigatória para rejeitar</b>.' },
       { alvo: '#gaveta .dr-f', titulo: 'Decida', icone: 'fa-scale-balanced', acao: 'ver', pular: () => !qsTut('#pp-aprovar'),
-        texto: '<b>Rejeitar</b> devolve ao autor com a observação. <b>Aprovar e publicar</b> aplica os preços na tabela.' },
+        texto: '<b>Rejeitar</b> devolve ao autor com a observação. <b>Aprovar e publicar</b> aplica os preços na tabela: se nenhum valor ficar diferente do UniLab, publica direto.' },
       { alvo: '#pp-aprovar', titulo: 'Aprovar e publicar', icone: 'fa-stamp', acao: 'clique', pular: () => !qsTut('#pp-aprovar'), avancaSe: () => gavetaFechadaTut() || modalAbertoTut(),
         texto: 'Clique em <b>Aprovar e publicar</b>.' },
-      { alvo: '#modal .modal-card', titulo: 'Valor atualizado no sistema?', icone: 'fa-clock-rotate-left', acao: 'ver', pular: () => !modalAbertoTut(),
-        texto: 'Aparece quando o preço muda numa tabela comparada com o UniLab. Lista só os exames <b>ainda não marcados</b> no UniLab (ou com valor alterado na aprovação): os já lançados não aparecem.' },
+      { alvo: '#modal .modal-card', titulo: 'Valor atualizado no UniLab?', icone: 'fa-clock-rotate-left', acao: 'ver', pular: () => !modalAbertoTut(),
+        texto: 'Aparece em qualquer publicação quando o valor publicado fica diferente do salvo no UniLab. Lista só os exames <b>ainda não marcados</b> (ou com valor alterado na aprovação): os já marcados no envio não aparecem.' },
       { alvo: '#modal .fx-conf', titulo: 'Já lançado no UniLab?', icone: 'fa-toggle-on', acao: 'ver', pular: () => !qsTut('#modal.open .fx-conf'),
         texto: '<b>Ligue</b> os exames cujo novo valor já foi lançado no sistema do laboratório: a tabela do sistema no banco recebe o valor publicado. Os <b>desligados</b> ficam pendentes no sino, em <b>Atualizar no UniLab</b>. <b>Marcar todos</b> e <b>Inverter</b> agilizam.' },
       { alvo: '#modal [data-r="1"]', titulo: 'Publicar', icone: 'fa-stamp', acao: 'clique', pular: () => !modalAbertoTut(), avancaSe: gavetaFechadaTut,
         texto: 'Clique em <b>Aprovar e publicar</b>. <b>Voltar</b> retorna à proposta sem publicar.' },
-      fimTut('Na vida real, os preços aprovados ficam publicados e o autor vê a decisão no histórico.')
+      fimTut('Na vida real, os preços aprovados ficam publicados e o autor vê a decisão no histórico. Para desfazer uma aprovação, veja <b>Histórico de propostas</b>.')
+    ]
+  },
+  {
+    id: 'tabelas-historico', modulo: 'tabelas', icone: 'fa-clock-rotate-left', requer: [['tabelas', 'ver']],
+    titulo: 'Histórico de propostas', desc: 'Lotes decididos, vista analítica ou sintética, reverter e excluir.',
+    passos: [
+      { alvo: '#tabelas-propostas [onclick^="propFiltro=\'historico\'"]', titulo: 'Histórico', icone: 'fa-clock-rotate-left', acao: 'clique',
+        antes: preparaTut(irTelaTut('tabelas', () => { vistaAnaliticaTut(); tabAba = 'propostas'; propFiltro = 'pendente'; })),
+        texto: 'Clique em <b>Histórico</b>: propostas aprovadas, rejeitadas e canceladas, agrupadas pelo envio (lote).' },
+      { alvo: '#prop-corpo', titulo: 'Lotes', icone: 'fa-layer-group', acao: 'ver',
+        texto: 'Cada linha é um envio: tabelas, autor, quantos preços, o que subiu ou desceu e a situação. Os filtros <b>Tabela</b> e <b>Autor</b> ficam à direita.' },
+      { alvo: '#prop-corpo tbody tr.row', titulo: 'Abra um lote', icone: 'fa-hand-pointer', acao: 'clique', pular: () => !qsTut('#prop-corpo tbody tr.row'), avancaSe: gavetaAbertaTut,
+        texto: 'Clique em uma linha.' },
+      { alvo: '#gaveta .pp-vista', esperar: '#gaveta.open', titulo: 'Analítico ou sintético', icone: 'fa-list', acao: 'ver', pular: () => !qsTut('#gaveta .pp-vista'),
+        texto: '<b>Analítico</b>: um quadro por tabela, com indicadores. <b>Sintético</b>: uma linha por exame e uma coluna por tabela, com valor, de quanto era, margem e desconto. Clique no exame para abrir a ficha.' },
+      { alvo: '#gaveta [onclick^="reverterPropostas"]', titulo: 'Reverter', icone: 'fa-clock-rotate-left', acao: 'ver', pular: () => !qsTut('#gaveta [onclick^="reverterPropostas"]'),
+        texto: 'Só para quem aprova, em proposta <b>aprovada</b>: volta cada preço ao valor de antes e a proposta passa a <b>cancelada</b>. Preço que mudou depois por outra proposta fica como está (a janela avisa). O UniLab não muda: a divergência aparece para atualizar lá.' },
+      { alvo: '#gaveta [onclick^="excluirPropostas"]', titulo: 'Excluir do histórico', icone: 'fa-trash', acao: 'ver', pular: () => !qsTut('#gaveta [onclick^="excluirPropostas"]'),
+        texto: 'Proposta <b>cancelada</b> (pelo autor ou por quem aprova) pode sair do histórico. Não dá para desfazer.' },
+      fecharGavetaTut('Clique no <b>X</b> para fechar o lote.'),
+      fimTut('O histórico guarda quem propôs, quem decidiu e quando, por tabela.', 'fa-clock-rotate-left')
     ]
   },
   {
@@ -532,7 +569,7 @@ const TUTORIAIS = [
   },
   {
     id: 'simulador-lab', modulo: 'simulador', icone: 'fa-handshake', requer: [['simulador', 'criar']],
-    titulo: 'Proposta comercial (laboratório)', desc: 'Preço proposto × volume mensal, margem e PDF.',
+    titulo: 'Proposta L2L (laboratório)', desc: 'Preço proposto × volume mensal, margem e PDF.',
     passos: [
       { alvo: '#simulador-lab [onclick="novaSimLab()"]', titulo: 'Nova proposta', icone: 'fa-plus', acao: 'clique',
         antes: preparaTut(irTelaTut('simulador', () => { simAba = 'lab'; })),
@@ -548,6 +585,34 @@ const TUTORIAIS = [
       fimTut('Uma proposta salva pode virar tabela de preço ou laboratório apoiado pelo botão de converter.')
     ]
   },
+  {
+    id: 'simulador-emp', modulo: 'simulador', icone: 'fa-building', requer: [['simulador', 'criar']],
+    titulo: 'Propostas Empresas', desc: 'Venda única: exames um a um ou a tabela toda, quantidade e custo sem o atendimento.',
+    passos: [
+      { alvo: '#simulador-emp [onclick="novaSimMed()"]', titulo: 'Nova proposta', icone: 'fa-plus', acao: 'clique',
+        antes: preparaTut(irTelaTut('simulador', () => { simAba = 'emp'; })),
+        texto: 'Clique em <b>+</b> para começar. Se pedir para descartar a atual, confirme na janela.' },
+      { alvo: '#pm-nome', titulo: 'Nome', icone: 'fa-font', acao: 'digitar', valor: 'Empresa Exemplo — treinamento', texto: 'Nome da proposta.' },
+      { alvo: '#pm-medico', titulo: 'Empresa', icone: 'fa-building', acao: 'digitar', valor: 'Empresa Exemplo Ltda', texto: 'Razão social: aparece no PDF.' },
+      { alvo: '#pm-crm', titulo: 'CNPJ / contato', icone: 'fa-id-card', acao: 'digitar', valor: '00.000.000/0001-00 · RH', texto: 'Opcional, aparece no PDF.' },
+      { alvo: '#pop-pmtab', titulo: 'Tabela de referência', icone: 'fa-table-list', acao: 'ver', texto: 'Base de preço, perfil de custo e piso de margem.' },
+      { alvo: '#pop-pmbase', titulo: 'Preço empresa', icone: 'fa-tag', acao: 'ver', texto: 'Desconto sobre a tabela, valor da tabela ou sugestão de margem. Cada exame pode ter o preço digitado.' },
+      { alvo: '#pm-add', titulo: 'Adicione exames', icone: 'fa-magnifying-glass-plus', acao: 'digitar', valor: 'GLI', texto: 'Digite o mnemônico ou o nome.' },
+      { alvo: '#pm-sug.open button', titulo: 'Escolha o exame', icone: 'fa-hand-pointer', acao: 'clique',
+        antes: () => { const i = qsTut('#pm-add'); if (i) { i.focus(); buscarMed(i.value); } },
+        texto: 'Clique em uma sugestão.' },
+      { alvo: '#pm-todos', titulo: 'Ou a tabela toda', icone: 'fa-list-check', acao: 'ver', texto: 'Inclui de uma vez todos os exames da tabela (ou do setor filtrado). Depois é só tirar o que não entra.' },
+      { alvo: '#pm-body', titulo: 'Exames e quantidade', icone: 'fa-table', acao: 'ver', texto: 'Informe a <b>quantidade</b> de cada exame: é uma proposta de venda única, não um acordo mensal (como no orçamento de cliente). O custo total soma todos os custos <b>menos o atendimento</b>.' },
+      { alvo: '#pm-imp', titulo: 'Resultado', icone: 'fa-chart-line', acao: 'ver', texto: 'Quantidade de exames, total e lucro da proposta, margem ponderada pela quantidade e viabilidade pelo piso.' },
+      { alvo: '#pm-bulk', titulo: 'Quantidade em lote', icone: 'fa-cart-plus', acao: 'ver', pular: () => !qsTut('#pm-vlote'),
+        texto: 'Digite uma quantidade e clique em <b>Qtd nos filtrados</b> para aplicá-la a todos os exames da lista filtrada. Também dá para tirar os sem quantidade, os filtrados ou todos.' },
+      { alvo: '#simulador-emp [onclick="salvarSimMed()"]', titulo: 'Salvar', icone: 'fa-floppy-disk', acao: 'clique', texto: 'Clique em <b>salvar</b>.' },
+      { alvo: '#simulador-emp [onclick="abrirPdfMed()"]', titulo: 'PDF da proposta', icone: 'fa-file-pdf', acao: 'ver',
+        texto: 'Gera a proposta à empresa em PDF, com colunas <b>Qtd</b> e <b>Total</b> e o total da proposta (sem custo nem margem). O texto padrão fica em <b>Configurar texto</b>, nesta aba.' },
+      fimTut('Proposta à empresa montada na simulação: venda única, pela quantidade de cada exame.')
+    ]
+  },
+
   {
     id: 'simulador-cli', modulo: 'simulador', icone: 'fa-user', requer: [['simulador', 'criar']],
     titulo: 'Proposta para cliente', desc: 'Orçamento de exames com um só atendimento e PDF.',
@@ -572,7 +637,7 @@ const TUTORIAIS = [
   },
   {
     id: 'simulador-med', modulo: 'simulador', icone: 'fa-user-doctor', requer: [['simulador', 'criar']],
-    titulo: 'Proposta para médico', desc: 'Desconto aos pacientes de um médico, com expectativa mensal.',
+    titulo: 'Proposta para médico', desc: 'Desconto aos pacientes de um médico, com expectativa mensal; custo sem a coleta.',
     passos: [
       { alvo: '#simulador-med [onclick="novaSimMed()"]', titulo: 'Nova proposta', icone: 'fa-plus', acao: 'clique',
         antes: preparaTut(irTelaTut('simulador', () => { simAba = 'med'; })),
@@ -586,12 +651,12 @@ const TUTORIAIS = [
         antes: () => { const i = qsTut('#pm-add'); if (i) { i.focus(); buscarMed(i.value); } },
         texto: 'Clique em uma sugestão.' },
       { alvo: '#pm-todos', titulo: 'Incluir vários', icone: 'fa-list-check', acao: 'ver', texto: 'Inclui de uma vez todos os exames do setor filtrado.' },
-      { alvo: '#pm-body', titulo: 'Exames e expectativa', icone: 'fa-table', acao: 'ver', texto: 'Informe a expectativa mensal de envio de cada exame.' },
+      { alvo: '#pm-body', titulo: 'Exames e expectativa', icone: 'fa-table', acao: 'ver', texto: 'Informe a expectativa mensal de envio de cada exame. O custo total <b>não inclui a coleta</b>: o paciente é atendido pelo médico.' },
+      { alvo: '#pm-imp', titulo: 'Resultado', icone: 'fa-chart-line', acao: 'ver', texto: 'Pacientes esperados, receita e lucro mensais, margem ponderada pelo volume e viabilidade pelo piso.' },
       { alvo: '#simulador-med [onclick="salvarSimMed()"]', titulo: 'Salvar', icone: 'fa-floppy-disk', acao: 'clique', texto: 'Clique em <b>salvar</b>.' },
       fimTut('Proposta ao médico montada na simulação. O PDF fica no botão ao lado de salvar.')
     ]
   },
-
   // ── Pendências ──────────────────────────────────────────────
   {
     id: 'pendencias-resolver', modulo: 'pendencias', icone: 'fa-list-check', requer: [['pendencias', 'ver']],

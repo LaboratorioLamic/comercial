@@ -37,12 +37,13 @@ function etapasExame(e) {
 }
 
 // perfil (opcional, da tabela de preço): { idCustoFixo: false (não cobra) | valor próprio }
-function fixosExame(e, perfil = null) {
+// sem: nomes de custos fixos que não entram (normalizados, ex.: ['coleta']) — propostas do simulador
+function fixosExame(e, perfil = null, sem = null) {
   const et = etapasExame(e), n = Math.max(1, parametro('examesPorAtendimento'));
   return lista(ESTADO.custosFixos, (a, b) => (a.ordem ?? 99) - (b.ordem ?? 99))
     .map(f => {
       const p = perfil?.[f.id], valor = typeof p === 'number' ? p : f.valor;
-      return { ...f, valor, foraPerfil: p === false, aplica: p !== false && (!f.etapa || et[f.etapa] !== false), v: f.cobranca === 'rateado' ? valor / n : valor };
+      return { ...f, valor, foraPerfil: p === false, aplica: p !== false && (!f.etapa || et[f.etapa] !== false) && !sem?.includes(normalizar(f.nome)), v: f.cobranca === 'rateado' ? valor / n : valor };
     });
 }
 
@@ -149,8 +150,9 @@ function precoAlvo(custo, m, passo = 1, tol = ESTADO.particular?.tolerancia || 0
 }
 
 // tab (opcional): tabela de preço → usa o perfil de custo e as regras de margem dela
-function calcular(e, preco = e.precoPraticado, tab = null) {
-  const fx = fixosExame(e, tab?.perfil), extras = extrasExame(e);
+// sem (opcional): custos fixos fora da conta (ver fixosExame)
+function calcular(e, preco = e.precoPraticado, tab = null, sem = null) {
+  const fx = fixosExame(e, tab?.perfil, sem), extras = extrasExame(e);
   const fixo = fx.filter(f => f.aplica).reduce((s, f) => s + f.v, 0);
   const somaExtras = extras.reduce((s, x) => s + x.valor, 0);
   const imp = parametro('imposto'), ct = custoTesteExame(e), custo = ct ? ct.valor + fixo + somaExtras : null;

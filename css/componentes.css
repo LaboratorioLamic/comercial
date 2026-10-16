@@ -24,7 +24,7 @@
 .subnav-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .subnav-row .subnav { margin-bottom: 0; }
 .subnav-row .so-lab { display: none; }
-.subnav-row:has(button[data-p="lab"].on) .so-lab, .subnav-row:has(button[data-p="cli"].on) .so-lab, .subnav-row:has(button[data-p="med"].on) .so-lab { display: inline-flex; }
+.subnav-row:has(button[data-p="lab"].on) .so-lab, .subnav-row:has(button[data-p="cli"].on) .so-lab, .subnav-row:has(button[data-p="med"].on) .so-lab, .subnav-row:has(button[data-p="emp"].on) .so-lab { display: inline-flex; }
 
 .icon-btn {
   width: 36px; height: 36px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card);
