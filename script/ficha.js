@@ -666,9 +666,9 @@ async function salvarFicha(modo) {
 async function atualizarSistemaFicha(id) {
   const k = id || _fxId, ds = divergenciasSistema(k);
   if (!ds.length) return;
-  const v = x => x != null ? fmt(x) : 'fora';
+  const v = x => x != null ? fmt(x) : 'fora', e = ESTADO.exames[k];
   const ok = await confirmar({ titulo: 'Atualizar a tabela do sistema?', icone: 'fa-database', botao: 'Atualizar sistema',
-    texto: `Confirme que o valor já foi lançado no sistema do laboratório. A tabela do sistema <b>no banco de dados</b> passa a ter o valor publicado:`
+    texto: `<span class="modal-ex"><b>${esc(e.mn)}</b><span>${esc(e.descricao || '(sem descrição)')}</span></span>Confirme que o valor já foi lançado no sistema do laboratório. A tabela do sistema <b>no banco de dados</b> passa a ter o valor publicado:`
       + `<span class="fx-conf">${ds.map(d => `<span><b>${esc(d.nome)}</b><i>${v(d.sist)} → <b>${v(d.salvo)}</b></i></span>`).join('')}</span>` });
   if (ok !== true) return id ? undefined : atualizarFicha();
   const u = usuarioAtual(), upd = {};
