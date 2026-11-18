@@ -68,9 +68,40 @@ const opcoesCq = tipo => [{ valor: '', rotulo: 'Nenhum', icone: 'fa-ban', cor: '
   ...lista(ESTADO.insumosCQ, porNome).filter(i => i.tipo === tipo).map(i => ({ valor: i.id, rotulo: i.nome, icone: TIPO_CQ[tipo].icone, cor: TIPO_CQ[tipo].cor,
     desc: `${i.fornecedor ? i.fornecedor + ' · ' : ''}${num(i.niveis || 0, 0)} níveis · ${fmt(i.preco > 0 && i.rende > 0 ? i.preco / i.rende : null)}/${TIPO_CQ[tipo].uso}` }))];
 
+const btNovoInsumo = tipo => pode('custos', 'criar') ? `<button type="button" class="btn sm" style="margin-top:6px;align-self:flex-start" onclick="novoInsumoReagente('${tipo}')"><i class="fa-solid fa-plus"></i>Novo ${TIPO_CQ[tipo].nome.toLowerCase()}</button>` : '';
+
+// Novo calibrador/controle a partir do reagente: a gaveta é uma só, então os elementos do reagente ficam
+// guardados (com o que já foi digitado) e voltam ao salvar ou cancelar o cadastro
+let _rgPausa = null;
+function novoInsumoReagente(tipo) {
+  const nos = id => [...document.getElementById(id).childNodes];
+  const pausa = { sobre: document.getElementById('g-sobre').textContent, titulo: document.getElementById('g-titulo').textContent,
+    meta: nos('g-meta'), corpo: nos('g-corpo'), rodape: nos('g-rodape'), topo: document.getElementById('g-corpo').scrollTop };
+  abrirInsumoCq(null, tipo);
+  _rgPausa = pausa;
+}
+// id e tipo: insumo recém-cadastrado, já escolhido no reagente
+function voltarReagenteInsumo(id, tipo) {
+  const p = _rgPausa;
+  _rgPausa = null;
+  fecharPop();
+  document.getElementById('g-sobre').textContent = p.sobre;
+  document.getElementById('g-titulo').textContent = p.titulo;
+  document.getElementById('g-meta').replaceChildren(...p.meta);
+  document.getElementById('g-corpo').replaceChildren(...p.corpo);
+  document.getElementById('g-rodape').replaceChildren(...p.rodape);
+  document.getElementById('g-corpo').scrollTop = p.topo;
+  if (!id) return;
+  const st = POPS[tipo === 'cal' ? 'pop-rgcal' : 'pop-rgctrl'];
+  st.valor = id;
+  desenharBotaoPop(st.id);
+  st.aoMudar(id);
+}
+
 function abrirReagente(id) {
   const r = id ? ESTADO.reagentes[id] : null, editar = pode('custos', id ? 'editar' : 'criar');
   _rEd = { id: id || null, calId: r?.calId || '', ctrlId: r?.ctrlId || '' };
+  _fxPausa = null;
   const ops = { aoMudar: 'previaReagente()', desab: !editar };
   abrirGaveta({
     sobre: id ? 'Reagente' : 'Novo reagente', titulo: r ? r.nome : 'Cadastrar reagente',
@@ -88,13 +119,13 @@ function abrirReagente(id) {
       </div>
       <div class="sec-t"><i class="fa-solid fa-scale-balanced"></i>Calibração</div>
       <div class="fgrid sem-pad">
-        <div class="field"><label>Calibrador</label><div id="pop-rgcal"></div></div>
+        <div class="field"><label>Calibrador</label><div id="pop-rgcal"></div>${btNovoInsumo('cal')}</div>
         ${campo('rg-calpts', 'Pontos por calibração', r?.calPontos ?? '', { suf: 'testes', passo: '1', dica: 'níveis × replicatas, com o branco', ...ops })}
         ${campo('rg-caldias', 'Calibrar a cada', r?.calDias ?? '', { suf: 'dias', passo: '1', dica: 'vazio: 1 por kit (troca de lote/frasco)', ...ops })}
       </div>
       <div class="sec-t"><i class="fa-solid fa-shield-halved"></i>Controle de qualidade interno</div>
       <div class="fgrid sem-pad">
-        <div class="field"><label>Controle</label><div id="pop-rgctrl"></div></div>
+        <div class="field"><label>Controle</label><div id="pop-rgctrl"></div>${btNovoInsumo('ctrl')}</div>
         ${campo('rg-ctrlniv', 'Níveis por corrida', r?.ctrlNiveis ?? '', { suf: 'testes', passo: '1', dica: 'ex.: normal + patológico = 2', ...ops })}
         ${campo('rg-ctrldia', 'Corridas por dia', r?.ctrlCorridasDia ?? '', { suf: '/dia', passo: '0.1', dica: 'ex.: 1 por turno; 0,2 = 1×/semana', ...ops })}
         ${campo('rg-ctrl', 'Outros testes gastos', r?.controles ?? 0, { suf: 'por kit', passo: '1', dica: 'CQ sem cadastro, diluições, proficiência', ...ops })}
@@ -103,7 +134,7 @@ function abrirReagente(id) {
       ${id ? '<div class="sec-t"><i class="fa-solid fa-flask-vial"></i>Impacto nos exames vinculados</div><div id="rg-ex"></div>' : ''}
     </div>`,
     rodape: `${id && pode('custos', 'excluir') ? `<button class="btn perigo-txt" style="margin-right:auto" onclick="excluirReagente()"><i class="fa-solid fa-trash"></i>Excluir</button>` : ''}
-      <button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
+      <button class="btn" onclick="clicarForaGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
       ${editar ? `<button class="btn pri" onclick="gravarReagente()"><i class="fa-solid fa-floppy-disk"></i>Salvar e recalcular</button>` : ''}`
   });
   [['pop-rgcal', 'cal', 'calId', 'rg-calpts'], ['pop-rgctrl', 'ctrl', 'ctrlId', 'rg-ctrlniv']].forEach(([pid, tipo, k, campoNiv]) => {
@@ -178,6 +209,12 @@ async function gravarReagente() {
   const id = _rEd.id || DB.novaChave(CAMINHOS.reagentes), antes = ESTADO.reagentes[id] || null;
   await DB.gravar(`${CAMINHOS.reagentes}/${id}`, dados);
   registrar('reagentes', `Reagente ${n.nome} ${_rEd.id ? 'alterado' : 'cadastrado'}`, { antes, depois: n });
+  // cadastrado a partir da ficha: já vale nela, sem esperar o dado voltar do banco
+  if (_fxPausa) {
+    ESTADO.reagentes = { ...ESTADO.reagentes, [id]: { ...dados, atualizadoEm: Date.now() } };
+    voltarFichaReagente(id);
+    return toast(`${n.nome} cadastrado e escolhido: salve a ficha para vincular`);
+  }
   fecharGaveta();
   toast(`${n.nome} salvo${_rEd.id ? ` · ${examesDoReagente(id).length} exame(s) recalculados` : ''}`);
 }
@@ -195,9 +232,10 @@ async function excluirReagente() {
 
 // ── Calibrador / controle ─────────────────────────────────────
 let _cqEd = null;
-function abrirInsumoCq(id) {
-  const i = id ? ESTADO.insumosCQ[id] : null, editar = pode('custos', id ? 'editar' : 'criar'), tipo = i?.tipo || 'ctrl';
+function abrirInsumoCq(id, tipoNovo) {
+  const i = id ? ESTADO.insumosCQ[id] : null, editar = pode('custos', id ? 'editar' : 'criar'), tipo = i?.tipo || tipoNovo || 'ctrl';
   _cqEd = { id: id || null };
+  _rgPausa = null;
   const ops = { aoMudar: 'previaInsumoCq()', desab: !editar };
   abrirGaveta({
     sobre: id ? TIPO_CQ[tipo].nome : 'Novo calibrador ou controle', titulo: i ? i.nome : 'Cadastrar calibrador / controle',
@@ -221,7 +259,7 @@ function abrirInsumoCq(id) {
         }).join('') || '<div class="casc-r muted">Nenhum reagente vinculado. Vincule no cadastro do reagente.</div>'}</div>` : ''}
     </div>`,
     rodape: `${id && pode('custos', 'excluir') ? `<button class="btn perigo-txt" style="margin-right:auto" onclick="excluirInsumoCq()"><i class="fa-solid fa-trash"></i>Excluir</button>` : ''}
-      <button class="btn" onclick="fecharGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
+      <button class="btn" onclick="clicarForaGaveta()">${editar ? 'Cancelar' : 'Fechar'}</button>
       ${editar ? `<button class="btn pri" onclick="gravarInsumoCq()"><i class="fa-solid fa-floppy-disk"></i>Salvar e recalcular</button>` : ''}`
   });
   _cqEd.rende = i?.rende ?? '';
@@ -260,6 +298,12 @@ async function gravarInsumoCq() {
   if (antes && antes.tipo !== n.tipo && reagentesDoCq(id).length) return toast('Em uso por reagentes: desvincule antes de trocar o tipo', 'aviso');
   await DB.gravar(`${CAMINHOS.insumosCQ}/${id}`, { ...n, atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome });
   registrar('reagentes', `${TIPO_CQ[n.tipo].nome} ${n.nome} ${_cqEd.id ? 'alterado' : 'cadastrado'}`, { antes, depois: n });
+  // cadastrado a partir do reagente: já vale nele, sem esperar o dado voltar do banco
+  if (_rgPausa) {
+    ESTADO.insumosCQ = { ...ESTADO.insumosCQ, [id]: { ...n, atualizadoEm: Date.now(), atualizadoPor: usuarioAtual().nome } };
+    voltarReagenteInsumo(id, n.tipo);
+    return toast(`${n.nome} cadastrado e escolhido no reagente`);
+  }
   fecharGaveta();
   toast(`${n.nome} salvo${_cqEd.id ? ` · ${reagentesDoCq(id).length} reagente(s) recalculados` : ''}`);
 }

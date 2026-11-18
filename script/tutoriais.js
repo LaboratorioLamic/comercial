@@ -106,10 +106,14 @@ const TUTORIAIS = [
       { alvo: '#sino-pan .sino-mudo .switch', esperar: '#sino.open', titulo: 'Ligue de novo', icone: 'fa-bell', acao: 'clique', antes: abrirSinoTut,
         texto: 'Veja o ícone de sino cortado na aba. Clique na chave outra vez para voltar a ser avisado.' },
       { alvo: '#sino-pan .sino-l .sino-it', esperar: '#sino.open', titulo: 'Abra um item', icone: 'fa-hand-pointer', acao: 'clique', antes: abrirSinoTut, pular: semItemSinoTut,
-        texto: 'Clique no item: abre a <b>proposta</b> para revisar (e aprovar, se você tiver permissão) ou a <b>ficha do exame</b>.', avancaSe: gavetaAbertaTut },
-      { alvo: '#gaveta .dr-b', esperar: '#gaveta.open', titulo: 'Resolva por aqui', icone: 'fa-magnifying-glass', acao: 'ver', pular: semItemSinoTut,
+        texto: 'Clique no item: abre a <b>proposta</b> para revisar (e aprovar, se você tiver permissão) ou a <b>ficha do exame</b>. Em <b>Atualizar no UniLab</b>, quem pode editar vai direto à confirmação da tabela do sistema.', avancaSe: () => gavetaAbertaTut() || modalAbertoTut() },
+      { alvo: '#modal .modal-card', titulo: 'Atualizar a tabela do sistema', icone: 'fa-database', acao: 'ver', pular: () => !modalAbertoTut(),
+        texto: 'Confira os valores. Confirme só depois de lançar o novo valor no UniLab: a tabela do sistema no banco passa a ter o valor publicado e o item sai do sino.' },
+      { alvo: '#modal [data-r="0"]', titulo: 'Cancele por enquanto', icone: 'fa-xmark', acao: 'clique', pular: () => !modalAbertoTut(),
+        texto: 'Clique em <b>Cancelar</b>: o item continua pendente no sino.' },
+      { alvo: '#gaveta .dr-b', esperar: '#gaveta.open', titulo: 'Resolva por aqui', icone: 'fa-magnifying-glass', acao: 'ver', pular: () => semItemSinoTut() || !gavetaAbertaTut(),
         texto: 'Resolvido o motivo (proposta aprovada, auditoria feita, valor lançado no UniLab), o item sai do sino sozinho.' },
-      { ...fecharGavetaTut(), pular: semItemSinoTut },
+      { ...fecharGavetaTut(), pular: () => semItemSinoTut() || !gavetaAbertaTut() },
       { alvo: '#sino-pan .sino-f', esperar: '#sino.open', titulo: 'Lista completa', icone: 'fa-arrow-right', acao: 'ver', antes: abrirSinoTut,
         texto: '<b>Ver todas</b> abre Tabelas de Preço › Propostas; <b>Ver na lista</b> abre Exames já filtrado pelo controle interno da aba.' },
       fimTut('Confira o sino no começo do dia. Na simulação, a aba silenciada e o que foi aberto são descartados ao encerrar.', 'fa-bell')
@@ -183,8 +187,12 @@ const TUTORIAIS = [
         texto: 'Preço do exame em cada tabela de preço, com a margem de cada uma. Quem pode editar tabelas altera, inclui ou retira daqui mesmo.' },
       { alvo: '#fx-abas button:nth-child(2)', titulo: 'Aba Custos', icone: 'fa-calculator', acao: 'clique',
         texto: 'Clique em <b>Custos</b> para ver de onde vem o custo do exame.' },
+      { alvo: '#fx-custo', titulo: 'Custo do teste', icone: 'fa-vials', acao: 'ver',
+        texto: '<b>Manual</b>, <b>Reagente</b> ou <b>Tabela do apoio</b>. Sair da tabela do apoio pede confirmação, pois o exame deixa de seguir o valor dela. Em Reagente, <b>Novo reagente</b> cadastra sem sair da ficha.' },
       { alvo: '#fx-casc', titulo: 'Cascata de custos', icone: 'fa-stairs', acao: 'ver',
-        texto: 'Custo do teste (manual, reagente ou tabela do apoio) somado aos custos fixos e adicionais, até o custo total.' },
+        texto: 'Custo do teste somado aos custos fixos e adicionais, até o custo total.' },
+      { alvo: () => qsTut('#fx-casc .switch')?.closest('.casc-r'), titulo: 'Ajuste neste exame', icone: 'fa-sliders', acao: 'ver', pular: () => !qsTut('#fx-casc .switch'),
+        texto: 'O <b>lápis</b> define um valor próprio do custo fixo neste exame, a <b>seta</b> volta ao padrão e a <b>chave</b> ativa ou inativa. Em coleta e triagem, a chave acompanha a etapa do exame. Vale ao salvar a ficha.' },
       { alvo: '#fx-etapas', titulo: 'Etapas do atendimento', icone: 'fa-route', acao: 'ver',
         texto: 'Coleta e triagem só entram no custo se o exame passa por elas. O padrão vem do setor e pode ser ajustado aqui.' },
       { alvo: '#fx-abas button:nth-child(5)', titulo: 'Aba Histórico', icone: 'fa-clock-rotate-left', acao: 'clique',
@@ -333,10 +341,12 @@ const TUTORIAIS = [
       { alvo: '#rg-kit', titulo: 'Preço do kit', icone: 'fa-coins', acao: 'digitar', valor: '850', texto: 'Quanto custa o kit.' },
       { alvo: '#rg-testes', titulo: 'Testes por kit', icone: 'fa-hashtag', acao: 'digitar', valor: '500', texto: 'Quantos testes o kit rende.' },
       { alvo: '#rg-perdas', titulo: 'Perdas', icone: 'fa-percent', acao: 'digitar', valor: '5', texto: 'Repetição, volume morto e vencimento, em %.' },
+      { alvo: '#gaveta [onclick^="novoInsumoReagente"]', titulo: 'Calibrador e controle', icone: 'fa-scale-balanced', acao: 'ver', pular: () => !qsTut('#gaveta [onclick^="novoInsumoReagente"]'),
+        texto: 'Não achou na lista? <b>Novo calibrador</b> e <b>Novo controle</b> abrem o cadastro e voltam para cá com o item escolhido, sem perder o que foi digitado.' },
       { alvo: '#rg-prev', titulo: 'Resultado', icone: 'fa-square-check', acao: 'ver', texto: 'O custo por teste é calculado na hora.' },
       { alvo: '#gaveta [onclick="gravarReagente()"]', titulo: 'Salvar', icone: 'fa-floppy-disk', acao: 'clique', avancaSe: gavetaFechadaTut,
         texto: 'Clique em <b>Salvar e recalcular</b>: os exames vinculados ao reagente são recalculados.' },
-      fimTut('Reagente cadastrado na simulação. Na ficha do exame você vincula o reagente ao custo do teste.')
+      fimTut('Reagente cadastrado na simulação. Na ficha do exame você vincula o reagente ao custo do teste, e também pode cadastrar um novo por lá.')
     ]
   },
   {
@@ -483,7 +493,7 @@ const TUTORIAIS = [
       { alvo: '#tabelas-hierarquia .hier-i:not(.topo) .acts', titulo: 'Reordenar', icone: 'fa-up-down', acao: 'ver', pular: () => !qsTut('#tabelas-hierarquia .hier-i:not(.topo) .acts'),
         texto: 'Suba, desça ou tire uma tabela da hierarquia.' },
       { alvo: '#hier-res', titulo: 'Quebras', icone: 'fa-triangle-exclamation', acao: 'ver',
-        texto: 'Exames com preço fora da ordem. Quem edita pode corrigir o valor direto nesta lista.' },
+        texto: 'Exames com preço fora da ordem. Quem edita pode corrigir o valor direto nesta lista e preencher os campos com <b>—</b>, de exames ainda sem preço na tabela.' },
       fimTut('A quebra de hierarquia também aparece no painel inicial e na ficha do exame.')
     ]
   },

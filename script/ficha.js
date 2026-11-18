@@ -21,7 +21,7 @@ const ABAS_FICHA = [
 function abrirFicha(id, aba = 'valores') {
   const e = ESTADO.exames[id];
   if (!e) return;
-  _fxId = id; _fxFonte = null; _fxNovoItem = false; _fxEditPreco = false; _fxAba = aba; _fxTab = {}; _fxRasc = {};
+  _fxId = id; _fxFonte = null; _fxNovoItem = false; _fxEditPreco = false; _fxFixoEd = null; _fxAba = aba; _fxTab = {}; _fxRasc = {};
   _fxOrig = JSON.parse(JSON.stringify(e));
   _fx = JSON.parse(JSON.stringify(e));
   _fx.extras = extrasExame(_fx).map(x => ({ ...x }));
@@ -199,6 +199,8 @@ const mudancasDadosFicha = () => !_fx ? [] : Object.keys(CAMPOS_FICHA).filter(c 
 
 // Clique fora, botão de fechar ou Esc: com preço alterado na ficha, pergunta se fecha ou guarda no rascunho
 async function clicarForaGaveta() {
+  if (_rgPausa && document.getElementById('cq-nome')) return voltarReagenteInsumo();
+  if (_fxPausa && document.getElementById('rg-nome')) return voltarFichaReagente();
   if (!document.getElementById('fx-rodape')) return fecharGaveta();   // outra gaveta (não a ficha)
   const precos = document.getElementById('fx-rodape') &&(pode('exames', 'editar') || pode('tabelas', 'editar')) ? mudancasPrecoFicha() : [];
   if (!rascMudouFicha(precos)) return fecharGaveta();
@@ -269,7 +271,7 @@ function atualizarFicha() {
   const n = parametro('examesPorAtendimento');
   document.getElementById('fx-casc').innerHTML = `<div class="casc">
     <div class="casc-r"><div class="lft"><i class="fa-solid ${e.origem === 'apoio' ? 'fa-truck-medical' : 'fa-vials'}"></i><div>Custo do teste<div class="s">${rotuloOrigemCusto(e)}</div></div></div><span class="v">${c.semCusto ? '—' : fmt(c.teste.valor)}</span></div>
-    ${c.fx.map(f => `<div class="casc-r ${f.aplica ? '' : 'skip'}"><div class="lft"><i class="fa-solid ${f.icone || 'fa-coins'}"></i><div>${esc(f.nome)}<div class="s">${!f.aplica ? 'não passa por esta etapa' : f.cobranca === 'rateado' ? `${fmt(f.valor)} rateado ÷ ${n} exames` : 'linear, valor cheio'}</div></div></div><span class="v">${f.aplica ? fmt(f.v) : '—'}</span></div>`).join('')}
+    ${c.fx.map(f => linhaFixoFicha(f, n)).join('')}
     ${c.extras.map(x => `<div class="casc-r"><div class="lft"><i class="fa-solid fa-hand-holding-dollar"></i><div>${esc(x.nome)}<div class="s">custo adicional</div></div></div><span class="v">${fmt(x.valor)}</span></div>`).join('')}
     <div class="casc-r tot"><div class="lft"><i class="fa-solid fa-equals"></i><div>Custo total</div></div><span class="v">${c.semCusto ? '—' : fmt(c.custo)}</span></div>
     ${preco && !c.semCusto ? `
@@ -295,6 +297,49 @@ function atualizarFicha() {
   document.getElementById('fx-hier').innerHTML = qs.length ? `<div class="alert a" style="margin-top:10px"><i class="fa-solid fa-stairs"></i><div><b>Quebra a hierarquia de valor</b>${qs.map(q => `<div>${esc(textoQuebra(q))}</div>`).join('')}</div></div>` : '';
   desenharAbasFicha();
   desenharRodapeFicha();
+}
+
+// Custo fixo na cascata: quem edita altera o valor só neste exame, ativa ou inativa.
+// O valor é editado em uma linha por vez e aplicado ao sair do campo, pois a cascata é redesenhada a cada alteração.
+let _fxFixoEd = null;
+function linhaFixoFicha(f, n) {
+  const editar = pode('exames', 'editar'), proprio = typeof _fx.fixosAjuste?.[f.id] === 'number', padrao = ESTADO.custosFixos[f.id]?.valor;
+  const base = f.cobranca === 'rateado' ? `${fmt(f.valor)} rateado ÷ ${n} exames` : 'linear, valor cheio';
+  const sub = f.inativoExame ? 'inativo neste exame' : !f.aplica ? 'não passa por esta etapa' : proprio ? `${base} · padrão ${fmt(padrao)}` : base;
+  const valor = _fxFixoEd === f.id
+    ? `<div class="price-in on"><span>R$</span><input id="fx-fixo-in" type="number" step="0.01" min="0" value="${Number(f.valor).toFixed(2)}" onfocus="this.select()" onblur="definirFixoExame('${f.id}',this.value)"
+        onkeydown="if(event.key==='Enter')this.blur();else if(event.key==='Escape'){event.stopPropagation();_fxFixoEd=null;atualizarFicha()}"></div>`
+    : `<span class="v">${f.aplica ? fmt(f.v) : '—'}</span>`;
+  const acoes = !editar ? '' : `${f.aplica && _fxFixoEd !== f.id ? `<button type="button" class="btn sm" title="Alterar o valor neste exame" onclick="editarFixoExame('${f.id}')"><i class="fa-solid fa-pen"></i></button>` : ''}
+    ${proprio && _fxFixoEd !== f.id ? `<button type="button" class="btn sm" title="Voltar ao valor padrão (${fmt(padrao)})" onclick="ajustarFixoExame('${f.id}')"><i class="fa-solid fa-rotate-left"></i></button>` : ''}
+    ${chave(f.aplica, `alternarFixoExame('${f.id}')`)}`;
+  return `<div class="casc-r ${f.aplica ? '' : 'skip'}"><div class="lft"><i class="fa-solid ${f.icone || 'fa-coins'}"></i><div>${esc(f.nome)}<div class="s">${sub}</div></div></div>
+    <div style="display:flex;align-items:center;gap:8px">${valor}${acoes}</div></div>`;
+}
+// v: false (inativo) | número (valor próprio) | undefined (volta ao padrão)
+function ajustarFixoExame(id, v) {
+  const a = { ..._fx.fixosAjuste };
+  if (v === undefined) delete a[id]; else a[id] = v;
+  if (Object.keys(a).length) _fx.fixosAjuste = a; else delete _fx.fixosAjuste;
+  atualizarFicha();
+}
+function editarFixoExame(id) {
+  _fxFixoEd = id;
+  atualizarFicha();
+  document.getElementById('fx-fixo-in')?.focus();
+}
+function definirFixoExame(id, txt) {
+  if (_fxFixoEd !== id) return;   // cancelado com Esc
+  _fxFixoEd = null;
+  const v = Math.round(parseFloat(txt) * 100) / 100;
+  if (!(v >= 0)) return atualizarFicha();
+  ajustarFixoExame(id, Math.abs(v - ESTADO.custosFixos[id].valor) < 0.004 ? undefined : v);
+}
+// Custo ligado a uma etapa (coleta, triagem) segue a etapa do exame, para não haver dois controles do mesmo custo
+function alternarFixoExame(id) {
+  const f = ESTADO.custosFixos[id];
+  if (f.etapa) return alternarEtapaExame(f.etapa);
+  ajustarFixoExame(id, _fx.fixosAjuste?.[id] === false ? undefined : false);
 }
 
 function usarSugerido(v) {
@@ -331,7 +376,8 @@ function desenharCustoTeste() {
     const r = ESTADO.reagentes[e.reagenteId], cpt = r ? custoPorTeste(r, e.reagenteId) : null;
     corpo = `<div class="casc-r"><div class="lft"><i class="fa-solid fa-vials"></i><div>Reagente<div class="s">${r ? `${esc(r.fornecedor || '')} · ${fmt(cpt)} por teste` : 'escolha o reagente'}</div></div></div><div id="pop-fxreag" style="min-width:220px"></div></div>
       <div class="casc-r"><div class="lft"><i class="fa-solid fa-xmark"></i><div>Testes por exame<div class="s">ex.: 2 se o exame consome dois testes</div></div></div>
-        <div class="price-in"><input type="number" step="0.01" min="0.01" value="${e.qtdReagente || 1}" ${editar ? '' : 'disabled'} oninput="_fx.qtdReagente=Math.max(0.01,parseFloat(this.value)||1);atualizarFicha()"></div></div>`;
+        <div class="price-in"><input type="number" step="0.01" min="0.01" value="${e.qtdReagente || 1}" ${editar ? '' : 'disabled'} oninput="_fx.qtdReagente=Math.max(0.01,parseFloat(this.value)||1);atualizarFicha()"></div></div>
+      ${editar && pode('custos', 'criar') ? `<div class="casc-r"><div class="lft"><i class="fa-solid fa-plus"></i><div>Reagente não cadastrado<div class="s">cadastra o reagente e volta para esta ficha</div></div></div><button type="button" class="btn sm" onclick="novoReagenteFicha()"><i class="fa-solid fa-plus"></i>Novo reagente</button></div>` : ''}`;
   } else {
     const p = e.vinculoApoio ? precoApoio(e.vinculoApoio.apoioId, e.vinculoApoio.chave) : null;
     corpo = !temTabela ? `<div class="casc-r muted"><div class="lft"><i class="fa-solid fa-circle-info"></i><div>Este apoio ainda não tem tabela importada<div class="s">use custo manual por enquanto</div></div></div></div>`
@@ -423,7 +469,44 @@ async function criarItemApoioFicha() {
   toast(`${e.mn}: item ${cod} cadastrado em ${apoio.nome} e vinculado`);
 }
 
-function trocarFonteCusto(f) {
+// Novo reagente a partir da ficha: a gaveta é uma só, então os elementos da ficha ficam guardados
+// (com o que já foi digitado) e voltam ao salvar ou cancelar o cadastro
+let _fxPausa = null;
+function novoReagenteFicha() {
+  const nos = id => [...document.getElementById(id).childNodes];
+  const pausa = { sobre: document.getElementById('g-sobre').textContent, titulo: document.getElementById('g-titulo').textContent,
+    meta: nos('g-meta'), corpo: nos('g-corpo'), rodape: nos('g-rodape'), topo: document.getElementById('g-corpo').scrollTop };
+  abrirReagente();
+  _fxPausa = pausa;
+}
+// id: reagente recém-cadastrado, já escolhido na ficha (grava no exame ao salvar a ficha)
+function voltarFichaReagente(id) {
+  const p = _fxPausa;
+  _fxPausa = null;
+  fecharPop();
+  document.getElementById('g-sobre').textContent = p.sobre;
+  document.getElementById('g-titulo').textContent = p.titulo;
+  document.getElementById('g-meta').replaceChildren(...p.meta);
+  document.getElementById('g-corpo').replaceChildren(...p.corpo);
+  document.getElementById('g-rodape').replaceChildren(...p.rodape);
+  document.getElementById('g-corpo').scrollTop = p.topo;
+  if (!id) return;
+  _fx.reagenteId = id;
+  _fx.qtdReagente = _fx.qtdReagente || 1;
+  _fxFonte = 'reagente';
+  desenharCustoTeste(); desenharControles(); atualizarFicha();
+}
+
+async function trocarFonteCusto(f) {
+  if (f !== 'apoio' && _fx.vinculoApoio) {
+    const manual = f === 'manual';
+    const { apoioId, chave: k } = _fx.vinculoApoio, it = ESTADO.apoios[apoioId]?.precos?.[k], p = precoApoio(apoioId, k);
+    const ok = await confirmar({ titulo: 'Desvincular do exame de apoio?', icone: 'fa-link-slash', botao: manual ? 'Desvincular e usar manual' : 'Desvincular e usar reagente',
+      texto: `Ao selecionar <b>${manual ? 'Manual' : 'Reagente'}</b>, <b>${esc(_fx.mn)}</b> deixa de seguir o valor da tabela de <b>${esc(ESTADO.setores[apoioId]?.nome || 'apoio')}</b> e não acompanha mais as importações. A alteração só vale ao salvar a ficha.`
+        + `<span class="fx-conf"><span><b>${esc(it?.codigo || 'Item do apoio')}</b><i>${p ? fmt(p.valor) : 'sem preço vigente'}</i></span>`
+        + (manual ? `<span><b>Custo manual</b><i>${_fx.custoTeste != null ? fmt(_fx.custoTeste) : 'não informado'}</i></span>` : `<span><b>Reagente</b><i>escolha em seguida</i></span>`) + '</span>' });
+    if (ok !== true) return;
+  }
   if (f !== 'apoio') _fx.vinculoApoio = null;
   if (f !== 'reagente') _fx.reagenteId = null;
   if (f === 'reagente' && !_fx.reagenteId) _fx.qtdReagente = _fx.qtdReagente || 1;
@@ -497,6 +580,7 @@ const CAMPOS_FICHA = {
   vinculoApoio: v => v[1] ? `Vinculado ao item ${ESTADO.apoios[v[1].apoioId]?.precos?.[v[1].chave]?.codigo || ''} do apoio` : 'Vínculo com o apoio removido',
   extras: () => 'Custos adicionais alterados',
   etapas: () => 'Etapas do atendimento ajustadas',
+  fixosAjuste: () => 'Custos fixos ajustados neste exame',
   negociado: v => v[1] ? 'Marcado como negociado' : 'Desmarcado como negociado',
   auditar: v => v[1] ? 'Marcado para auditoria' : 'Auditoria concluída',
   foraDoSistema: v => v[1] ? 'Marcado como fora do sistema' : 'Encontrado no sistema'
@@ -578,14 +662,15 @@ async function salvarFicha(modo) {
 }
 
 // Marcar "Valor atualizado no sistema": grava o valor publicado como preço do sistema
-async function atualizarSistemaFicha() {
-  const k = _fxId, ds = divergenciasSistema(k);
+// Com id: chamada de fora da ficha (sino), sem gaveta aberta para redesenhar
+async function atualizarSistemaFicha(id) {
+  const k = id || _fxId, ds = divergenciasSistema(k);
   if (!ds.length) return;
   const v = x => x != null ? fmt(x) : 'fora';
   const ok = await confirmar({ titulo: 'Atualizar a tabela do sistema?', icone: 'fa-database', botao: 'Atualizar sistema',
     texto: `Confirme que o valor já foi lançado no sistema do laboratório. A tabela do sistema <b>no banco de dados</b> passa a ter o valor publicado:`
       + `<span class="fx-conf">${ds.map(d => `<span><b>${esc(d.nome)}</b><i>${v(d.sist)} → <b>${v(d.salvo)}</b></i></span>`).join('')}</span>` });
-  if (ok !== true) return atualizarFicha();
+  if (ok !== true) return id ? undefined : atualizarFicha();
   const u = usuarioAtual(), upd = {};
   ds.forEach(d => { upd[caminhoSistema(d.alvo, k)] = d.salvo; });
   upd[`historicoExames/${k}/${DB.novaChave('historicoExames')}`] = { descricao: `Sistema atualizado: ${ds.map(d => `${d.nome} ${v(d.sist)} → ${v(d.salvo)}`).join(' · ')}`, usuario: u.nome, usuarioId: u.id, em: DB.agora() };

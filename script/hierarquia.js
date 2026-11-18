@@ -94,8 +94,9 @@ function desenharQuebras() {
   const edit = pode('tabelas', 'editar');
   const cel = (x, a) => {
     const p = precoHier(a, x.k), qb = x.qs.find(q => q.alvo === a), ed = hier.ed[a]?.[x.k] != null;
-    return `<td class="num ${qb ? 'hier-bad' : p == null ? 'muted' : ''}" data-a="${a}" title="${qb ? esc(textoQuebra(qb)) : ''}">${p == null ? '—' : !edit ? fmt(p)
-      : `<input class="hier-in ${ed ? 'on' : ''}" type="number" step="0.01" min="0" value="${p.toFixed(2)}" oninput="editarHier(this)" onkeydown="teclaHier(event)" onfocus="this.select()">`}</td>`;
+    // exame sem preço na tabela: com permissão, o campo vem vazio para incluir o valor
+    return `<td class="num ${qb ? 'hier-bad' : p == null && !edit ? 'muted' : ''}" data-a="${a}" title="${qb ? esc(textoQuebra(qb)) : ''}">${!edit ? (p == null ? '—' : fmt(p))
+      : `<input class="hier-in ${ed ? 'on' : ''}" type="number" step="0.01" min="0" value="${p == null ? '' : p.toFixed(2)}" placeholder="—" oninput="editarHier(this)" onkeydown="teclaHier(event)" onfocus="this.select()">`}</td>`;
   };
   el.innerHTML = `<div class="card-h"><h3><i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)"></i>Exames que quebram a hierarquia</h3>
       <span>${todas.length ? `${num(todas.length, 0)} exame(s)` : 'nenhuma quebra'}</span></div>

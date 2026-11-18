@@ -78,7 +78,7 @@ function sinoPainelExames(k) {
   const x = SINO_EXAMES[k], ls = sinoExames(k);
   return `<div class="sino-l">${ls.slice(0, SINO_MAX).map((e, i) => {
       const c = calcular(e), setor = ESTADO.setores[e.setorId];
-      return `<button class="sino-it" style="animation-delay:${Math.min(i, 8) * 35}ms" onclick="fecharSino();abrirFicha('${e.id}')">
+      return `<button class="sino-it" style="animation-delay:${Math.min(i, 8) * 35}ms" onclick="sinoAbrirExame('${k}','${e.id}')">
         <span class="sino-ex" style="--c:${x.cor}"><i class="fa-solid ${x.icone}"></i></span>
         <span class="sino-c">
           <span class="sino-t"><b class="mn">${esc(e.mn)}</b>${e.atualizadoEm ? `<em title="${dataHora(e.atualizadoEm)}">${haQuanto(e.atualizadoEm)}</em>` : ''}</span>
@@ -92,8 +92,14 @@ function sinoPainelExames(k) {
         </span>
         <i class="fa-solid fa-chevron-right sino-go"></i></button>`; }).join('')
       || `<div class="sino-vazio"><i class="fa-solid fa-circle-check"></i><b>Tudo em dia</b><span>${x.vazio}</span></div>`}</div>
-    <div class="sino-f"><span>${ls.length > SINO_MAX ? `Mostrando ${SINO_MAX} de ${num(ls.length, 0)}` : 'Clique para abrir a ficha'}</span>
+    <div class="sino-f"><span>${ls.length > SINO_MAX ? `Mostrando ${SINO_MAX} de ${num(ls.length, 0)}` : sinoAtualizaDireto(k) ? 'Clique para atualizar a tabela do sistema' : 'Clique para abrir a ficha'}</span>
       <button onclick="sinoVerExames('${k}')">Ver na lista <i class="fa-solid fa-arrow-right"></i></button></div>`;
+}
+// Aba "Atualizar no UniLab": quem pode editar vai direto à confirmação; os demais só consultam a ficha
+const sinoAtualizaDireto = k => k === 'vsis' && pode('exames', 'editar');
+function sinoAbrirExame(k, id) {
+  fecharSino();
+  sinoAtualizaDireto(k) ? atualizarSistemaFicha(id) : abrirFicha(id);
 }
 // Abre a tela de exames já com o filtro "Controle interno" correspondente
 function sinoVerExames(k) {

@@ -38,12 +38,13 @@ function etapasExame(e) {
 
 // perfil (opcional, da tabela de preço): { idCustoFixo: false (não cobra) | valor próprio }
 // sem: nomes de custos fixos que não entram (normalizados, ex.: ['coleta']) — propostas do simulador
+// e.fixosAjuste (opcional, do exame): { idCustoFixo: false (inativo no exame) | valor próprio }; o valor próprio vale sobre o do perfil
 function fixosExame(e, perfil = null, sem = null) {
   const et = etapasExame(e), n = Math.max(1, parametro('examesPorAtendimento'));
   return lista(ESTADO.custosFixos, (a, b) => (a.ordem ?? 99) - (b.ordem ?? 99))
     .map(f => {
-      const p = perfil?.[f.id], valor = typeof p === 'number' ? p : f.valor;
-      return { ...f, valor, foraPerfil: p === false, aplica: p !== false && (!f.etapa || et[f.etapa] !== false) && !sem?.includes(normalizar(f.nome)), v: f.cobranca === 'rateado' ? valor / n : valor };
+      const p = perfil?.[f.id], aj = e.fixosAjuste?.[f.id], valor = typeof aj === 'number' ? aj : typeof p === 'number' ? p : f.valor;
+      return { ...f, valor, foraPerfil: p === false, inativoExame: aj === false, aplica: p !== false && aj !== false && (!f.etapa || et[f.etapa] !== false) && !sem?.includes(normalizar(f.nome)), v: f.cobranca === 'rateado' ? valor / n : valor };
     });
 }
 

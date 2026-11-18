@@ -1,6 +1,6 @@
 # COMERCIAL LAMIC — Tutoriais
 
-Revisão: 16/10/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
+Revisão: 18/11/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
 
 > **Regra de manutenção (para pessoas e para o Claude)**
 >
@@ -19,15 +19,15 @@ Revisão: 16/10/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`
 |---|---|---|---|---|---|
 | 1 | `geral-primeiros-passos` | Primeiros passos | Conhecendo o sistema | todos | 9 |
 | 2 | `geral-telas` | Primeiros passos | Tour pelas telas | todos | 16 |
-| 3 | `geral-notificacoes` | Primeiros passos | Notificações (sino) | tabelas:ver ou exames:ver | 13 |
+| 3 | `geral-notificacoes` | Primeiros passos | Notificações (sino) | tabelas:ver ou exames:ver | 15 |
 | 4 | `inicio-painel` | Início | Lendo o painel inicial | todos | 8 |
 | 5 | `exames-buscar` | Exames | Buscar e filtrar exames | exames:ver | 10 |
-| 6 | `exames-ficha` | Exames | Ficha do exame | exames:ver | 13 |
+| 6 | `exames-ficha` | Exames | Ficha do exame | exames:ver | 15 |
 | 7 | `exames-alterar-preco` | Exames | Alterar preço e enviar para aprovação | exames:editar | 10 |
 | 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 15 |
 | 9 | `exames-rascunho` | Exames | Rascunho de exames | exames:ver ou tabelas:ver | 13 |
 | 10 | `custos-fixos` | Custos | Custos fixos: linear ou rateado | custos:editar | 8 |
-| 11 | `custos-reagente` | Custos | Cadastrar reagente | custos:criar | 11 |
+| 11 | `custos-reagente` | Custos | Cadastrar reagente | custos:criar | 12 |
 | 12 | `custos-apoio` | Custos | Laboratórios de apoio | custos:ver | 5 |
 | 13 | `tabelas-editar` | Tabelas de Preço | Editar preços na tabela | tabelas:editar | 13 |
 | 14 | `tabelas-nova` | Tabelas de Preço | Criar nova tabela | tabelas:criar | 11 |
@@ -106,11 +106,13 @@ Revisão: 16/10/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 6 | `#sino-pan .sino-l` | ver · espera `#sino.open` | **Itens** — Os mais recentes ficam no topo. Cada item mostra quem alterou, quando e um resumo: variação dos preços na proposta ou margem e preço do exame. |
 | 7 | `#sino-pan .sino-mudo .switch` | clique · espera `#sino.open` | **Silencie a aba** — Desligue a chave: a aba silenciada continua no sino, mas deixa de somar no número vermelho. A preferência vale só para você, neste navegador. |
 | 8 | `#sino-pan .sino-mudo .switch` | clique · espera `#sino.open` | **Ligue de novo** — Veja o ícone de sino cortado na aba. Clique na chave outra vez para voltar a ser avisado. |
-| 9 | `#sino-pan .sino-l .sino-it` | clique · espera `#sino.open` · condicional · avança se deu certo | **Abra um item** — Clique no item: abre a proposta para revisar (e aprovar, se você tiver permissão) ou a ficha do exame. |
-| 10 | `#gaveta .dr-b` | ver · espera `#gaveta.open` · condicional | **Resolva por aqui** — Resolvido o motivo (proposta aprovada, auditoria feita, valor lançado no UniLab), o item sai do sino sozinho. |
-| 11 | `#gaveta .dr-h .icon-btn` | clique · espera `#gaveta.open` · condicional | **Fechar** — Clique no X para fechar a gaveta e voltar à lista. |
-| 12 | `#sino-pan .sino-f` | ver · espera `#sino.open` | **Lista completa** — Ver todas abre Tabelas de Preço › Propostas; Ver na lista abre Exames já filtrado pelo controle interno da aba. |
-| 13 | — (cartão central) | ver | **Pronto!** — Confira o sino no começo do dia. Na simulação, a aba silenciada e o que foi aberto são descartados ao encerrar. |
+| 9 | `#sino-pan .sino-l .sino-it` | clique · espera `#sino.open` · condicional · avança se deu certo | **Abra um item** — Clique no item: abre a proposta para revisar (e aprovar, se você tiver permissão) ou a ficha do exame. Em Atualizar no UniLab, quem pode editar vai direto à confirmação da tabela do sistema. |
+| 10 | `#modal .modal-card` | ver · condicional | **Atualizar a tabela do sistema** — Confira os valores. Confirme só depois de lançar o novo valor no UniLab: a tabela do sistema no banco passa a ter o valor publicado e o item sai do sino. |
+| 11 | `#modal [data-r="0"]` | clique · condicional | **Cancele por enquanto** — Clique em Cancelar: o item continua pendente no sino. |
+| 12 | `#gaveta .dr-b` | ver · espera `#gaveta.open` · condicional | **Resolva por aqui** — Resolvido o motivo (proposta aprovada, auditoria feita, valor lançado no UniLab), o item sai do sino sozinho. |
+| 13 | `#gaveta .dr-h .icon-btn` | clique · espera `#gaveta.open` · condicional | **Fechar** — Clique no X para fechar a gaveta e voltar à lista. |
+| 14 | `#sino-pan .sino-f` | ver · espera `#sino.open` | **Lista completa** — Ver todas abre Tabelas de Preço › Propostas; Ver na lista abre Exames já filtrado pelo controle interno da aba. |
+| 15 | — (cartão central) | ver | **Pronto!** — Confira o sino no começo do dia. Na simulação, a aba silenciada e o que foi aberto são descartados ao encerrar. |
 
 ## Início
 
@@ -164,12 +166,14 @@ Revisão: 16/10/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 5 | `#fx-comp` | ver | **Composição do preço** — Como o preço se divide entre custo do teste, custos fixos, imposto e margem. |
 | 6 | `#fx-tabs` | ver · condicional | **Outras tabelas** — Preço do exame em cada tabela de preço, com a margem de cada uma. Quem pode editar tabelas altera, inclui ou retira daqui mesmo. |
 | 7 | `#fx-abas button:nth-child(2)` | clique | **Aba Custos** — Clique em Custos para ver de onde vem o custo do exame. |
-| 8 | `#fx-casc` | ver | **Cascata de custos** — Custo do teste (manual, reagente ou tabela do apoio) somado aos custos fixos e adicionais, até o custo total. |
-| 9 | `#fx-etapas` | ver | **Etapas do atendimento** — Coleta e triagem só entram no custo se o exame passa por elas. O padrão vem do setor e pode ser ajustado aqui. |
-| 10 | `#fx-abas button:nth-child(5)` | clique | **Aba Histórico** — Clique em Histórico. |
-| 11 | `#fx-hist` | ver | **Histórico** — Todas as alterações do exame, com usuário e data. |
-| 12 | `#gaveta .dr-h .icon-btn` | clique · espera `#gaveta.open` | **Fechar** — Clique no X para fechar a gaveta e voltar à lista. |
-| 13 | — (cartão central) | ver | **Pronto!** — Você já sabe ler a ficha. Para alterar o preço, veja Alterar preço e enviar para aprovação. |
+| 8 | `#fx-custo` | ver | **Custo do teste** — Manual, Reagente ou Tabela do apoio. Sair da tabela do apoio pede confirmação, pois o exame deixa de seguir o valor dela. Em Reagente, Novo reagente cadastra sem sair da ficha. |
+| 9 | `#fx-casc` | ver | **Cascata de custos** — Custo do teste somado aos custos fixos e adicionais, até o custo total. |
+| 10 | `#fx-casc .switch` → `closest('.casc-r')` | ver · condicional | **Ajuste neste exame** — O lápis define um valor próprio do custo fixo neste exame, a seta volta ao padrão e a chave ativa ou inativa. Em coleta e triagem, a chave acompanha a etapa do exame. Vale ao salvar a ficha. |
+| 11 | `#fx-etapas` | ver | **Etapas do atendimento** — Coleta e triagem só entram no custo se o exame passa por elas. O padrão vem do setor e pode ser ajustado aqui. |
+| 12 | `#fx-abas button:nth-child(5)` | clique | **Aba Histórico** — Clique em Histórico. |
+| 13 | `#fx-hist` | ver | **Histórico** — Todas as alterações do exame, com usuário e data. |
+| 14 | `#gaveta .dr-h .icon-btn` | clique · espera `#gaveta.open` | **Fechar** — Clique no X para fechar a gaveta e voltar à lista. |
+| 15 | — (cartão central) | ver | **Pronto!** — Você já sabe ler a ficha. Para alterar o preço, veja Alterar preço e enviar para aprovação. |
 
 ### Alterar preço e enviar para aprovação
 
@@ -266,9 +270,10 @@ Revisão: 16/10/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 6 | `#rg-kit` | digitar (sugestão: "850") | **Preço do kit** — Quanto custa o kit. |
 | 7 | `#rg-testes` | digitar (sugestão: "500") | **Testes por kit** — Quantos testes o kit rende. |
 | 8 | `#rg-perdas` | digitar (sugestão: "5") | **Perdas** — Repetição, volume morto e vencimento, em %. |
-| 9 | `#rg-prev` | ver | **Resultado** — O custo por teste é calculado na hora. |
-| 10 | `#gaveta [onclick="gravarReagente()"]` | clique · avança se deu certo | **Salvar** — Clique em Salvar e recalcular: os exames vinculados ao reagente são recalculados. |
-| 11 | — (cartão central) | ver | **Pronto!** — Reagente cadastrado na simulação. Na ficha do exame você vincula o reagente ao custo do teste. |
+| 9 | `#gaveta [onclick^="novoInsumoReagente"]` | ver · condicional | **Calibrador e controle** — Não achou na lista? Novo calibrador e Novo controle abrem o cadastro e voltam para cá com o item escolhido, sem perder o que foi digitado. |
+| 10 | `#rg-prev` | ver | **Resultado** — O custo por teste é calculado na hora. |
+| 11 | `#gaveta [onclick="gravarReagente()"]` | clique · avança se deu certo | **Salvar** — Clique em Salvar e recalcular: os exames vinculados ao reagente são recalculados. |
+| 12 | — (cartão central) | ver | **Pronto!** — Reagente cadastrado na simulação. Na ficha do exame você vincula o reagente ao custo do teste, e também pode cadastrar um novo por lá. |
 
 ### Laboratórios de apoio
 
@@ -372,7 +377,7 @@ Revisão: 16/10/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 1 | `#s-tabelas .subnav button[data-p="hierarquia"]` | clique | **Hierarquia** — Clique em Hierarquia. |
 | 2 | `#tabelas-hierarquia .hier-lista` | ver | **Ordem das tabelas** — A Particular fica no topo. Cada tabela não pode ter preço maior que as que estão acima dela. |
 | 3 | `#tabelas-hierarquia .hier-i:not(.topo) .acts` | ver · condicional | **Reordenar** — Suba, desça ou tire uma tabela da hierarquia. |
-| 4 | `#hier-res` | ver | **Quebras** — Exames com preço fora da ordem. Quem edita pode corrigir o valor direto nesta lista. |
+| 4 | `#hier-res` | ver | **Quebras** — Exames com preço fora da ordem. Quem edita pode corrigir o valor direto nesta lista e preencher os campos com —, de exames ainda sem preço na tabela. |
 | 5 | — (cartão central) | ver | **Pronto!** — A quebra de hierarquia também aparece no painel inicial e na ficha do exame. |
 
 ### Laboratórios apoiados e conveniados
