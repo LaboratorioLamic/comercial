@@ -1,6 +1,6 @@
 # COMERCIAL LAMIC — Tutoriais
 
-Revisão: 18/11/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
+Revisão: 19/11/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`](script/tutoriais.js)
 
 > **Regra de manutenção (para pessoas e para o Claude)**
 >
@@ -24,7 +24,7 @@ Revisão: 18/11/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 5 | `exames-buscar` | Exames | Buscar e filtrar exames | exames:ver | 10 |
 | 6 | `exames-ficha` | Exames | Ficha do exame | exames:ver | 15 |
 | 7 | `exames-alterar-preco` | Exames | Alterar preço e enviar para aprovação | exames:editar | 10 |
-| 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 15 |
+| 8 | `exames-novo` | Exames | Cadastrar novo exame | exames:criar | 16 |
 | 9 | `exames-rascunho` | Exames | Rascunho de exames | exames:ver ou tabelas:ver | 13 |
 | 10 | `custos-fixos` | Custos | Custos fixos: linear ou rateado | custos:editar | 8 |
 | 11 | `custos-reagente` | Custos | Cadastrar reagente | custos:criar | 12 |
@@ -213,8 +213,9 @@ Revisão: 18/11/2026 · 30 tutoriais · fonte de verdade: [`script/tutoriais.js`
 | 11 | `#dx-anexos` | ver · condicional | **Anexos** — Links (Drive, PDF, formulário) da instrução do exame. Vão para o catálogo de instruções e aparecem clicáveis para os apoiados no L2L. Os anexos que já estão no catálogo entram sozinhos. |
 | 12 | `#gaveta [onclick="gravarDadosExame()"]` | clique · avança se deu certo | **Salvar** — Clique em Salvar. |
 | 13 | `#modal .modal-card` | ver · condicional | **Proposta ou publicar** — Com preço praticado, uma janela pergunta como ele passa a valer. Enviar como proposta (já marcado): vale depois da aprovação, e o exame fica sem preço até lá. Publicar direto (só quem aprova): vale na hora, sem revisão. |
-| 14 | `#modal [data-r="1"]` | clique · condicional · avança se deu certo | **Confirmar** — Clique em Enviar proposta. A ficha do exame novo abre em seguida. |
-| 15 | — (cartão central) | ver | **Pronto!** — O exame foi criado na simulação e já aparece na lista. Ao encerrar o treinamento ele é descartado. |
+| 14 | `#dx-pbal` | ver · condicional | **Comentário** — O balão abre um campo opcional para o comentário da proposta. Já vem com "Exame recém criado"; edite se quiser explicar o preço a quem aprova. |
+| 15 | `#modal [data-r="1"]` | clique · condicional · avança se deu certo | **Confirmar** — Clique em Enviar proposta. A janela do cadastro fecha sozinha (em Publicar direto, a ficha do exame abre). |
+| 16 | — (cartão central) | ver | **Pronto!** — O exame foi criado na simulação e já aparece na lista. Ao encerrar o treinamento ele é descartado. |
 
 ### Rascunho de exames
 

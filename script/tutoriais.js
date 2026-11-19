@@ -262,8 +262,10 @@ const TUTORIAIS = [
         texto: 'Clique em <b>Salvar</b>.' },
       { alvo: '#modal .modal-card', titulo: 'Proposta ou publicar', icone: 'fa-stamp', acao: 'ver', pular: () => !modalAbertoTut(),
         texto: 'Com preço praticado, uma janela pergunta como ele passa a valer. <b>Enviar como proposta</b> (já marcado): vale depois da aprovação, e o exame fica sem preço até lá. <b>Publicar direto</b> (só quem aprova): vale na hora, sem revisão.' },
+      { alvo: '#dx-pbal', titulo: 'Comentário', icone: 'fa-comment', acao: 'ver', pular: () => !qsTut('#dx-pbal') || qsTut('#dx-pbal').style.display === 'none',
+        texto: 'O balão abre um campo opcional para o comentário da proposta. Já vem com "Exame recém criado"; edite se quiser explicar o preço a quem aprova.' },
       { alvo: '#modal [data-r="1"]', titulo: 'Confirmar', icone: 'fa-paper-plane', acao: 'clique', pular: () => !modalAbertoTut(), avancaSe: () => !qsTut('#dx-mn'),
-        texto: 'Clique em <b>Enviar proposta</b>. A ficha do exame novo abre em seguida.' },
+        texto: 'Clique em <b>Enviar proposta</b>. A janela do cadastro fecha sozinha (em <b>Publicar direto</b>, a ficha do exame abre).' },
       fimTut('O exame foi criado na simulação e já aparece na lista. Ao encerrar o treinamento ele é descartado.')
     ]
   },

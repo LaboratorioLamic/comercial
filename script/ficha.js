@@ -949,7 +949,7 @@ async function gravarDadosExame() {
   const dias = parseInt(valorCampo('dx-dias'), 10);
   const dados = { descricao: desc, setorId: _dx.setorId || null, origem: _dx.origem, ativo: _dx.ativo,
     material: valorCampo('dx-mat').trim() || null, prazoDias: isNaN(dias) ? null : Math.max(0, dias), atualizadoEm: DB.agora(), atualizadoPor: usuarioAtual().nome };
-  let id = _dx.id, modoPreco = null;
+  let id = _dx.id, modoPreco = null, justProposta = "";
   if (!id) {
     verificarMnDx();
     const mn = valorCampo('dx-mn').trim();
@@ -963,8 +963,9 @@ async function gravarDadosExame() {
     if (!isNaN(custo) && custo < 0) return toast('Custo do teste inválido', 'erro');
     // preço praticado: janela para escolher entre proposta (padrão) e publicar direto
     if (preco > 0) {
-      modoPreco = await escolherModoPrecoDx(preco, custo >= 0 && calcular({ setorId: _dx.setorId || null, origem: _dx.origem, custoTeste: custo }, preco).status === 'r');
-      if (!modoPreco) return;
+      const esc = await escolherModoPrecoDx(preco, custo >= 0 && calcular({ setorId: _dx.setorId || null, origem: _dx.origem, custoTeste: custo }, preco).status === 'r');
+      if (!esc) return;
+      modoPreco = esc.modo; justProposta = esc.just;
     }
     // valor negociado: o custo vira item manual da tabela do apoio e o exame já nasce vinculado a ele
     let itemApoio = null;
@@ -989,7 +990,7 @@ async function gravarDadosExame() {
     if (modoPreco === 'proposta') {
       const u = usuarioAtual(), pid = DB.novaChave('propostas');
       await DB.gravar(`propostas/${pid}`, { alvo: 'particular', alvoNome: 'Particular', itens: { [id]: { mn, de: null, para: Math.round(preco * 100) / 100 } }, n: 1,
-        justificativa: 'Exame recém criado', autor: u.nome, autorId: u.id, em: DB.agora(), status: 'pendente', origem: 'cadastro' });
+        justificativa: justProposta || 'Exame recém criado', autor: u.nome, autorId: u.id, em: DB.agora(), status: 'pendente', origem: 'cadastro' });
       registrar('tabelas', `Particular: proposta de preço do exame novo ${mn} enviada (cadastro)`, { proposta: pid });
     }
   } else {
@@ -1009,11 +1010,12 @@ async function gravarDadosExame() {
   });
   ESTADO.exames[id] = { ...(ESTADO.exames[id] || {}), ...dados, ...(dados.atualizadoEm ? { atualizadoEm: Date.now() } : {}) };
   toast(_dx.id ? 'Dados salvos' : modoPreco === 'proposta' ? 'Exame cadastrado · preço enviado para aprovação' : 'Exame cadastrado');
-  abrirFicha(id);
+  if (modoPreco === 'proposta') fecharGaveta();   // proposta enviada: cadastro encerrado
+  else abrirFicha(id);
 }
 
 // Exame novo com preço praticado: aviso e escolha entre enviar como proposta (padrão) ou publicar direto (só quem aprova).
-// → 'proposta' | 'publicar' | null (voltou sem escolher)
+// → { modo: 'proposta' | 'publicar', just } | null (voltou sem escolher)
 function escolherModoPrecoDx(preco, abaixoPiso) {
   return new Promise(resolve => {
     const aprova = pode('tabelas', 'aprovar'), m = document.getElementById('modal');
@@ -1030,18 +1032,25 @@ function escolherModoPrecoDx(preco, abaixoPiso) {
           ${oc('publicar', 'Publicar direto', aprova ? 'Vale na hora, sem revisão de outra pessoa' : 'Só para quem aprova preços', 'fa-stamp', aprova)}</div>
         <div class="modal-acoes"><button class="btn" data-r="0">Voltar</button><button class="btn pri" data-r="1"><i class="fa-solid fa-paper-plane"></i>Enviar proposta</button></div>
       </div>`;
+    // comentário opcional da proposta: balão abre o campo
+    m.querySelector('.modal-acoes').insertAdjacentHTML('afterbegin', `<button type="button" class="btn" id="dx-pbal" title="Comentário da proposta"><i class="fa-solid fa-comment"></i></button>`);
+    m.querySelector('.modal-acoes').insertAdjacentHTML('beforebegin', `<textarea id="dx-pjust" rows="2" placeholder="Comentário da proposta (opcional)" style="display:none;width:100%;margin-top:10px;padding:8px 10px;border:1px solid var(--line,#ddd);border-radius:8px;font:inherit;resize:vertical">Exame recém criado</textarea>`);
+    const bal = m.querySelector('#dx-pbal'), just = m.querySelector('#dx-pjust');
+    bal.onclick = () => { just.style.display = just.style.display === 'none' ? '' : 'none'; if (just.style.display === '') just.focus(); };
     m.classList.add('open');
     const ok = m.querySelector('[data-r="1"]');
     m.querySelectorAll('#dx-pmodo .oc').forEach(b => b.onclick = () => {
       modo = b.dataset.v;
       marcarOc('dx-pmodo', b);
+      bal.style.display = modo === 'proposta' ? '' : 'none';
+      if (modo !== 'proposta') just.style.display = 'none';
       ok.innerHTML = modo === 'publicar' ? '<i class="fa-solid fa-stamp"></i>Publicar sem revisão' : '<i class="fa-solid fa-paper-plane"></i>Enviar proposta';
     });
     const fim = r => { m.classList.remove('open'); document.removeEventListener('keydown', tecla); resolve(r); };
-    const tecla = e => { if (e.key === 'Escape') fim(null); };
+    const tecla = e => { if (e.key === 'Escape' && e.target !== just) fim(null); };
     m.querySelector('[data-r="0"]').onclick = () => fim(null);
     m.querySelector('[data-x]').onclick = () => fim(null);
-    ok.onclick = () => fim(modo);
+    ok.onclick = () => fim({ modo, just: modo === 'proposta' ? just.value.trim() : '' });
     m.onclick = e => { if (e.target === m) fim(null); };
     document.addEventListener('keydown', tecla);
     ok.focus();
